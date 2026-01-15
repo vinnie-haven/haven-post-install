@@ -16,7 +16,7 @@
     .editable:hover { background: rgba(16, 185, 129, 0.1); border-radius: 4px; }
     .edit-modal { position: fixed; inset: 0; background: rgba(0,0,0,0.7); display: flex; align-items: center; justify-content: center; z-index: 100; }
     .dropdown { position: relative; display: inline-block; }
-    .dropdown-menu { display: none; position: absolute; top: 100%; left: 0; z-index: 50; min-width: 220px; max-height: 350px; overflow-y: auto; background: #1e293b; border: 1px solid #334155; border-radius: 8px; box-shadow: 0 10px 40px rgba(0,0,0,0.5); margin-top: 4px; }
+    .dropdown-menu { display: none; position: absolute; top: 100%; left: 0; z-index: 50; min-width: 250px; max-height: 400px; overflow-y: auto; background: #1e293b; border: 1px solid #334155; border-radius: 8px; box-shadow: 0 10px 40px rgba(0,0,0,0.5); margin-top: 4px; }
     .dropdown:hover .dropdown-menu { display: block; }
     .dropdown-item { padding: 8px 12px; cursor: pointer; font-size: 12px; display: flex; justify-content: space-between; align-items: center; }
     .dropdown-item:hover { background: #334155; }
@@ -24,6 +24,9 @@
     .filter-active { color: #10b981 !important; }
     .table-container { max-height: calc(100vh - 380px); overflow-y: auto; }
     .sticky-header th { position: sticky; top: 0; background: #0f172a; z-index: 10; }
+    .checkbox-item { padding: 6px 12px; cursor: pointer; font-size: 12px; display: flex; align-items: center; gap: 8px; }
+    .checkbox-item:hover { background: #334155; }
+    .checkbox-item input { accent-color: #10b981; width: 16px; height: 16px; }
   </style>
 </head>
 <body class="bg-slate-900 text-slate-100 min-h-screen">
@@ -63,17 +66,19 @@ const HUBSPOT_PORTAL_ID = '23929498';
 let CONFIG = { hubspotPortalId: localStorage.getItem('hubspotPortalId') || HUBSPOT_PORTAL_ID };
 let DATA = { matched: [], hubspotWithoutSgip: [] };
 let SEARCH_INDEX = [];
+
+// Filters now store arrays (empty array = all selected)
 let state = { 
   tab: 'matched', 
   search: '', 
   filters: {
-    permitStatus: 'all',
-    inspectionStatus: 'all',
-    ptoStatus: 'all',
-    sgipStage: 'all',
-    sgipStatus: 'all',
-    icfProgress: 'all',
-    installer: 'all'
+    permitStatus: [],
+    inspectionStatus: [],
+    ptoStatus: [],
+    sgipStage: [],
+    sgipStatus: [],
+    icfProgress: [],
+    installer: []
   },
   sortBy: 'daysSinceInstall', 
   sortDir: 'desc', 
@@ -193,13 +198,49 @@ function getFilteredData() {
     return { ...d, _index: i, daysSinceInstall: getDaysSince(d.installDate) };
   });
   
-  if (state.filters.permitStatus !== 'all') r = r.filter(d => (d.permitStatus || '(empty)') === state.filters.permitStatus || (!d.permitStatus && state.filters.permitStatus === '(empty)'));
-  if (state.filters.inspectionStatus !== 'all') r = r.filter(d => { let v = d.inspectionStatus; if (!v || v === '(No value)') v = '(empty)'; return v === state.filters.inspectionStatus; });
-  if (state.filters.ptoStatus !== 'all') r = r.filter(d => { const hasPto = d.ptoDate && d.ptoDate !== '(No value)' && d.ptoDate !== 'None'; return (state.filters.ptoStatus === 'Complete' && hasPto) || (state.filters.ptoStatus === 'Pending' && !hasPto); });
-  if (state.filters.sgipStage !== 'all') r = r.filter(d => (d.sgipStage || '(empty)') === state.filters.sgipStage);
-  if (state.filters.sgipStatus !== 'all') r = r.filter(d => (d.sgipStatus || '(empty)') === state.filters.sgipStatus);
-  if (state.filters.icfProgress !== 'all') r = r.filter(d => d.icfProgress === state.filters.icfProgress);
-  if (state.filters.installer !== 'all') r = r.filter(d => { let v = d.installer; if (!v || v === '(No value)') v = '(empty)'; return v === state.filters.installer; });
+  // Multi-select filter logic (empty array = no filter)
+  if (state.filters.permitStatus.length > 0) {
+    r = r.filter(d => {
+      const val = d.permitStatus || '(empty)';
+      return state.filters.permitStatus.includes(val) || (!d.permitStatus && state.filters.permitStatus.includes('(empty)'));
+    });
+  }
+  if (state.filters.inspectionStatus.length > 0) {
+    r = r.filter(d => {
+      let val = d.inspectionStatus;
+      if (!val || val === '(No value)') val = '(empty)';
+      return state.filters.inspectionStatus.includes(val);
+    });
+  }
+  if (state.filters.ptoStatus.length > 0) {
+    r = r.filter(d => {
+      const hasPto = d.ptoDate && d.ptoDate !== '(No value)' && d.ptoDate !== 'None';
+      const status = hasPto ? 'Complete' : 'Pending';
+      return state.filters.ptoStatus.includes(status);
+    });
+  }
+  if (state.filters.sgipStage.length > 0) {
+    r = r.filter(d => {
+      const val = d.sgipStage || '(empty)';
+      return state.filters.sgipStage.includes(val);
+    });
+  }
+  if (state.filters.sgipStatus.length > 0) {
+    r = r.filter(d => {
+      const val = d.sgipStatus || '(empty)';
+      return state.filters.sgipStatus.includes(val);
+    });
+  }
+  if (state.filters.icfProgress.length > 0) {
+    r = r.filter(d => state.filters.icfProgress.includes(d.icfProgress));
+  }
+  if (state.filters.installer.length > 0) {
+    r = r.filter(d => {
+      let val = d.installer;
+      if (!val || val === '(No value)') val = '(empty)';
+      return state.filters.installer.includes(val);
+    });
+  }
   
   r.sort((a, b) => { 
     let av, bv;
@@ -236,25 +277,70 @@ const getDaysColor = d => d === null ? 'text-slate-600' : d > 90 ? 'text-red-400
 function setTab(t) { state.tab = t; state.search = ''; render(); }
 function updateSearch(v) { state.search = v; if (searchTimeout) clearTimeout(searchTimeout); searchTimeout = setTimeout(() => render(), 150); }
 function setSort(col) { if (state.sortBy === col) state.sortDir = state.sortDir === 'asc' ? 'desc' : 'asc'; else { state.sortBy = col; state.sortDir = 'desc'; } render(); }
-function setFilter(key, val) { state.filters[key] = val; render(); }
-function clearFilters() { Object.keys(state.filters).forEach(k => state.filters[k] = 'all'); state.search = ''; render(); }
-function hasActiveFilters() { return state.search || Object.values(state.filters).some(v => v !== 'all'); }
+
+// Toggle a single value in the multi-select filter
+function toggleFilter(key, val) {
+  const idx = state.filters[key].indexOf(val);
+  if (idx >= 0) {
+    state.filters[key].splice(idx, 1);
+  } else {
+    state.filters[key].push(val);
+  }
+  render();
+}
+
+// Select all or none for a filter
+function selectAllFilter(key, options) {
+  state.filters[key] = options.map(o => o[0]);
+  render();
+}
+
+function clearFilterKey(key) {
+  state.filters[key] = [];
+  render();
+}
+
+function clearFilters() { 
+  Object.keys(state.filters).forEach(k => state.filters[k] = []); 
+  state.search = ''; 
+  render(); 
+}
+
+function hasActiveFilters() { 
+  return state.search || Object.values(state.filters).some(v => v.length > 0); 
+}
 
 function filterHeader(label, filterKey, sortKey, options, editable = false) {
-  const isFiltered = state.filters[filterKey] !== 'all';
+  const selectedCount = state.filters[filterKey].length;
+  const isFiltered = selectedCount > 0;
   const isSorted = state.sortBy === sortKey;
   const sortIcon = isSorted ? (state.sortDir === 'asc' ? ' ↑' : ' ↓') : '';
+  const filterLabel = isFiltered ? ` (${selectedCount})` : '';
+  
   return `
     <th class="px-2 py-3 text-left text-xs font-semibold uppercase">
       <div class="dropdown">
         <span class="cursor-pointer hover:text-slate-200 ${isFiltered ? 'filter-active' : 'text-slate-400'}">
-          ${label}${sortIcon}${isFiltered ? ' ●' : ''}${editable ? ' ✎' : ''}
+          ${label}${sortIcon}${filterLabel}${editable ? ' ✎' : ''}
           <svg class="w-3 h-3 inline ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
         </span>
-        <div class="dropdown-menu">
+        <div class="dropdown-menu" onclick="event.stopPropagation()">
           ${sortKey ? `<div class="p-2 border-b border-slate-700"><div class="text-[10px] text-slate-500 uppercase mb-1">Sort</div><div class="dropdown-item rounded ${isSorted && state.sortDir === 'desc' ? 'active' : ''}" onclick="setSort('${sortKey}')">Newest/Highest First</div><div class="dropdown-item rounded ${isSorted && state.sortDir === 'asc' ? 'active' : ''}" onclick="state.sortBy='${sortKey}'; state.sortDir='asc'; render();">Oldest/Lowest First</div></div>` : ''}
-          <div class="p-2"><div class="text-[10px] text-slate-500 uppercase mb-1">Filter</div><div class="dropdown-item rounded ${state.filters[filterKey] === 'all' ? 'active' : ''}" onclick="setFilter('${filterKey}', 'all')">All <span class="text-slate-500">(${DATA.matched.length})</span></div>
-            ${options.map(([val, cnt]) => `<div class="dropdown-item rounded ${state.filters[filterKey] === val ? 'active' : ''}" onclick="setFilter('${filterKey}', '${val.replace(/'/g, "\\'")}')"><span>${val.length > 25 ? val.substring(0,23)+'..' : val}</span><span class="text-slate-500">(${cnt})</span></div>`).join('')}
+          <div class="p-2">
+            <div class="flex justify-between items-center mb-2">
+              <div class="text-[10px] text-slate-500 uppercase">Filter</div>
+              <div class="flex gap-1">
+                <button onclick="selectAllFilter('${filterKey}', ${JSON.stringify(options).replace(/"/g, '&quot;')})" class="text-[10px] px-2 py-0.5 bg-slate-700 hover:bg-slate-600 rounded">All</button>
+                <button onclick="clearFilterKey('${filterKey}')" class="text-[10px] px-2 py-0.5 bg-slate-700 hover:bg-slate-600 rounded">None</button>
+              </div>
+            </div>
+            ${options.map(([val, cnt]) => `
+              <label class="checkbox-item rounded">
+                <input type="checkbox" ${state.filters[filterKey].includes(val) ? 'checked' : ''} onchange="toggleFilter('${filterKey}', '${val.replace(/'/g, "\\'")}')">
+                <span class="flex-1">${val.length > 25 ? val.substring(0,23)+'..' : val}</span>
+                <span class="text-slate-500">(${cnt})</span>
+              </label>
+            `).join('')}
           </div>
         </div>
       </div>
@@ -318,10 +404,6 @@ function render() {
         
         <div class="flex flex-wrap gap-3 mb-4 items-center">
           <input type="text" placeholder="Search customer, code, email, installer..." class="flex-1 min-w-[250px] max-w-md px-4 py-2 rounded-lg bg-slate-800 border border-slate-700 text-sm" value="${state.search}" oninput="updateSearch(this.value)">
-          <select class="px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-sm" onchange="setFilter('icfProgress', this.value)">
-            <option value="all" ${state.filters.icfProgress === 'all' ? 'selected' : ''}>All ICF Stages</option>
-            ${icfOpts.map(([val, cnt]) => `<option value="${val}" ${state.filters.icfProgress === val ? 'selected' : ''}>${val} (${cnt})</option>`).join('')}
-          </select>
           ${hasActiveFilters() ? `<button onclick="clearFilters()" class="px-4 py-2 bg-red-600 hover:bg-red-500 rounded-lg text-sm font-medium">✕ Clear All Filters</button>` : ''}
         </div>
         
