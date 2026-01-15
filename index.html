@@ -22,6 +22,8 @@
     .dropdown-item:hover { background: #334155; }
     .dropdown-item.active { background: #059669; color: white; }
     .filter-active { color: #10b981 !important; }
+    .table-container { max-height: calc(100vh - 380px); overflow-y: auto; }
+    .sticky-header th { position: sticky; top: 0; background: #0f172a; z-index: 10; }
   </style>
 </head>
 <body class="bg-slate-900 text-slate-100 min-h-screen">
@@ -59,6 +61,7 @@ const EMBEDDED_DATA = {"matched": [{"dealName": "Bustos , J Carlos : 3013 Saffro
 
 let CONFIG = { hubspotPortalId: localStorage.getItem('hubspotPortalId') || '23929498' };
 let DATA = { matched: [], hubspotWithoutSgip: [] };
+let SEARCH_INDEX = [];
 let state = { 
   tab: 'matched', 
   search: '', 
@@ -77,12 +80,22 @@ let state = {
   editingField: null 
 };
 
+let searchTimeout = null;
+
 function init() {
   if (!CONFIG.hubspotPortalId && !localStorage.getItem('configSkipped')) {
     document.getElementById('configModal').classList.remove('hidden');
   }
   DATA = EMBEDDED_DATA;
+  buildSearchIndex();
   render();
+}
+
+function buildSearchIndex() {
+  SEARCH_INDEX = DATA.matched.map((d, i) => ({
+    idx: i,
+    text: [d.dealName||'', d.customerName||'', d.applicationCode||'', d.email||'', d.installer||'', d.siteAddress||''].join(' ').toLowerCase()
+  }));
 }
 
 function saveConfig() {
@@ -123,6 +136,7 @@ function saveEdit() {
   const deal = getFilteredData()[state.editingDeal];
   const idx = DATA.matched.findIndex(d => d.email === deal.email && d.dealName === deal.dealName);
   if (idx >= 0) DATA.matched[idx][state.editingField] = value;
+  buildSearchIndex();
   closeEditModal(); render();
 }
 
@@ -144,8 +158,14 @@ const getStageInfo = k => STAGES.find(s => s.key === k) || STAGES[0];
 const parseNum = v => v ? parseFloat(v.replace(/[$,]/g, '')) || 0 : 0;
 const fmtCurrency = v => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(v);
 const getDaysSince = d => { if (!d || d === 'None') return null; try { return Math.floor((new Date('2026-01-15') - new Date(d)) / 86400000); } catch { return null; } };
+const parseDate = d => {
+  if (!d || d === 'None' || d === '(No value)') return null;
+  try {
+    if (d.includes('/')) { const [m, day, y] = d.split('/'); return new Date(2000 + parseInt(y), parseInt(m) - 1, parseInt(day)); }
+    return new Date(d);
+  } catch { return null; }
+};
 
-// Get unique values for filters
 function getFilterCounts(field, transform = v => v) {
   const counts = {};
   DATA.matched.forEach(d => {
@@ -157,49 +177,26 @@ function getFilterCounts(field, transform = v => v) {
 }
 
 function getFilteredData() {
-  let r = DATA.matched.map((d, i) => ({ ...d, _index: i, daysSinceInstall: getDaysSince(d.installDate) }));
-  
-  if (state.search) { 
-    const q = state.search.toLowerCase(); 
-    r = r.filter(d => (d.dealName||'').toLowerCase().includes(q)||(d.customerName||'').toLowerCase().includes(q)||(d.applicationCode||'').toLowerCase().includes(q)||(d.email||'').toLowerCase().includes(q)||(d.installer||'').toLowerCase().includes(q)); 
+  let indices;
+  if (state.search) {
+    const q = state.search.toLowerCase();
+    indices = SEARCH_INDEX.filter(s => s.text.includes(q)).map(s => s.idx);
+  } else {
+    indices = DATA.matched.map((_, i) => i);
   }
   
-  // Apply filters
-  if (state.filters.permitStatus !== 'all') {
-    r = r.filter(d => {
-      const v = d.permitStatus || '(empty)';
-      return v === state.filters.permitStatus || (!d.permitStatus && state.filters.permitStatus === '(empty)');
-    });
-  }
-  if (state.filters.inspectionStatus !== 'all') {
-    r = r.filter(d => {
-      let v = d.inspectionStatus;
-      if (!v || v === '(No value)') v = '(empty)';
-      return v === state.filters.inspectionStatus;
-    });
-  }
-  if (state.filters.ptoStatus !== 'all') {
-    r = r.filter(d => {
-      const hasPto = d.ptoDate && d.ptoDate !== '(No value)' && d.ptoDate !== 'None';
-      return (state.filters.ptoStatus === 'Complete' && hasPto) || (state.filters.ptoStatus === 'Pending' && !hasPto);
-    });
-  }
-  if (state.filters.sgipStage !== 'all') {
-    r = r.filter(d => (d.sgipStage || '(empty)') === state.filters.sgipStage);
-  }
-  if (state.filters.sgipStatus !== 'all') {
-    r = r.filter(d => (d.sgipStatus || '(empty)') === state.filters.sgipStatus);
-  }
-  if (state.filters.icfProgress !== 'all') {
-    r = r.filter(d => d.icfProgress === state.filters.icfProgress);
-  }
-  if (state.filters.installer !== 'all') {
-    r = r.filter(d => {
-      let v = d.installer;
-      if (!v || v === '(No value)') v = '(empty)';
-      return v === state.filters.installer;
-    });
-  }
+  let r = indices.map(i => {
+    const d = DATA.matched[i];
+    return { ...d, _index: i, daysSinceInstall: getDaysSince(d.installDate) };
+  });
+  
+  if (state.filters.permitStatus !== 'all') r = r.filter(d => (d.permitStatus || '(empty)') === state.filters.permitStatus || (!d.permitStatus && state.filters.permitStatus === '(empty)'));
+  if (state.filters.inspectionStatus !== 'all') r = r.filter(d => { let v = d.inspectionStatus; if (!v || v === '(No value)') v = '(empty)'; return v === state.filters.inspectionStatus; });
+  if (state.filters.ptoStatus !== 'all') r = r.filter(d => { const hasPto = d.ptoDate && d.ptoDate !== '(No value)' && d.ptoDate !== 'None'; return (state.filters.ptoStatus === 'Complete' && hasPto) || (state.filters.ptoStatus === 'Pending' && !hasPto); });
+  if (state.filters.sgipStage !== 'all') r = r.filter(d => (d.sgipStage || '(empty)') === state.filters.sgipStage);
+  if (state.filters.sgipStatus !== 'all') r = r.filter(d => (d.sgipStatus || '(empty)') === state.filters.sgipStatus);
+  if (state.filters.icfProgress !== 'all') r = r.filter(d => d.icfProgress === state.filters.icfProgress);
+  if (state.filters.installer !== 'all') r = r.filter(d => { let v = d.installer; if (!v || v === '(No value)') v = '(empty)'; return v === state.filters.installer; });
   
   r.sort((a, b) => { 
     let av, bv;
@@ -207,7 +204,13 @@ function getFilteredData() {
     else if (state.sortBy === 'incentive') { av = parseNum(a.currentIncentive); bv = parseNum(b.currentIncentive); }
     else if (state.sortBy === 'name') { av = a.customerName || ''; bv = b.customerName || ''; }
     else if (state.sortBy === 'stage') { av = getStageInfo(a.icfProgress).stage; bv = getStageInfo(b.icfProgress).stage; }
-    return state.sortDir === 'asc' ? (av > bv ? 1 : -1) : (av < bv ? 1 : -1);
+    else if (state.sortBy === 'nextDue') { 
+      const da = parseDate(a.nextDueDate), db = parseDate(b.nextDueDate);
+      av = da ? da.getTime() : (state.sortDir === 'asc' ? Infinity : -Infinity);
+      bv = db ? db.getTime() : (state.sortDir === 'asc' ? Infinity : -Infinity);
+    }
+    if (typeof av === 'string') return state.sortDir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av);
+    return state.sortDir === 'asc' ? av - bv : bv - av;
   });
   return r;
 }
@@ -223,7 +226,7 @@ const getPTOStyle = d => (!d || d === '(No value)' || d === 'None') ? 'bg-slate-
 const getDaysColor = d => d === null ? 'text-slate-600' : d > 90 ? 'text-red-400' : d > 60 ? 'text-amber-400' : d > 30 ? 'text-yellow-400' : 'text-slate-300';
 
 function setTab(t) { state.tab = t; state.search = ''; render(); }
-function updateSearch(v) { state.search = v; render(); }
+function updateSearch(v) { state.search = v; if (searchTimeout) clearTimeout(searchTimeout); searchTimeout = setTimeout(() => render(), 150); }
 function setSort(col) { if (state.sortBy === col) state.sortDir = state.sortDir === 'asc' ? 'desc' : 'asc'; else { state.sortBy = col; state.sortDir = 'desc'; } render(); }
 function setFilter(key, val) { state.filters[key] = val; render(); }
 function clearFilters() { Object.keys(state.filters).forEach(k => state.filters[k] = 'all'); state.search = ''; render(); }
@@ -233,7 +236,6 @@ function filterHeader(label, filterKey, sortKey, options, editable = false) {
   const isFiltered = state.filters[filterKey] !== 'all';
   const isSorted = state.sortBy === sortKey;
   const sortIcon = isSorted ? (state.sortDir === 'asc' ? ' ↑' : ' ↓') : '';
-  
   return `
     <th class="px-2 py-3 text-left text-xs font-semibold uppercase">
       <div class="dropdown">
@@ -242,27 +244,13 @@ function filterHeader(label, filterKey, sortKey, options, editable = false) {
           <svg class="w-3 h-3 inline ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
         </span>
         <div class="dropdown-menu">
-          ${sortKey ? `
-          <div class="p-2 border-b border-slate-700">
-            <div class="text-[10px] text-slate-500 uppercase mb-1">Sort</div>
-            <div class="dropdown-item rounded ${isSorted && state.sortDir === 'desc' ? 'active' : ''}" onclick="setSort('${sortKey}')">Newest/Highest First</div>
-            <div class="dropdown-item rounded ${isSorted && state.sortDir === 'asc' ? 'active' : ''}" onclick="state.sortBy='${sortKey}'; state.sortDir='asc'; render();">Oldest/Lowest First</div>
-          </div>
-          ` : ''}
-          <div class="p-2">
-            <div class="text-[10px] text-slate-500 uppercase mb-1">Filter</div>
-            <div class="dropdown-item rounded ${state.filters[filterKey] === 'all' ? 'active' : ''}" onclick="setFilter('${filterKey}', 'all')">All <span class="text-slate-500">(${DATA.matched.length})</span></div>
-            ${options.map(([val, cnt]) => `
-              <div class="dropdown-item rounded ${state.filters[filterKey] === val ? 'active' : ''}" onclick="setFilter('${filterKey}', '${val.replace(/'/g, "\\'")}')">
-                <span>${val.length > 25 ? val.substring(0,23)+'..' : val}</span>
-                <span class="text-slate-500">(${cnt})</span>
-              </div>
-            `).join('')}
+          ${sortKey ? `<div class="p-2 border-b border-slate-700"><div class="text-[10px] text-slate-500 uppercase mb-1">Sort</div><div class="dropdown-item rounded ${isSorted && state.sortDir === 'desc' ? 'active' : ''}" onclick="setSort('${sortKey}')">Newest/Highest First</div><div class="dropdown-item rounded ${isSorted && state.sortDir === 'asc' ? 'active' : ''}" onclick="state.sortBy='${sortKey}'; state.sortDir='asc'; render();">Oldest/Lowest First</div></div>` : ''}
+          <div class="p-2"><div class="text-[10px] text-slate-500 uppercase mb-1">Filter</div><div class="dropdown-item rounded ${state.filters[filterKey] === 'all' ? 'active' : ''}" onclick="setFilter('${filterKey}', 'all')">All <span class="text-slate-500">(${DATA.matched.length})</span></div>
+            ${options.map(([val, cnt]) => `<div class="dropdown-item rounded ${state.filters[filterKey] === val ? 'active' : ''}" onclick="setFilter('${filterKey}', '${val.replace(/'/g, "\\'")}')"><span>${val.length > 25 ? val.substring(0,23)+'..' : val}</span><span class="text-slate-500">(${cnt})</span></div>`).join('')}
           </div>
         </div>
       </div>
-    </th>
-  `;
+    </th>`;
 }
 
 function render() {
@@ -271,7 +259,6 @@ function render() {
   const stageCounts = {}; DATA.matched.forEach(d => stageCounts[d.icfProgress] = (stageCounts[d.icfProgress] || 0) + 1);
   const activeStages = STAGES.filter(s => stageCounts[s.key] > 0);
 
-  // Get filter options
   const permitOpts = getFilterCounts('permitStatus');
   const inspectOpts = getFilterCounts('inspectionStatus', v => (!v || v === '(No value)') ? '(empty)' : v);
   const ptoOpts = [['Complete', DATA.matched.filter(d => d.ptoDate && d.ptoDate !== '(No value)' && d.ptoDate !== 'None').length], ['Pending', DATA.matched.filter(d => !d.ptoDate || d.ptoDate === '(No value)' || d.ptoDate === 'None').length]];
@@ -288,7 +275,6 @@ function render() {
           <div><h1 class="text-lg font-bold bg-gradient-to-r from-emerald-400 to-cyan-400 bg-clip-text text-transparent">Haven Energy</h1><p class="text-xs text-slate-400">Post-Install Portal</p></div>
         </div>
         <div class="flex items-center gap-2">
-          ${hasActiveFilters() ? `<button onclick="clearFilters()" class="px-3 py-1.5 text-xs bg-emerald-600 hover:bg-emerald-500 rounded-lg">Clear Filters</button>` : ''}
           <button onclick="showConfig()" class="px-3 py-1.5 text-xs bg-slate-700 hover:bg-slate-600 rounded-lg">⚙️</button>
         </div>
       </div>
@@ -312,21 +298,31 @@ function render() {
           <div class="flex rounded overflow-hidden h-6 bg-slate-900">${activeStages.map(s => { const cnt = stageCounts[s.key] || 0, pct = (cnt / DATA.matched.length) * 100; return pct < 0.5 ? '' : `<div style="width:${pct}%;background:${s.color};min-width:18px" class="flex items-center justify-center text-white text-xs font-bold">${cnt}</div>`; }).join('')}</div>
           <div class="flex flex-wrap gap-2 mt-2">${activeStages.map(s => `<span class="flex items-center gap-1 text-xs"><span class="w-2 h-2 rounded-full" style="background:${s.color}"></span><span class="text-slate-500">${s.label}</span></span>`).join('')}</div>
         </div>
-        <div class="mb-4"><input type="text" placeholder="Search customer, code, email, installer..." class="w-full max-w-md px-4 py-2 rounded-lg bg-slate-800 border border-slate-700 text-sm" value="${state.search}" oninput="updateSearch(this.value)"></div>
+        
+        <!-- Search and ICF Progress Filter Row -->
+        <div class="flex flex-wrap gap-3 mb-4 items-center">
+          <input type="text" placeholder="Search customer, code, email, installer..." class="flex-1 min-w-[250px] max-w-md px-4 py-2 rounded-lg bg-slate-800 border border-slate-700 text-sm" value="${state.search}" oninput="updateSearch(this.value)">
+          <select class="px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-sm" onchange="setFilter('icfProgress', this.value)">
+            <option value="all" ${state.filters.icfProgress === 'all' ? 'selected' : ''}>All ICF Stages</option>
+            ${icfOpts.map(([val, cnt]) => `<option value="${val}" ${state.filters.icfProgress === val ? 'selected' : ''}>${val} (${cnt})</option>`).join('')}
+          </select>
+          ${hasActiveFilters() ? `<button onclick="clearFilters()" class="px-4 py-2 bg-red-600 hover:bg-red-500 rounded-lg text-sm font-medium">✕ Clear All Filters</button>` : ''}
+        </div>
+        
         <div class="bg-slate-800/50 rounded-lg border border-slate-700/50 overflow-hidden">
           <div class="px-3 py-2 border-b border-slate-700/50 text-sm"><span class="font-semibold">${filtered.length}</span> deals ${hasActiveFilters() ? '<span class="text-emerald-400">(filtered)</span>' : ''}</div>
-          <div class="overflow-x-auto">
+          <div class="table-container overflow-x-auto">
             <table class="w-full text-sm">
-              <thead class="bg-slate-900/50"><tr>
+              <thead class="sticky-header"><tr>
                 <th class="px-2 py-3 text-left text-xs font-semibold text-slate-400 uppercase cursor-pointer" onclick="setSort('name')">Customer ${state.sortBy === 'name' ? (state.sortDir === 'asc' ? '↑' : '↓') : ''}</th>
-                <th class="px-2 py-3 text-left text-xs font-semibold text-slate-400 uppercase cursor-pointer" onclick="setSort('daysSinceInstall')">Days ${state.sortBy === 'daysSinceInstall' ? (state.sortDir === 'asc' ? '↑' : '↓') : ''}</th>
+                <th class="px-2 py-3 text-left text-xs font-semibold text-slate-400 uppercase cursor-pointer" onclick="setSort('daysSinceInstall')">Days Post-Install ${state.sortBy === 'daysSinceInstall' ? (state.sortDir === 'asc' ? '↑' : '↓') : ''}</th>
                 ${filterHeader('Permit', 'permitStatus', null, permitOpts, true)}
-                ${filterHeader('PTO', 'ptoStatus', null, ptoOpts, true)}
                 ${filterHeader('Inspection', 'inspectionStatus', null, inspectOpts, true)}
+                ${filterHeader('PTO', 'ptoStatus', null, ptoOpts, true)}
                 ${filterHeader('SGIP Stage', 'sgipStage', null, sgipStageOpts)}
                 ${filterHeader('SGIP Status', 'sgipStatus', null, sgipStatusOpts)}
                 ${filterHeader('ICF Progress', 'icfProgress', 'stage', icfOpts)}
-                <th class="px-2 py-3 text-left text-xs font-semibold text-slate-400 uppercase">Next Due</th>
+                <th class="px-2 py-3 text-left text-xs font-semibold text-slate-400 uppercase cursor-pointer" onclick="setSort('nextDue')">Next Due ${state.sortBy === 'nextDue' ? (state.sortDir === 'asc' ? '↑' : '↓') : ''}</th>
                 <th class="px-2 py-3 text-left text-xs font-semibold text-slate-400 uppercase cursor-pointer" onclick="setSort('incentive')">Incentive ${state.sortBy === 'incentive' ? (state.sortDir === 'asc' ? '↑' : '↓') : ''}</th>
                 ${filterHeader('Installer', 'installer', null, installerOpts)}
               </tr></thead>
@@ -336,8 +332,8 @@ function render() {
                   <td class="px-2 py-2"><div class="min-w-[150px]"><p class="font-medium">${d.customerName||d.dealName||'—'}</p>${d.applicationCode?`<span class="text-xs text-cyan-400 mono">${d.applicationCode}</span>`:''}</div></td>
                   <td class="px-2 py-2"><span class="font-semibold ${getDaysColor(d.daysSinceInstall)}">${d.daysSinceInstall!==null?d.daysSinceInstall+'d':'—'}</span></td>
                   <td class="px-2 py-2"><span class="editable px-1.5 py-0.5 rounded text-xs border ${getPermitStyle(d.permitStatus)}" onclick="openEditModal(${i}, 'permitStatus')">${d.permitStatus||'—'}</span></td>
-                  <td class="px-2 py-2"><span class="editable px-1.5 py-0.5 rounded text-xs border ${getPTOStyle(d.ptoDate)}" onclick="openEditModal(${i}, 'ptoDate')">${d.ptoDate&&d.ptoDate!=='(No value)'&&d.ptoDate!=='None'?d.ptoDate:'Pending'}</span></td>
                   <td class="px-2 py-2"><span class="editable px-1.5 py-0.5 rounded text-xs border ${getInspectionStyle(d.inspectionStatus)}" onclick="openEditModal(${i}, 'inspectionStatus')">${d.inspectionStatus&&d.inspectionStatus!=='(No value)'?d.inspectionStatus:'—'}</span></td>
+                  <td class="px-2 py-2"><span class="editable px-1.5 py-0.5 rounded text-xs border ${getPTOStyle(d.ptoDate)}" onclick="openEditModal(${i}, 'ptoDate')">${d.ptoDate&&d.ptoDate!=='(No value)'&&d.ptoDate!=='None'?d.ptoDate:'Pending'}</span></td>
                   <td class="px-2 py-2 text-xs">${d.sgipStage||'—'}</td>
                   <td class="px-2 py-2 text-xs text-slate-400">${d.sgipStatus||'—'}</td>
                   <td class="px-2 py-2"><span class="px-1.5 py-0.5 rounded text-xs font-medium" style="background:${info.color}20;color:${info.color}">${info.label}</span></td>
@@ -355,9 +351,9 @@ function render() {
           <p class="text-sm text-slate-400 mt-1">${DATA.hubspotWithoutSgip.length} installs need SGIP applications.</p>
         </div>
         <div class="bg-slate-800/50 rounded-lg border border-slate-700/50 overflow-hidden">
-          <div class="overflow-x-auto">
+          <div class="table-container overflow-x-auto">
             <table class="w-full text-sm">
-              <thead class="bg-slate-900/50"><tr>
+              <thead class="sticky-header"><tr>
                 <th class="px-3 py-3 text-left text-xs font-semibold text-slate-400 uppercase">Customer</th>
                 <th class="px-3 py-3 text-left text-xs font-semibold text-slate-400 uppercase">Email</th>
                 <th class="px-3 py-3 text-left text-xs font-semibold text-slate-400 uppercase">Install Date</th>
