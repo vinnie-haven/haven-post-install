@@ -52,6 +52,10 @@
           <p id="sgipStatus" class="text-xs text-slate-500 mt-2"></p>
         </div>
       </div>
+      <div id="matchStats" class="mt-4 p-3 bg-slate-900 rounded-lg text-xs hidden">
+        <div class="font-semibold mb-1">Match Statistics:</div>
+        <div id="matchStatsContent"></div>
+      </div>
       <div class="flex gap-3 mt-6">
         <button onclick="closeUploadModal()" class="flex-1 px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg font-medium">Close</button>
       </div>
@@ -81,6 +85,7 @@ let DATA = { matched: [], hubspotWithoutSgip: [] };
 let HUBSPOT_DATA = [];
 let SGIP_DATA = [];
 let SEARCH_INDEX = [];
+let MATCH_STATS = { byEmail: 0, byAddress: 0, noMatch: 0 };
 let state = { 
   tab: 'matched', 
   search: '', 
@@ -94,6 +99,40 @@ let state = {
 };
 
 let searchTimeout = null;
+
+// ============ ADDRESS NORMALIZATION ============
+
+function normalizeAddress(addr) {
+  if (!addr) return '';
+  // Take only first line (before newline or comma with city)
+  let normalized = addr.split('\n')[0].split(',')[0];
+  // Lowercase, remove extra spaces, common abbreviations
+  normalized = normalized.toLowerCase().trim()
+    .replace(/\s+/g, ' ')
+    .replace(/\bstreet\b/g, 'st')
+    .replace(/\bavenue\b/g, 'ave')
+    .replace(/\bdrive\b/g, 'dr')
+    .replace(/\broad\b/g, 'rd')
+    .replace(/\bcourt\b/g, 'ct')
+    .replace(/\bcircle\b/g, 'cir')
+    .replace(/\blane\b/g, 'ln')
+    .replace(/\bplace\b/g, 'pl')
+    .replace(/\bboulevard\b/g, 'blvd')
+    .replace(/\./g, '')
+    .replace(/,/g, '')
+    .trim();
+  return normalized;
+}
+
+function extractAddressFromDealName(dealName) {
+  if (!dealName) return '';
+  // Format: "Name : Address" or "Name (SGIP)" or just "Name"
+  const parts = dealName.split(':');
+  if (parts.length > 1) {
+    return normalizeAddress(parts[1].trim());
+  }
+  return '';
+}
 
 // ============ DATA PROCESSING ============
 
@@ -132,20 +171,38 @@ function getIcfProgress(stage, status) {
 }
 
 function mergeData() {
+  // Build SGIP lookups
   const sgipByEmail = {};
+  const sgipByAddress = {};
+  
   SGIP_DATA.forEach(s => {
     const email = (s.email || '').toLowerCase().trim();
     if (email) sgipByEmail[email] = s;
+    
+    const addr = normalizeAddress(s.siteAddress);
+    if (addr) sgipByAddress[addr] = s;
   });
 
   const matched = [];
   const hubspotWithoutSgip = [];
+  MATCH_STATS = { byEmail: 0, byAddress: 0, noMatch: 0 };
 
-  console.log('Merging:', HUBSPOT_DATA.length, 'HubSpot,', SGIP_DATA.length, 'SGIP,', Object.keys(sgipByEmail).length, 'unique SGIP emails');
+  console.log('Merging:', HUBSPOT_DATA.length, 'HubSpot,', SGIP_DATA.length, 'SGIP');
+  console.log('SGIP emails:', Object.keys(sgipByEmail).length, 'addresses:', Object.keys(sgipByAddress).length);
 
   HUBSPOT_DATA.forEach(h => {
     const email = (h.email || '').toLowerCase().trim();
-    const sgip = sgipByEmail[email];
+    const hubspotAddr = extractAddressFromDealName(h.dealName);
+    
+    // Try email match first
+    let sgip = sgipByEmail[email];
+    let matchType = 'email';
+    
+    // If no email match, try address match
+    if (!sgip && hubspotAddr) {
+      sgip = sgipByAddress[hubspotAddr];
+      matchType = 'address';
+    }
     
     const record = {
       ...h,
@@ -157,21 +214,40 @@ function mergeData() {
       nextDueDate: sgip?.nextDueDate || '',
       siteAddress: sgip?.siteAddress || '',
       utility: sgip?.utility || '',
-      icfProgress: getIcfProgress(sgip?.sgipStage || '', sgip?.sgipStatus || '')
+      icfProgress: getIcfProgress(sgip?.sgipStage || '', sgip?.sgipStatus || ''),
+      matchType: sgip ? matchType : null
     };
 
     if (sgip?.applicationCode) {
       matched.push(record);
+      if (matchType === 'email') MATCH_STATS.byEmail++;
+      else MATCH_STATS.byAddress++;
     } else {
       hubspotWithoutSgip.push(record);
+      MATCH_STATS.noMatch++;
     }
   });
 
+  console.log('Match stats:', MATCH_STATS);
   console.log('Result:', matched.length, 'matched,', hubspotWithoutSgip.length, 'without SGIP');
 
   DATA = { matched, hubspotWithoutSgip };
   buildSearchIndex();
+  updateMatchStatsDisplay();
   render();
+}
+
+function updateMatchStatsDisplay() {
+  const statsDiv = document.getElementById('matchStats');
+  const contentDiv = document.getElementById('matchStatsContent');
+  if (statsDiv && contentDiv && (MATCH_STATS.byEmail > 0 || MATCH_STATS.byAddress > 0)) {
+    statsDiv.classList.remove('hidden');
+    contentDiv.innerHTML = `
+      <span class="text-emerald-400">✓ ${MATCH_STATS.byEmail} by email</span> · 
+      <span class="text-cyan-400">✓ ${MATCH_STATS.byAddress} by address</span> · 
+      <span class="text-amber-400">${MATCH_STATS.noMatch} unmatched</span>
+    `;
+  }
 }
 
 function buildSearchIndex() {
@@ -332,13 +408,13 @@ function handleSgipFile(file) {
         nextDueDate: row['Next Due Date'] || '',
         siteAddress: row['Site Address'] || '',
         utility: row['Electric Utility'] || ''
-      })).filter(s => s.email);
+      })).filter(s => s.email || s.siteAddress); // Keep if has email OR address
       
       state.sgipLoaded = true;
       updateUploadStatus();
       mergeData();
       
-      console.log('SGIP loaded:', SGIP_DATA.length, 'records with email');
+      console.log('SGIP loaded:', SGIP_DATA.length, 'records');
     },
     error: function(err) {
       console.error('SGIP parse error:', err);
@@ -455,7 +531,8 @@ function filterHeader(label, filterKey, sortKey, options, editable = false) {
 function customerCell(d) {
   const url = getHubSpotUrl(d.dealId);
   const name = d.customerName || d.dealName || '—';
-  return url ? `<a href="${url}" target="_blank" class="font-medium text-cyan-400 hover:text-cyan-300 hover:underline">${name}</a>` : `<span class="font-medium">${name}</span>`;
+  const matchBadge = d.matchType === 'address' ? '<span class="ml-1 text-[9px] px-1 py-0.5 bg-cyan-900/50 text-cyan-400 rounded">addr</span>' : '';
+  return url ? `<a href="${url}" target="_blank" class="font-medium text-cyan-400 hover:text-cyan-300 hover:underline">${name}</a>${matchBadge}` : `<span class="font-medium">${name}</span>${matchBadge}`;
 }
 
 function render() {
@@ -515,7 +592,7 @@ function render() {
           ${hasActiveFilters() ? `<button onclick="clearFilters()" class="px-4 py-2 bg-red-600 hover:bg-red-500 rounded-lg text-sm font-medium">✕ Clear Filters</button>` : ''}
         </div>
         <div class="bg-slate-800/50 rounded-lg border border-slate-700/50 overflow-hidden">
-          <div class="px-3 py-2 border-b border-slate-700/50 text-sm"><span class="font-semibold">${filtered.length}</span> deals ${hasActiveFilters() ? '<span class="text-emerald-400">(filtered)</span>' : ''} <span class="text-slate-500 text-xs ml-2">• Click name to open HubSpot</span></div>
+          <div class="px-3 py-2 border-b border-slate-700/50 text-sm"><span class="font-semibold">${filtered.length}</span> deals ${hasActiveFilters() ? '<span class="text-emerald-400">(filtered)</span>' : ''} <span class="text-slate-500 text-xs ml-2">• Click name to open HubSpot • <span class="text-cyan-400">addr</span> = matched by address</span></div>
           <div class="table-container overflow-x-auto">
             <table class="w-full text-sm">
               <thead class="sticky-header"><tr>
@@ -553,7 +630,7 @@ function render() {
           </div>
         </div>
       ` : `
-        <div class="bg-amber-500/10 border border-amber-500/30 rounded-lg p-4 mb-4"><h3 class="font-semibold text-amber-400">HubSpot Installs Without SGIP Match</h3><p class="text-sm text-slate-400 mt-1">${DATA.hubspotWithoutSgip.length} deals - these don't have matching SGIP records by email.</p></div>
+        <div class="bg-amber-500/10 border border-amber-500/30 rounded-lg p-4 mb-4"><h3 class="font-semibold text-amber-400">HubSpot Installs Without SGIP Match</h3><p class="text-sm text-slate-400 mt-1">${DATA.hubspotWithoutSgip.length} deals - couldn't match by email or address.</p></div>
         <div class="bg-slate-800/50 rounded-lg border border-slate-700/50 overflow-hidden">
           <div class="table-container overflow-x-auto">
             <table class="w-full text-sm">
