@@ -34,18 +34,14 @@
 <body class="bg-slate-900 text-slate-100 min-h-screen">
   <div id="uploadModal" class="edit-modal hidden">
     <div class="bg-slate-800 rounded-xl p-6 max-w-2xl w-full mx-4 border border-slate-700">
-      <h2 class="text-xl font-bold mb-4">📤 Update SGIP Data</h2>
+      <h2 class="text-xl font-bold mb-4">📤 Upload SGIP Data</h2>
       <div>
         <h3 class="font-semibold text-emerald-400 mb-2">SGIP Data (CSV)</h3>
         <p class="text-sm text-slate-400 mb-3">HubSpot syncs automatically. Upload your SGIP CSV to merge with HubSpot data.</p>
-        <div id="sgipUploadZone" class="upload-zone rounded-lg p-6 text-center cursor-pointer"
-             onclick="document.getElementById('sgipFileInput').click()"
-             ondragover="event.preventDefault(); this.classList.add('dragover')"
-             ondragleave="this.classList.remove('dragover')"
-             ondrop="event.preventDefault(); this.classList.remove('dragover'); handleSgipFile(event.dataTransfer.files[0])">
+        <div id="sgipUploadZone" class="upload-zone rounded-lg p-6 text-center cursor-pointer">
           <div class="text-3xl mb-2">📄</div>
           <p class="text-sm text-slate-400">Drag & drop SGIP CSV here<br>or click to browse</p>
-          <input type="file" id="sgipFileInput" accept=".csv" class="hidden" onchange="handleSgipFile(this.files[0])">
+          <input type="file" id="sgipFileInput" accept=".csv" class="hidden">
         </div>
         <p id="sgipStatus" class="text-xs text-slate-500 mt-2"></p>
       </div>
@@ -68,7 +64,8 @@
 
   <div id="app">Loading...</div>
 
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <!-- Papa Parse for CSV - more reliable than custom parser -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
   
   <script>
 // Supabase config
@@ -112,7 +109,7 @@ async function loadFromSupabase() {
         dealId: String(d.id),
         dealName: d.deal_name,
         customerName: parseCustomerName(d.deal_name),
-        email: d.email || '',
+        email: (d.email || '').toLowerCase().trim(),
         installDate: d.install_date,
         permitStatus: mapPermit(d.permit_status),
         ptoDate: d.pto_date,
@@ -153,6 +150,7 @@ async function triggerSync() {
     if (result.success) {
       state.lastSync = new Date().toLocaleString();
       await loadFromSupabase();
+      alert(`Synced ${result.deals_synced} deals, ${result.emails_fetched} emails`);
     } else {
       alert('Sync failed: ' + (result.error || 'Unknown error'));
     }
@@ -201,6 +199,7 @@ function getIcfProgress(stage, status) {
 }
 
 function mergeData() {
+  // Build SGIP lookup by email
   const sgipByEmail = {};
   SGIP_DATA.forEach(s => {
     const email = (s.email || '').toLowerCase().trim();
@@ -210,29 +209,35 @@ function mergeData() {
   const matched = [];
   const hubspotWithoutSgip = [];
 
+  console.log('Merging data:', HUBSPOT_DATA.length, 'HubSpot records,', SGIP_DATA.length, 'SGIP records');
+  console.log('SGIP emails sample:', Object.keys(sgipByEmail).slice(0, 5));
+  console.log('HubSpot emails sample:', HUBSPOT_DATA.slice(0, 5).map(h => h.email));
+
   HUBSPOT_DATA.forEach(h => {
     const email = (h.email || '').toLowerCase().trim();
-    const sgip = sgipByEmail[email] || {};
+    const sgip = sgipByEmail[email];
     
     const record = {
       ...h,
-      applicationCode: sgip.applicationCode || '',
-      sgipStage: sgip.sgipStage || '',
-      sgipStatus: sgip.sgipStatus || '',
-      currentIncentive: sgip.currentIncentive || '',
-      finalIncentive: sgip.finalIncentive || '',
-      nextDueDate: sgip.nextDueDate || '',
-      siteAddress: sgip.siteAddress || '',
-      utility: sgip.utility || '',
-      icfProgress: getIcfProgress(sgip.sgipStage || '', sgip.sgipStatus || '')
+      applicationCode: sgip?.applicationCode || '',
+      sgipStage: sgip?.sgipStage || '',
+      sgipStatus: sgip?.sgipStatus || '',
+      currentIncentive: sgip?.currentIncentive || '',
+      finalIncentive: sgip?.finalIncentive || '',
+      nextDueDate: sgip?.nextDueDate || '',
+      siteAddress: sgip?.siteAddress || '',
+      utility: sgip?.utility || '',
+      icfProgress: getIcfProgress(sgip?.sgipStage || '', sgip?.sgipStatus || '')
     };
 
-    if (sgip.applicationCode) {
+    if (sgip?.applicationCode) {
       matched.push(record);
     } else {
       hubspotWithoutSgip.push(record);
     }
   });
+
+  console.log('Merge result:', matched.length, 'matched,', hubspotWithoutSgip.length, 'without SGIP');
 
   DATA = { matched, hubspotWithoutSgip };
   buildSearchIndex();
@@ -247,76 +252,94 @@ function buildSearchIndex() {
 
 // ============ FILE UPLOAD ============
 
+function setupUploadHandlers() {
+  const zone = document.getElementById('sgipUploadZone');
+  const input = document.getElementById('sgipFileInput');
+  
+  if (zone && input) {
+    zone.onclick = () => input.click();
+    
+    zone.ondragover = (e) => {
+      e.preventDefault();
+      zone.classList.add('dragover');
+    };
+    
+    zone.ondragleave = () => {
+      zone.classList.remove('dragover');
+    };
+    
+    zone.ondrop = (e) => {
+      e.preventDefault();
+      zone.classList.remove('dragover');
+      if (e.dataTransfer.files[0]) {
+        handleSgipFile(e.dataTransfer.files[0]);
+      }
+    };
+    
+    input.onchange = () => {
+      if (input.files[0]) {
+        handleSgipFile(input.files[0]);
+      }
+    };
+  }
+}
+
 function showUploadModal() {
   document.getElementById('uploadModal').classList.remove('hidden');
   document.getElementById('sgipStatus').textContent = state.lastSgipUpdate ? `Last updated: ${state.lastSgipUpdate}` : 'No SGIP data loaded yet';
+  // Re-attach handlers after modal is shown
+  setTimeout(setupUploadHandlers, 100);
 }
-function closeUploadModal() { document.getElementById('uploadModal').classList.add('hidden'); }
+
+function closeUploadModal() { 
+  document.getElementById('uploadModal').classList.add('hidden'); 
+}
 
 function handleSgipFile(file) {
-  if (!file) return;
-  const reader = new FileReader();
-  reader.onload = function(e) {
-    try {
-      const rows = parseCSV(e.target.result);
-      if (rows.length > 1) {
-        const headers = rows[0];
-        const emailIdx = headers.findIndex(h => h && h.toLowerCase().includes('host customer email'));
-        const codeIdx = headers.findIndex(h => h && h.toLowerCase().includes('application code'));
-        const stageIdx = headers.findIndex(h => h && h.toLowerCase() === 'stage');
-        const statusIdx = headers.findIndex(h => h && h.toLowerCase() === 'status');
-        const incentiveIdx = headers.findIndex(h => h && h.toLowerCase().includes('current incentive'));
-        const finalIdx = headers.findIndex(h => h && h.toLowerCase().includes('final incentive'));
-        const nextDueIdx = headers.findIndex(h => h && h.toLowerCase().includes('next due'));
-        const addressIdx = headers.findIndex(h => h && h.toLowerCase().includes('site address'));
-        const utilityIdx = headers.findIndex(h => h && h.toLowerCase().includes('electric utility'));
-
-        SGIP_DATA = [];
-        for (let i = 1; i < rows.length; i++) {
-          const row = rows[i];
-          const email = (row[emailIdx] || '').toLowerCase().trim();
-          if (email) {
-            SGIP_DATA.push({
-              email,
-              applicationCode: row[codeIdx] || '',
-              sgipStage: row[stageIdx] || '',
-              sgipStatus: row[statusIdx] || '',
-              currentIncentive: row[incentiveIdx] || '',
-              finalIncentive: row[finalIdx] || '',
-              nextDueDate: row[nextDueIdx] || '',
-              siteAddress: row[addressIdx] || '',
-              utility: row[utilityIdx] || ''
-            });
-          }
-        }
+  console.log('Processing file:', file.name, file.size, 'bytes');
+  document.getElementById('sgipStatus').innerHTML = '<span class="text-blue-400">Processing...</span>';
+  
+  Papa.parse(file, {
+    header: true,
+    skipEmptyLines: true,
+    complete: function(results) {
+      console.log('Parsed rows:', results.data.length);
+      console.log('Headers:', Object.keys(results.data[0] || {}));
+      
+      if (results.data.length > 0) {
+        SGIP_DATA = results.data.map(row => ({
+          email: (row['Host Customer Email'] || '').toLowerCase().trim(),
+          applicationCode: row['Application Code'] || '',
+          sgipStage: row['Stage'] || '',
+          sgipStatus: row['Status'] || '',
+          currentIncentive: row['Current Incentive ($)'] || '',
+          finalIncentive: row['Final Incentive (ICF)'] || '',
+          nextDueDate: row['Next Due Date'] || '',
+          siteAddress: row['Site Address'] || '',
+          utility: row['Electric Utility'] || ''
+        })).filter(s => s.email);
+        
+        console.log('SGIP records with email:', SGIP_DATA.length);
         
         state.lastSgipUpdate = new Date().toLocaleString();
         document.getElementById('sgipStatus').innerHTML = `<span class="text-emerald-400">✓ Loaded ${SGIP_DATA.length} SGIP records</span>`;
+        
         mergeData();
         render();
+        
+        // Show match result
+        setTimeout(() => {
+          alert(`Loaded ${SGIP_DATA.length} SGIP records.\nMatched ${DATA.matched.length} with HubSpot.`);
+        }, 100);
+      } else {
+        document.getElementById('sgipStatus').innerHTML = '<span class="text-red-400">No data found in file</span>';
       }
-    } catch (err) {
+    },
+    error: function(err) {
+      console.error('Parse error:', err);
       document.getElementById('sgipStatus').innerHTML = `<span class="text-red-400">Error: ${err.message}</span>`;
     }
-  };
-  reader.readAsText(file);
-}
-
-function parseCSV(text) {
-  const lines = text.split('\n');
-  const result = [];
-  for (let line of lines) {
-    const row = [];
-    let inQuote = false, cell = '';
-    for (let c of line) {
-      if (c === '"') inQuote = !inQuote;
-      else if (c === ',' && !inQuote) { row.push(cell.trim()); cell = ''; }
-      else cell += c;
-    }
-    row.push(cell.trim());
-    if (row.some(c => c)) result.push(row);
-  }
-  return result;
+  });
 }
 
 // ============ UI HELPERS ============
@@ -455,7 +478,7 @@ function render() {
         <div class="flex items-center gap-2">
           <button onclick="triggerSync()" class="sync-btn ${state.syncing ? 'syncing' : ''} px-3 py-1.5 text-xs bg-blue-600 hover:bg-blue-500 rounded-lg font-medium" ${state.syncing ? 'disabled' : ''}>${state.syncing ? '⟳ Syncing...' : '⟳ Sync HubSpot'}</button>
           <button onclick="showUploadModal()" class="px-3 py-1.5 text-xs bg-emerald-600 hover:bg-emerald-500 rounded-lg font-medium">📤 Upload SGIP</button>
-          ${state.lastSync ? `<span class="text-xs text-slate-500">Last sync: ${state.lastSync}</span>` : ''}
+          ${state.lastSync ? `<span class="text-xs text-slate-500">Synced: ${state.lastSync}</span>` : ''}
         </div>
       </div>
     </div>
@@ -465,6 +488,7 @@ function render() {
         <button onclick="setTab('noSgip')" class="px-4 py-2 rounded-lg text-sm font-medium ${state.tab === 'noSgip' ? 'bg-amber-500/20 text-amber-400 border border-amber-500/40' : 'bg-slate-800/50 text-slate-400 border border-slate-700/50'}">HubSpot Without SGIP (${DATA.hubspotWithoutSgip.length})</button>
       </div>
       ${state.tab === 'matched' ? `
+        ${DATA.matched.length === 0 && HUBSPOT_DATA.length > 0 ? `<div class="bg-amber-500/10 border border-amber-500/30 rounded-lg p-4 mb-4"><h3 class="font-semibold text-amber-400">No matches yet</h3><p class="text-sm text-slate-400 mt-1">${HUBSPOT_DATA.length} HubSpot deals loaded. Click "Upload SGIP" to upload your SGIP CSV and match by email.</p></div>` : ''}
         <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-2 mb-4">
           <div class="bg-slate-800/50 rounded-lg p-3 border border-slate-700/50"><p class="text-slate-500 text-xs uppercase">Total</p><p class="text-lg font-bold">${stats.total}</p></div>
           <div class="bg-slate-800/50 rounded-lg p-3 border border-slate-700/50"><p class="text-slate-500 text-xs uppercase">Permitted</p><p class="text-lg font-bold">${stats.permitted}</p></div>
@@ -497,7 +521,7 @@ function render() {
                 <th class="px-2 py-3 text-left text-xs font-semibold text-slate-400 uppercase cursor-pointer" onclick="setSort('incentive')">Incentive ${state.sortBy === 'incentive' ? (state.sortDir === 'asc' ? '↑' : '↓') : ''}</th>
                 ${filterHeader('Installer', 'installer', null, installerOpts)}
               </tr></thead>
-              <tbody class="divide-y divide-slate-700/30">${filtered.length === 0 ? '<tr><td colspan="12" class="p-8 text-center text-slate-500">No deals found. Click "Sync HubSpot" and upload SGIP CSV.</td></tr>' : filtered.map((d, i) => {
+              <tbody class="divide-y divide-slate-700/30">${filtered.length === 0 ? '<tr><td colspan="12" class="p-8 text-center text-slate-500">No deals found. Upload SGIP CSV to match with HubSpot data.</td></tr>' : filtered.map((d, i) => {
                 const info = getStageInfo(d.icfProgress);
                 return `<tr class="hover:bg-slate-800/50">
                   <td class="px-2 py-2"><div class="min-w-[150px]">${customerCell(d)}${d.applicationCode?`<br><span class="text-xs text-slate-500 mono">${d.applicationCode}</span>`:''}</div></td>
