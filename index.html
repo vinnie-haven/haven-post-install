@@ -15,7 +15,7 @@
     .edit-modal { position: fixed; inset: 0; background: rgba(0,0,0,0.7); display: flex; align-items: center; justify-content: center; z-index: 100; }
     .dropdown { position: relative; display: inline-block; }
     .dropdown-menu { display: none; position: absolute; top: 100%; left: 0; z-index: 50; min-width: 250px; max-height: 400px; overflow-y: auto; background: #1e293b; border: 1px solid #334155; border-radius: 8px; box-shadow: 0 10px 40px rgba(0,0,0,0.5); margin-top: 4px; }
-    .dropdown:hover .dropdown-menu { display: block; }
+    .dropdown-menu.open { display: block; }
     .checkbox-item { padding: 6px 12px; cursor: pointer; font-size: 12px; display: flex; align-items: center; gap: 8px; }
     .checkbox-item:hover { background: #334155; }
     .checkbox-item input { accent-color: #10b981; width: 16px; height: 16px; }
@@ -866,7 +866,21 @@ function getPeriodicStats() {
 
 function getStats() {
   const m = DATA.matched;
-  return { total: m.length, paid: m.filter(d => d.icfProgress === 'Payment Completed').length, suspended: m.filter(d => (d.icfProgress || '').includes('Suspended')).length, totalIncentive: m.reduce((s, d) => s + parseNum(d.currentIncentive), 0), paidIncentive: m.filter(d => d.icfProgress === 'Payment Completed').reduce((s, d) => s + parseNum(d.finalIncentive), 0), ptoComplete: m.filter(d => d.ptoDate && d.ptoDate !== '(No value)' && d.ptoDate !== 'None').length, permitted: m.filter(d => d.permitStatus === 'Approved').length, noSgip: DATA.hubspotWithoutSgip.length };
+  // ICF Submitted = has icfSubmittedDate in SGIP data
+  const icfSubmittedTotal = SGIP_DATA.filter(d => d.icfSubmittedDate).length;
+  // ICF Approved = has icfPendingPaymentDate in SGIP data  
+  const icfApprovedTotal = SGIP_DATA.filter(d => d.icfPendingPaymentDate).length;
+  return { 
+    total: m.length, 
+    paid: m.filter(d => d.icfProgress === 'Payment Completed').length, 
+    suspended: m.filter(d => (d.icfProgress || '').includes('Suspended')).length, 
+    totalIncentive: m.reduce((s, d) => s + parseNum(d.currentIncentive), 0), 
+    paidIncentive: m.filter(d => d.icfProgress === 'Payment Completed').reduce((s, d) => s + parseNum(d.finalIncentive), 0), 
+    ptoComplete: m.filter(d => d.ptoDate && d.ptoDate !== '(No value)' && d.ptoDate !== 'None').length, 
+    permitted: m.filter(d => d.permitStatus === 'Approved').length,
+    icfSubmitted: icfSubmittedTotal,
+    icfApproved: icfApprovedTotal
+  };
 }
 
 const getPermitStyle = s => { if (!s) return 'bg-slate-800 text-slate-500 border-slate-700'; if (s === 'Approved') return 'bg-green-900/50 text-green-400 border-green-800'; if (s === 'Rejected') return 'bg-red-900/50 text-red-400 border-red-800'; if (s === 'Submitted' || s === 'Resubmitted') return 'bg-blue-900/50 text-blue-400 border-blue-800'; return 'bg-amber-900/50 text-amber-400 border-amber-800'; };
@@ -876,7 +890,65 @@ const getDaysColor = d => d === null ? 'text-slate-600' : d > 90 ? 'text-red-400
 
 function setTab(t) { state.tab = t; state.search = ''; render(); }
 function updateSearch(v) { state.search = v; if (searchTimeout) clearTimeout(searchTimeout); searchTimeout = setTimeout(() => render(), 150); }
-function setSort(col) { if (state.sortBy === col) state.sortDir = state.sortDir === 'asc' ? 'desc' : 'asc'; else { state.sortBy = col; state.sortDir = 'desc'; } render(); }
+function setSort(col) { if (state.sortBy === col) state.sortDir = state.sortDir === 'asc' ? 'desc' : 'asc'; else { state.sortBy = col; state.sortDir = 'desc'; } closeAllDropdowns(); render(); }
+
+// Dropdown management
+let openDropdownId = null;
+
+function toggleDropdown(id, event) {
+  event.stopPropagation();
+  const menu = document.getElementById(id);
+  if (!menu) return;
+  
+  if (menu.classList.contains('open')) {
+    menu.classList.remove('open');
+    openDropdownId = null;
+  } else {
+    // Close any other open dropdown
+    closeAllDropdowns();
+    menu.classList.add('open');
+    openDropdownId = id;
+  }
+}
+
+function closeAllDropdowns() {
+  document.querySelectorAll('.dropdown-menu.open').forEach(m => m.classList.remove('open'));
+  openDropdownId = null;
+}
+
+// Close dropdown when clicking outside
+document.addEventListener('click', function(e) {
+  if (!e.target.closest('.dropdown')) {
+    closeAllDropdowns();
+  }
+});
+
+function toggleFilterKeepOpen(key, val) { 
+  const idx = state.filters[key].indexOf(val); 
+  if (idx >= 0) state.filters[key].splice(idx, 1); 
+  else state.filters[key].push(val); 
+  renderKeepDropdown();
+}
+
+function selectAllFilterKeepOpen(key, options) { 
+  state.filters[key] = options.map(o => o[0]); 
+  renderKeepDropdown();
+}
+
+function clearFilterKeyKeepOpen(key) { 
+  state.filters[key] = []; 
+  renderKeepDropdown();
+}
+
+function renderKeepDropdown() {
+  const currentOpenId = openDropdownId;
+  render();
+  if (currentOpenId) {
+    const menu = document.getElementById(currentOpenId);
+    if (menu) menu.classList.add('open');
+  }
+}
+
 function toggleFilter(key, val) { const idx = state.filters[key].indexOf(val); if (idx >= 0) state.filters[key].splice(idx, 1); else state.filters[key].push(val); render(); }
 function selectAllFilter(key, options) { state.filters[key] = options.map(o => o[0]); render(); }
 function clearFilterKey(key) { state.filters[key] = []; render(); }
@@ -911,7 +983,36 @@ function filterHeader(label, filterKey, sortKey, options, editable = false) {
   const cnt = state.filters[filterKey].length;
   const isFiltered = cnt > 0;
   const isSorted = state.sortBy === sortKey;
-  return `<th class="px-2 py-3 text-left text-xs font-semibold uppercase"><div class="dropdown"><span class="cursor-pointer hover:text-slate-200 ${isFiltered ? 'filter-active' : 'text-slate-400'}">${label}${isSorted ? (state.sortDir === 'asc' ? ' ↑' : ' ↓') : ''}${isFiltered ? ` (${cnt})` : ''}${editable ? ' ✎' : ''}<svg class="w-3 h-3 inline ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg></span><div class="dropdown-menu" onclick="event.stopPropagation()">${sortKey ? `<div class="p-2 border-b border-slate-700"><div class="text-[10px] text-slate-500 uppercase mb-1">Sort</div><div class="dropdown-item rounded ${isSorted && state.sortDir === 'desc' ? 'active' : ''}" onclick="setSort('${sortKey}')">Highest First</div><div class="dropdown-item rounded ${isSorted && state.sortDir === 'asc' ? 'active' : ''}" onclick="state.sortBy='${sortKey}';state.sortDir='asc';render();">Lowest First</div></div>` : ''}<div class="p-2"><div class="flex justify-between items-center mb-2"><div class="text-[10px] text-slate-500 uppercase">Filter</div><div class="flex gap-1"><button onclick="selectAllFilter('${filterKey}',${JSON.stringify(options).replace(/"/g,'&quot;')})" class="text-[10px] px-2 py-0.5 bg-slate-700 hover:bg-slate-600 rounded">All</button><button onclick="clearFilterKey('${filterKey}')" class="text-[10px] px-2 py-0.5 bg-slate-700 hover:bg-slate-600 rounded">None</button></div></div>${options.map(([v,c]) => `<label class="checkbox-item rounded"><input type="checkbox" ${state.filters[filterKey].includes(v) ? 'checked' : ''} onchange="toggleFilter('${filterKey}','${v.replace(/'/g,"\\'")}')"><span class="flex-1">${v.length > 25 ? v.slice(0,23)+'..' : v}</span><span class="text-slate-500">(${c})</span></label>`).join('')}</div></div></div></th>`;
+  const dropdownId = `dropdown-${filterKey}`;
+  return `<th class="px-2 py-3 text-left text-xs font-semibold uppercase">
+    <div class="dropdown">
+      <span class="cursor-pointer hover:text-slate-200 ${isFiltered ? 'filter-active' : 'text-slate-400'}" onclick="toggleDropdown('${dropdownId}', event)">
+        ${label}${isSorted ? (state.sortDir === 'asc' ? ' ↑' : ' ↓') : ''}${isFiltered ? ` (${cnt})` : ''}${editable ? ' ✎' : ''}
+        <svg class="w-3 h-3 inline ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+      </span>
+      <div id="${dropdownId}" class="dropdown-menu" onclick="event.stopPropagation()">
+        ${sortKey ? `<div class="p-2 border-b border-slate-700">
+          <div class="text-[10px] text-slate-500 uppercase mb-1">Sort</div>
+          <div class="dropdown-item rounded px-2 py-1 cursor-pointer hover:bg-slate-700 ${isSorted && state.sortDir === 'desc' ? 'bg-slate-700' : ''}" onclick="setSort('${sortKey}')">Highest First</div>
+          <div class="dropdown-item rounded px-2 py-1 cursor-pointer hover:bg-slate-700 ${isSorted && state.sortDir === 'asc' ? 'bg-slate-700' : ''}" onclick="state.sortBy='${sortKey}';state.sortDir='asc';closeAllDropdowns();render();">Lowest First</div>
+        </div>` : ''}
+        <div class="p-2">
+          <div class="flex justify-between items-center mb-2">
+            <div class="text-[10px] text-slate-500 uppercase">Filter</div>
+            <div class="flex gap-1">
+              <button onclick="selectAllFilterKeepOpen('${filterKey}',${JSON.stringify(options).replace(/"/g,'&quot;')})" class="text-[10px] px-2 py-0.5 bg-slate-700 hover:bg-slate-600 rounded">All</button>
+              <button onclick="clearFilterKeyKeepOpen('${filterKey}')" class="text-[10px] px-2 py-0.5 bg-slate-700 hover:bg-slate-600 rounded">None</button>
+            </div>
+          </div>
+          ${options.map(([v,c]) => `<label class="checkbox-item rounded" onclick="event.stopPropagation()">
+            <input type="checkbox" ${state.filters[filterKey].includes(v) ? 'checked' : ''} onchange="toggleFilterKeepOpen('${filterKey}','${v.replace(/'/g,"\\'")}')">
+            <span class="flex-1">${v.length > 25 ? v.slice(0,23)+'..' : v}</span>
+            <span class="text-slate-500">(${c})</span>
+          </label>`).join('')}
+        </div>
+      </div>
+    </div>
+  </th>`;
 }
 
 function customerCell(d) {
@@ -960,14 +1061,15 @@ function render() {
         <button onclick="setTab('stats')" class="px-4 py-2 rounded-lg text-sm font-medium ${state.tab === 'stats' ? 'bg-blue-500/20 text-blue-400 border border-blue-500/40' : 'bg-slate-800/50 text-slate-400 border border-slate-700/50'}">📊 Weekly Stats</button>
       </div>
       ${state.tab === 'matched' ? `
-        <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-2 mb-4">
+        <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-2 mb-4">
           <div class="bg-slate-800/50 rounded-lg p-3 border border-slate-700/50"><p class="text-slate-500 text-xs uppercase">Total</p><p class="text-lg font-bold">${stats.total}</p></div>
           <div class="bg-slate-800/50 rounded-lg p-3 border border-slate-700/50"><p class="text-slate-500 text-xs uppercase">Permitted</p><p class="text-lg font-bold">${stats.permitted}</p></div>
           <div class="bg-slate-800/50 rounded-lg p-3 border border-slate-700/50"><p class="text-slate-500 text-xs uppercase">PTO Done</p><p class="text-lg font-bold">${stats.ptoComplete}</p></div>
+          <div class="bg-slate-800/50 rounded-lg p-3 border border-slate-700/50"><p class="text-slate-500 text-xs uppercase">ICF Submitted</p><p class="text-lg font-bold text-blue-400">${stats.icfSubmitted}</p></div>
+          <div class="bg-slate-800/50 rounded-lg p-3 border border-slate-700/50"><p class="text-slate-500 text-xs uppercase">ICF Approved</p><p class="text-lg font-bold text-purple-400">${stats.icfApproved}</p></div>
           <div class="bg-slate-800/50 rounded-lg p-3 border border-slate-700/50"><p class="text-slate-500 text-xs uppercase">Pipeline</p><p class="text-lg font-bold">${fmtCurrency(stats.totalIncentive)}</p></div>
           <div class="bg-slate-800/50 rounded-lg p-3 border border-slate-700/50"><p class="text-slate-500 text-xs uppercase">Paid</p><p class="text-lg font-bold text-emerald-400">${fmtCurrency(stats.paidIncentive)}</p></div>
           <div class="bg-slate-800/50 rounded-lg p-3 border border-slate-700/50"><p class="text-slate-500 text-xs uppercase">Suspended</p><p class="text-lg font-bold text-red-400">${stats.suspended}</p></div>
-          <div class="bg-slate-800/50 rounded-lg p-3 border border-slate-700/50"><p class="text-slate-500 text-xs uppercase">No SGIP</p><p class="text-lg font-bold text-amber-400">${stats.noSgip}</p></div>
         </div>
         ${activeStages.length > 0 ? `<div class="bg-slate-800/50 rounded-lg p-3 border border-slate-700/50 mb-4"><div class="flex rounded overflow-hidden h-6 bg-slate-900">${activeStages.map(s => { const cnt = stageCounts[s.key] || 0, pct = (cnt / DATA.matched.length) * 100; return pct < 0.5 ? '' : `<div style="width:${pct}%;background:${s.color};min-width:18px" class="flex items-center justify-center text-white text-xs font-bold">${cnt}</div>`; }).join('')}</div><div class="flex flex-wrap gap-2 mt-2">${activeStages.map(s => `<span class="flex items-center gap-1 text-xs"><span class="w-2 h-2 rounded-full" style="background:${s.color}"></span><span class="text-slate-500">${s.label}</span></span>`).join('')}</div></div>` : ''}
         <div class="flex flex-wrap gap-3 mb-4 items-center">
