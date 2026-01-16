@@ -129,23 +129,39 @@ let searchTimeout = null;
 async function loadSgipFromSupabase() {
   try {
     console.log('Loading SGIP from Supabase...');
-    const response = await fetch(`${SUPABASE_URL}/rest/v1/sgip_applications?select=*`, {
-      headers: {
-        'apikey': SUPABASE_ANON_KEY,
-        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
-      }
-    });
     
-    if (!response.ok) {
-      console.error('SGIP fetch failed:', response.status, response.statusText);
-      return false;
+    // Fetch all records (Supabase defaults to 1000 limit, so we need to paginate)
+    let allApplications = [];
+    let offset = 0;
+    const limit = 1000;
+    
+    while (true) {
+      const response = await fetch(`${SUPABASE_URL}/rest/v1/sgip_applications?select=*&limit=${limit}&offset=${offset}`, {
+        headers: {
+          'apikey': SUPABASE_ANON_KEY,
+          'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+        }
+      });
+      
+      if (!response.ok) {
+        console.error('SGIP fetch failed:', response.status, response.statusText);
+        break;
+      }
+      
+      const batch = await response.json();
+      if (!Array.isArray(batch) || batch.length === 0) break;
+      
+      allApplications = allApplications.concat(batch);
+      console.log(`SGIP batch: ${batch.length} records (total: ${allApplications.length})`);
+      
+      if (batch.length < limit) break; // Last page
+      offset += limit;
     }
     
-    const applications = await response.json();
-    console.log('SGIP response:', applications?.length || 0, 'records');
+    console.log('SGIP total response:', allApplications.length, 'records');
     
-    if (Array.isArray(applications) && applications.length > 0) {
-      SGIP_DATA = applications.map(a => ({
+    if (allApplications.length > 0) {
+      SGIP_DATA = allApplications.map(a => ({
         email: (a.email || '').toLowerCase().trim(),
         applicationCode: a.application_code || '',
         sgipStage: a.stage || '',
@@ -160,7 +176,7 @@ async function loadSgipFromSupabase() {
       state.sgipLoaded = true;
       
       // Get last updated time
-      const maxUpdated = applications.reduce((max, a) => {
+      const maxUpdated = allApplications.reduce((max, a) => {
         const t = new Date(a.updated_at).getTime();
         return t > max ? t : max;
       }, 0);
@@ -171,7 +187,7 @@ async function loadSgipFromSupabase() {
       console.log('SGIP loaded from Supabase:', SGIP_DATA.length, 'records');
       return true;
     } else {
-      console.log('SGIP: No data or empty array');
+      console.log('SGIP: No data found');
     }
   } catch (e) {
     console.error('Failed to load SGIP from Supabase:', e);
