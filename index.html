@@ -22,37 +22,25 @@
     .filter-active { color: #10b981 !important; }
     .table-container { max-height: calc(100vh - 380px); overflow-y: auto; }
     .sticky-header th { position: sticky; top: 0; background: #0f172a; z-index: 10; }
-    .upload-zone { border: 2px dashed #475569; transition: all 0.2s; min-height: 120px; }
+    .upload-zone { border: 2px dashed #475569; transition: all 0.2s; min-height: 100px; }
     .upload-zone:hover, .upload-zone.dragover { border-color: #10b981; background: rgba(16, 185, 129, 0.1); }
     .editable { cursor: pointer; transition: all 0.15s; }
     .editable:hover { background: rgba(16, 185, 129, 0.1); border-radius: 4px; }
+    .sync-btn.syncing { animation: pulse 1s infinite; }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
   </style>
 </head>
 <body class="bg-slate-900 text-slate-100 min-h-screen">
   <div id="uploadModal" class="edit-modal hidden">
-    <div class="bg-slate-800 rounded-xl p-6 max-w-3xl w-full mx-4 border border-slate-700">
-      <h2 class="text-xl font-bold mb-4">📤 Update Data</h2>
-      <div class="grid grid-cols-2 gap-4">
-        <div>
-          <h3 class="font-semibold text-emerald-400 mb-2">HubSpot Export (Excel)</h3>
-          <p class="text-xs text-slate-400 mb-2">Export from your VC_Installation Complete report</p>
-          <div id="hubspotUploadZone" class="upload-zone rounded-lg p-4 text-center cursor-pointer flex flex-col items-center justify-center">
-            <div class="text-2xl mb-1">📊</div>
-            <p class="text-xs text-slate-400">Drop .xlsx here</p>
-          </div>
-          <p id="hubspotStatus" class="text-xs text-slate-500 mt-2"></p>
-        </div>
-        <div>
-          <h3 class="font-semibold text-cyan-400 mb-2">SGIP Export (CSV)</h3>
-          <p class="text-xs text-slate-400 mb-2">Export from SGIP portal</p>
-          <div id="sgipUploadZone" class="upload-zone rounded-lg p-4 text-center cursor-pointer flex flex-col items-center justify-center">
-            <div class="text-2xl mb-1">📄</div>
-            <p class="text-xs text-slate-400">Drop .csv here</p>
-          </div>
-          <p id="sgipStatus" class="text-xs text-slate-500 mt-2"></p>
-        </div>
+    <div class="bg-slate-800 rounded-xl p-6 max-w-lg w-full mx-4 border border-slate-700">
+      <h2 class="text-xl font-bold mb-4">📤 Upload SGIP Data</h2>
+      <p class="text-sm text-slate-400 mb-3">HubSpot syncs automatically. Upload your SGIP CSV to merge.</p>
+      <div id="sgipUploadZone" class="upload-zone rounded-lg p-4 text-center cursor-pointer flex flex-col items-center justify-center">
+        <div class="text-2xl mb-1">📄</div>
+        <p class="text-xs text-slate-400">Drop SGIP .csv here</p>
       </div>
-      <div id="matchStats" class="mt-4 p-3 bg-slate-900 rounded-lg text-xs hidden">
+      <p id="sgipStatus" class="text-xs text-slate-500 mt-2"></p>
+      <div id="matchStats" class="mt-3 p-3 bg-slate-900 rounded-lg text-xs hidden">
         <div class="font-semibold mb-1">Match Statistics:</div>
         <div id="matchStatsContent"></div>
       </div>
@@ -76,9 +64,11 @@
   <div id="app">Loading...</div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   
   <script>
+// Supabase config
+const SUPABASE_URL = 'https://vnxerxefgodekwjdxfqc.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_BjuP0L7Bw2_903MXWqf6Ag_c5QOuB3r';
 const HUBSPOT_PORTAL_ID = '23929498';
 
 let DATA = { matched: [], hubspotWithoutSgip: [] };
@@ -94,11 +84,82 @@ let state = {
   sortDir: 'desc', 
   editingDeal: null, 
   editingField: null,
-  hubspotLoaded: false,
+  syncing: false,
+  lastSync: null,
   sgipLoaded: false
 };
 
 let searchTimeout = null;
+
+// ============ SUPABASE FUNCTIONS ============
+
+async function loadFromSupabase() {
+  try {
+    const response = await fetch(`${SUPABASE_URL}/rest/v1/deals?select=*`, {
+      headers: {
+        'apikey': SUPABASE_ANON_KEY,
+        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+      }
+    });
+    const deals = await response.json();
+    
+    if (Array.isArray(deals)) {
+      HUBSPOT_DATA = deals.map(d => ({
+        dealId: String(d.id),
+        dealName: d.deal_name,
+        customerName: parseCustomerName(d.deal_name),
+        email: (d.email || '').toLowerCase().trim(),
+        installDate: d.install_date,
+        permitStatus: mapPermit(d.permit_status),
+        ptoDate: d.pto_date,
+        inspectionStatus: mapInspection(d.inspection_status),
+        sgipStatusHubspot: d.sgip_status_hubspot,
+        installer: d.installer
+      }));
+      
+      // Get last sync time
+      const syncResponse = await fetch(`${SUPABASE_URL}/rest/v1/sync_log?select=completed_at&order=completed_at.desc&limit=1`, {
+        headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` }
+      });
+      const syncLog = await syncResponse.json();
+      if (syncLog?.[0]?.completed_at) {
+        state.lastSync = new Date(syncLog[0].completed_at).toLocaleString();
+      }
+      
+      mergeData();
+      return true;
+    }
+  } catch (e) {
+    console.error('Failed to load from Supabase:', e);
+  }
+  return false;
+}
+
+async function triggerSync() {
+  state.syncing = true;
+  render();
+  
+  try {
+    const response = await fetch(`${SUPABASE_URL}/functions/v1/sync-hubspot`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    });
+    const result = await response.json();
+    
+    if (result.success) {
+      state.lastSync = new Date().toLocaleString();
+      await loadFromSupabase();
+      alert(`Synced ${result.deals_synced} deals, ${result.emails_fetched} emails`);
+    } else {
+      alert('Sync failed: ' + (result.error || 'Unknown error'));
+    }
+  } catch (e) {
+    alert('Sync failed: ' + e.message);
+  }
+  
+  state.syncing = false;
+  render();
+}
 
 // ============ ADDRESS NORMALIZATION ============
 
@@ -261,7 +322,10 @@ function buildSearchIndex() {
 
 function showUploadModal() {
   document.getElementById('uploadModal').classList.remove('hidden');
-  updateUploadStatus();
+  document.getElementById('sgipStatus').innerHTML = state.sgipLoaded 
+    ? `<span class="text-emerald-400">✓ ${SGIP_DATA.length} records loaded</span>` 
+    : '<span class="text-slate-500">Not loaded yet</span>';
+  updateMatchStatsDisplay();
   setTimeout(setupUploadHandlers, 50);
 }
 
@@ -269,32 +333,11 @@ function closeUploadModal() {
   document.getElementById('uploadModal').classList.add('hidden'); 
 }
 
-function updateUploadStatus() {
-  document.getElementById('hubspotStatus').innerHTML = state.hubspotLoaded 
-    ? `<span class="text-emerald-400">✓ ${HUBSPOT_DATA.length} deals loaded</span>` 
-    : '<span class="text-slate-500">Not loaded</span>';
-  document.getElementById('sgipStatus').innerHTML = state.sgipLoaded 
-    ? `<span class="text-emerald-400">✓ ${SGIP_DATA.length} records loaded</span>` 
-    : '<span class="text-slate-500">Not loaded</span>';
-}
-
 function setupUploadHandlers() {
-  // HubSpot upload zone
-  const hubspotZone = document.getElementById('hubspotUploadZone');
-  const hubspotInput = document.createElement('input');
-  hubspotInput.type = 'file';
-  hubspotInput.accept = '.xlsx,.xls';
-  hubspotInput.style.display = 'none';
-  hubspotZone.appendChild(hubspotInput);
-  
-  hubspotZone.onclick = () => hubspotInput.click();
-  hubspotZone.ondragover = (e) => { e.preventDefault(); hubspotZone.classList.add('dragover'); };
-  hubspotZone.ondragleave = () => hubspotZone.classList.remove('dragover');
-  hubspotZone.ondrop = (e) => { e.preventDefault(); hubspotZone.classList.remove('dragover'); handleHubspotFile(e.dataTransfer.files[0]); };
-  hubspotInput.onchange = () => handleHubspotFile(hubspotInput.files[0]);
-
-  // SGIP upload zone
   const sgipZone = document.getElementById('sgipUploadZone');
+  if (sgipZone._initialized) return;
+  sgipZone._initialized = true;
+  
   const sgipInput = document.createElement('input');
   sgipInput.type = 'file';
   sgipInput.accept = '.csv';
@@ -306,86 +349,6 @@ function setupUploadHandlers() {
   sgipZone.ondragleave = () => sgipZone.classList.remove('dragover');
   sgipZone.ondrop = (e) => { e.preventDefault(); sgipZone.classList.remove('dragover'); handleSgipFile(e.dataTransfer.files[0]); };
   sgipInput.onchange = () => handleSgipFile(sgipInput.files[0]);
-}
-
-function handleHubspotFile(file) {
-  if (!file) return;
-  document.getElementById('hubspotStatus').innerHTML = '<span class="text-blue-400">Processing...</span>';
-  
-  const reader = new FileReader();
-  reader.onload = function(e) {
-    try {
-      const workbook = XLSX.read(e.target.result, { type: 'array' });
-      const sheet = workbook.Sheets[workbook.SheetNames[0]];
-      const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
-      
-      // Find header row (row with 'Deal Name')
-      let headerIdx = 0;
-      for (let i = 0; i < Math.min(5, rows.length); i++) {
-        if (rows[i].some(c => String(c).includes('Deal Name'))) {
-          headerIdx = i;
-          break;
-        }
-      }
-      
-      const headers = rows[headerIdx].map(h => String(h).trim());
-      console.log('HubSpot headers:', headers);
-      
-      // Find column indices
-      const findCol = (names) => headers.findIndex(h => names.some(n => h.toLowerCase().includes(n.toLowerCase())));
-      const dealNameIdx = findCol(['Deal Name']);
-      const emailIdx = findCol(['Email']);
-      const installDateIdx = findCol(['Installation Completed']);
-      const permitIdx = findCol(['Permitting Status']);
-      const ptoIdx = findCol(['PTO Complete']);
-      const inspectionIdx = findCol(['Inspection Status']);
-      const installerIdx = findCol(['Installer Company']);
-      const dealIdIdx = findCol(['Deal ID']);
-      
-      console.log('Columns:', { dealNameIdx, emailIdx, installDateIdx, permitIdx, dealIdIdx });
-      
-      HUBSPOT_DATA = [];
-      for (let i = headerIdx + 1; i < rows.length; i++) {
-        const row = rows[i];
-        if (!row[dealNameIdx]) continue;
-        
-        let installDate = row[installDateIdx];
-        if (typeof installDate === 'number') {
-          // Excel date serial
-          const d = new Date((installDate - 25569) * 86400 * 1000);
-          installDate = d.toISOString().split('T')[0];
-        }
-        
-        let ptoDate = row[ptoIdx];
-        if (typeof ptoDate === 'number') {
-          const d = new Date((ptoDate - 25569) * 86400 * 1000);
-          ptoDate = d.toISOString().split('T')[0];
-        }
-        
-        HUBSPOT_DATA.push({
-          dealId: String(row[dealIdIdx] || ''),
-          dealName: row[dealNameIdx],
-          customerName: parseCustomerName(row[dealNameIdx]),
-          email: (row[emailIdx] || '').toLowerCase().trim(),
-          installDate: installDate,
-          permitStatus: mapPermit(row[permitIdx]),
-          ptoDate: ptoDate && ptoDate !== '(No value)' ? ptoDate : null,
-          inspectionStatus: mapInspection(row[inspectionIdx]),
-          installer: row[installerIdx]
-        });
-      }
-      
-      state.hubspotLoaded = true;
-      updateUploadStatus();
-      mergeData();
-      
-      console.log('HubSpot loaded:', HUBSPOT_DATA.length, 'deals');
-    } catch (err) {
-      console.error('HubSpot parse error:', err);
-      document.getElementById('hubspotStatus').innerHTML = `<span class="text-red-400">Error: ${err.message}</span>`;
-    }
-  };
-  reader.readAsArrayBuffer(file);
 }
 
 function handleSgipFile(file) {
@@ -408,10 +371,10 @@ function handleSgipFile(file) {
         nextDueDate: row['Next Due Date'] || '',
         siteAddress: row['Site Address'] || '',
         utility: row['Electric Utility'] || ''
-      })).filter(s => s.email || s.siteAddress); // Keep if has email OR address
+      })).filter(s => s.email || s.siteAddress);
       
       state.sgipLoaded = true;
-      updateUploadStatus();
+      document.getElementById('sgipStatus').innerHTML = `<span class="text-emerald-400">✓ ${SGIP_DATA.length} records loaded</span>`;
       mergeData();
       
       console.log('SGIP loaded:', SGIP_DATA.length, 'records');
@@ -516,7 +479,7 @@ function closeEditModal() { document.getElementById('editModal').classList.add('
 function saveEdit() {
   const val = document.getElementById('editValue').value;
   const deal = getFilteredData()[state.editingDeal];
-  const idx = DATA.matched.findIndex(d => d.email === deal.email && d.dealName === deal.dealName);
+  const idx = DATA.matched.findIndex(d => d.dealId === deal.dealId);
   if (idx >= 0) DATA.matched[idx][state.editingField] = val;
   buildSearchIndex(); closeEditModal(); render();
 }
@@ -549,8 +512,6 @@ function render() {
   const icfOpts = STAGES.filter(s => stageCounts[s.key] > 0).map(s => [s.key, stageCounts[s.key]]);
   const installerOpts = getFilterCounts('installer', v => (!v || v === '(No value)') ? '(empty)' : v);
 
-  const needsData = !state.hubspotLoaded || !state.sgipLoaded;
-
   document.getElementById('app').innerHTML = `
     <div class="bg-slate-800/80 border-b border-slate-700/50 sticky top-0 z-30">
       <div class="max-w-[1920px] mx-auto px-4 py-3 flex items-center justify-between">
@@ -559,17 +520,17 @@ function render() {
           <div><h1 class="text-lg font-bold bg-gradient-to-r from-emerald-400 to-cyan-400 bg-clip-text text-transparent">Haven Energy</h1><p class="text-xs text-slate-400">Post-Install Portal</p></div>
         </div>
         <div class="flex items-center gap-2">
-          <button onclick="showUploadModal()" class="px-3 py-1.5 text-xs ${needsData ? 'bg-emerald-600 hover:bg-emerald-500 animate-pulse' : 'bg-slate-700 hover:bg-slate-600'} rounded-lg font-medium">📤 Upload Data</button>
-          <span class="text-xs text-slate-500">${state.hubspotLoaded ? '✓ HubSpot' : ''} ${state.sgipLoaded ? '✓ SGIP' : ''}</span>
+          <button onclick="triggerSync()" class="sync-btn ${state.syncing ? 'syncing' : ''} px-3 py-1.5 text-xs bg-blue-600 hover:bg-blue-500 rounded-lg font-medium" ${state.syncing ? 'disabled' : ''}>${state.syncing ? '⟳ Syncing...' : '⟳ Sync HubSpot'}</button>
+          <button onclick="showUploadModal()" class="px-3 py-1.5 text-xs ${state.sgipLoaded ? 'bg-slate-700 hover:bg-slate-600' : 'bg-emerald-600 hover:bg-emerald-500 animate-pulse'} rounded-lg font-medium">📤 Upload SGIP</button>
+          ${state.lastSync ? `<span class="text-xs text-slate-500">Synced: ${state.lastSync}</span>` : ''}
         </div>
       </div>
     </div>
     <div class="max-w-[1920px] mx-auto px-4 py-4">
-      ${needsData ? `
-        <div class="bg-blue-500/10 border border-blue-500/30 rounded-lg p-6 mb-4 text-center">
-          <h3 class="font-semibold text-blue-400 text-lg mb-2">Welcome! Upload your data to get started</h3>
-          <p class="text-sm text-slate-400 mb-4">You'll need two files: HubSpot export (.xlsx) and SGIP export (.csv)</p>
-          <button onclick="showUploadModal()" class="px-6 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-lg font-medium">📤 Upload Data</button>
+      ${!state.sgipLoaded && HUBSPOT_DATA.length > 0 ? `
+        <div class="bg-blue-500/10 border border-blue-500/30 rounded-lg p-4 mb-4">
+          <h3 class="font-semibold text-blue-400">HubSpot loaded! Now upload SGIP data</h3>
+          <p class="text-sm text-slate-400 mt-1">${HUBSPOT_DATA.length} deals from HubSpot. Click "Upload SGIP" to match with SGIP records.</p>
         </div>
       ` : ''}
       <div class="flex gap-2 mb-4">
@@ -609,7 +570,7 @@ function render() {
                 <th class="px-2 py-3 text-left text-xs font-semibold text-slate-400 uppercase cursor-pointer" onclick="setSort('incentive')">Incentive ${state.sortBy === 'incentive' ? (state.sortDir === 'asc' ? '↑' : '↓') : ''}</th>
                 ${filterHeader('Installer', 'installer', null, installerOpts)}
               </tr></thead>
-              <tbody class="divide-y divide-slate-700/30">${filtered.length === 0 ? '<tr><td colspan="12" class="p-8 text-center text-slate-500">No deals found. Upload HubSpot + SGIP data to see matches.</td></tr>' : filtered.map((d, i) => {
+              <tbody class="divide-y divide-slate-700/30">${filtered.length === 0 ? '<tr><td colspan="12" class="p-8 text-center text-slate-500">No deals found. Upload SGIP data to see matches.</td></tr>' : filtered.map((d, i) => {
                 const info = getStageInfo(d.icfProgress);
                 return `<tr class="hover:bg-slate-800/50">
                   <td class="px-2 py-2"><div class="min-w-[150px]">${customerCell(d)}${d.applicationCode?`<br><span class="text-xs text-slate-500 mono">${d.applicationCode}</span>`:''}</div></td>
@@ -645,7 +606,13 @@ function render() {
 }
 
 // Initialize
-render();
+async function init() {
+  document.getElementById('app').innerHTML = '<div class="flex items-center justify-center h-64"><div class="text-center"><div class="text-2xl mb-2">⟳</div><p class="text-slate-400">Loading from Supabase...</p></div></div>';
+  await loadFromSupabase();
+  render();
+}
+
+init();
   </script>
 </body>
 </html>
