@@ -128,13 +128,21 @@ let searchTimeout = null;
 
 async function loadSgipFromSupabase() {
   try {
+    console.log('Loading SGIP from Supabase...');
     const response = await fetch(`${SUPABASE_URL}/rest/v1/sgip_applications?select=*`, {
       headers: {
         'apikey': SUPABASE_ANON_KEY,
         'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
       }
     });
+    
+    if (!response.ok) {
+      console.error('SGIP fetch failed:', response.status, response.statusText);
+      return false;
+    }
+    
     const applications = await response.json();
+    console.log('SGIP response:', applications?.length || 0, 'records');
     
     if (Array.isArray(applications) && applications.length > 0) {
       SGIP_DATA = applications.map(a => ({
@@ -162,6 +170,8 @@ async function loadSgipFromSupabase() {
       
       console.log('SGIP loaded from Supabase:', SGIP_DATA.length, 'records');
       return true;
+    } else {
+      console.log('SGIP: No data or empty array');
     }
   } catch (e) {
     console.error('Failed to load SGIP from Supabase:', e);
