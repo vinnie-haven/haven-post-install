@@ -866,10 +866,33 @@ function getPeriodicStats() {
 
 function getStats() {
   const m = DATA.matched;
-  // ICF Submitted = has icfSubmittedDate in SGIP data
-  const icfSubmittedTotal = SGIP_DATA.filter(d => d.icfSubmittedDate).length;
-  // ICF Approved = has icfPendingPaymentDate in SGIP data  
-  const icfApprovedTotal = SGIP_DATA.filter(d => d.icfPendingPaymentDate).length;
+  const cutoffDate = new Date('2025-04-01');
+  
+  // Helper to check if install date is after cutoff
+  const isAfterCutoff = (dateStr) => {
+    if (!dateStr) return false;
+    let d;
+    if (dateStr.includes('/')) {
+      const parts = dateStr.split('/');
+      if (parts.length === 3) {
+        let year = parseInt(parts[2]);
+        if (year < 100) year += 2000;
+        d = new Date(year, parseInt(parts[0]) - 1, parseInt(parts[1]));
+      }
+    } else {
+      d = new Date(dateStr);
+    }
+    return d && !isNaN(d.getTime()) && d >= cutoffDate;
+  };
+  
+  // Get application codes for deals installed after cutoff
+  const postCutoffCodes = new Set(m.filter(d => isAfterCutoff(d.installDate)).map(d => d.applicationCode).filter(c => c));
+  
+  // ICF Submitted = has icfSubmittedDate AND is in our post-cutoff deals
+  const icfSubmittedTotal = SGIP_DATA.filter(d => d.icfSubmittedDate && postCutoffCodes.has(d.applicationCode)).length;
+  // ICF Approved = has icfPendingPaymentDate AND is in our post-cutoff deals
+  const icfApprovedTotal = SGIP_DATA.filter(d => d.icfPendingPaymentDate && postCutoffCodes.has(d.applicationCode)).length;
+  
   return { 
     total: m.length, 
     paid: m.filter(d => d.icfProgress === 'Payment Completed').length, 
