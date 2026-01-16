@@ -33,8 +33,8 @@
 <body class="bg-slate-900 text-slate-100 min-h-screen">
   <div id="uploadModal" class="edit-modal hidden">
     <div class="bg-slate-800 rounded-xl p-6 max-w-lg w-full mx-4 border border-slate-700">
-      <h2 class="text-xl font-bold mb-4">📤 Upload SGIP Data</h2>
-      <p class="text-sm text-slate-400 mb-3">HubSpot syncs automatically. Corrections are saved permanently.</p>
+      <h2 class="text-xl font-bold mb-4">📤 Update SGIP Data</h2>
+      <p class="text-sm text-slate-400 mb-3">Upload a new SGIP export to replace the saved data.</p>
       
       <div class="mb-4">
         <h3 class="font-semibold text-cyan-400 mb-2">SGIP Export (CSV)</h3>
@@ -119,12 +119,113 @@ let state = {
   syncing: false,
   lastSync: null,
   sgipLoaded: false,
-  correctionsLoaded: false
+  sgipLastUpdated: null
 };
 
 let searchTimeout = null;
 
 // ============ SUPABASE FUNCTIONS ============
+
+async function loadSgipFromSupabase() {
+  try {
+    const response = await fetch(`${SUPABASE_URL}/rest/v1/sgip_applications?select=*`, {
+      headers: {
+        'apikey': SUPABASE_ANON_KEY,
+        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+      }
+    });
+    const applications = await response.json();
+    
+    if (Array.isArray(applications) && applications.length > 0) {
+      SGIP_DATA = applications.map(a => ({
+        email: (a.email || '').toLowerCase().trim(),
+        applicationCode: a.application_code || '',
+        sgipStage: a.stage || '',
+        sgipStatus: a.status || '',
+        currentIncentive: a.current_incentive || '',
+        finalIncentive: a.final_incentive || '',
+        nextDueDate: a.next_due_date || '',
+        siteAddress: a.site_address || '',
+        utility: a.utility || ''
+      }));
+      
+      state.sgipLoaded = true;
+      
+      // Get last updated time
+      const maxUpdated = applications.reduce((max, a) => {
+        const t = new Date(a.updated_at).getTime();
+        return t > max ? t : max;
+      }, 0);
+      if (maxUpdated) {
+        state.sgipLastUpdated = new Date(maxUpdated).toLocaleString();
+      }
+      
+      console.log('SGIP loaded from Supabase:', SGIP_DATA.length, 'records');
+      return true;
+    }
+  } catch (e) {
+    console.error('Failed to load SGIP from Supabase:', e);
+  }
+  return false;
+}
+
+async function saveSgipToSupabase(sgipData) {
+  if (!sgipData || sgipData.length === 0) return false;
+  
+  const records = sgipData.map(s => ({
+    application_code: s.applicationCode,
+    email: s.email,
+    stage: s.sgipStage,
+    status: s.sgipStatus,
+    current_incentive: s.currentIncentive,
+    final_incentive: s.finalIncentive,
+    next_due_date: s.nextDueDate,
+    site_address: s.siteAddress,
+    utility: s.utility,
+    updated_at: new Date().toISOString()
+  })).filter(r => r.application_code); // Must have application code
+  
+  if (records.length === 0) return false;
+  
+  try {
+    // Delete all existing records first
+    await fetch(`${SUPABASE_URL}/rest/v1/sgip_applications?application_code=neq.IMPOSSIBLE`, {
+      method: 'DELETE',
+      headers: {
+        'apikey': SUPABASE_ANON_KEY,
+        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+      }
+    });
+    
+    // Insert in batches of 500
+    for (let i = 0; i < records.length; i += 500) {
+      const batch = records.slice(i, i + 500);
+      const response = await fetch(`${SUPABASE_URL}/rest/v1/sgip_applications`, {
+        method: 'POST',
+        headers: {
+          'apikey': SUPABASE_ANON_KEY,
+          'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+          'Content-Type': 'application/json',
+          'Prefer': 'resolution=merge-duplicates'
+        },
+        body: JSON.stringify(batch)
+      });
+      
+      if (!response.ok) {
+        const err = await response.text();
+        console.error('Failed to save SGIP batch:', err);
+        return false;
+      }
+    }
+    
+    state.sgipLastUpdated = new Date().toLocaleString();
+    console.log('Saved', records.length, 'SGIP records to Supabase');
+    return true;
+  } catch (e) {
+    console.error('Failed to save SGIP:', e);
+    return false;
+  }
+}
 
 async function loadCorrectionsFromSupabase() {
   try {
@@ -150,7 +251,6 @@ async function loadCorrectionsFromSupabase() {
         }
       });
       
-      state.correctionsLoaded = true;
       console.log('Corrections loaded:', Object.keys(CORRECTIONS.manualMatches).length, 'manual,', 
                   CORRECTIONS.notInSgip.size, 'not in portal,', CORRECTIONS.notSgipProject.size, 'excluded');
       return true;
@@ -164,37 +264,19 @@ async function loadCorrectionsFromSupabase() {
 async function saveCorrectionsToSupabase(newCorrections) {
   const records = [];
   
-  // Manual matches
   for (const [email, code] of Object.entries(newCorrections.manualMatches)) {
-    records.push({
-      email: email.toLowerCase().trim(),
-      correction_type: 'manual_match',
-      sgip_code: code
-    });
+    records.push({ email: email.toLowerCase().trim(), correction_type: 'manual_match', sgip_code: code });
   }
-  
-  // Not in portal
   for (const email of newCorrections.notInSgip) {
-    records.push({
-      email: email.toLowerCase().trim(),
-      correction_type: 'not_in_portal',
-      sgip_code: null
-    });
+    records.push({ email: email.toLowerCase().trim(), correction_type: 'not_in_portal', sgip_code: null });
   }
-  
-  // Not SGIP project
   for (const email of newCorrections.notSgipProject) {
-    records.push({
-      email: email.toLowerCase().trim(),
-      correction_type: 'not_sgip_project',
-      sgip_code: null
-    });
+    records.push({ email: email.toLowerCase().trim(), correction_type: 'not_sgip_project', sgip_code: null });
   }
   
   if (records.length === 0) return false;
   
   try {
-    // Upsert (insert or update on conflict)
     const response = await fetch(`${SUPABASE_URL}/rest/v1/corrections`, {
       method: 'POST',
       headers: {
@@ -207,17 +289,13 @@ async function saveCorrectionsToSupabase(newCorrections) {
     });
     
     if (response.ok) {
-      console.log('Saved', records.length, 'corrections to Supabase');
+      console.log('Saved', records.length, 'corrections');
       return true;
-    } else {
-      const err = await response.text();
-      console.error('Failed to save corrections:', err);
-      return false;
     }
   } catch (e) {
     console.error('Failed to save corrections:', e);
-    return false;
   }
+  return false;
 }
 
 async function loadFromSupabase() {
@@ -252,7 +330,6 @@ async function loadFromSupabase() {
         state.lastSync = new Date(syncLog[0].completed_at).toLocaleString();
       }
       
-      mergeData();
       return true;
     }
   } catch (e) {
@@ -275,6 +352,7 @@ async function triggerSync() {
     if (result.success) {
       state.lastSync = new Date().toLocaleString();
       await loadFromSupabase();
+      mergeData();
       alert(`Synced ${result.deals_synced} deals, ${result.emails_fetched} emails`);
     } else {
       alert('Sync failed: ' + (result.error || 'Unknown error'));
@@ -373,8 +451,6 @@ function mergeData() {
   const hubspotWithoutSgip = [];
   MATCH_STATS = { byEmail: 0, byAddress: 0, byManual: 0, noMatch: 0, excluded: 0 };
 
-  console.log('Merging:', HUBSPOT_DATA.length, 'HubSpot,', SGIP_DATA.length, 'SGIP');
-
   HUBSPOT_DATA.forEach(h => {
     const email = (h.email || '').toLowerCase().trim();
     const hubspotAddr = extractAddressFromDealName(h.dealName);
@@ -431,8 +507,6 @@ function mergeData() {
     }
   });
 
-  console.log('Match stats:', MATCH_STATS);
-
   DATA = { matched, hubspotWithoutSgip };
   buildSearchIndex();
   updateMatchStatsDisplay();
@@ -466,7 +540,7 @@ function buildSearchIndex() {
 function showUploadModal() {
   document.getElementById('uploadModal').classList.remove('hidden');
   document.getElementById('sgipStatus').innerHTML = state.sgipLoaded 
-    ? `<span class="text-emerald-400">✓ ${SGIP_DATA.length} records</span>` 
+    ? `<span class="text-emerald-400">✓ ${SGIP_DATA.length} records (saved ${state.sgipLastUpdated || 'unknown'})</span>` 
     : '<span class="text-slate-500">Not loaded</span>';
   updateMatchStatsDisplay();
   setTimeout(setupSgipUpload, 50);
@@ -525,15 +599,15 @@ function setupCorrectionUpload() {
   corrInput.onchange = () => handleCorrectionFile(corrInput.files[0]);
 }
 
-function handleSgipFile(file) {
+async function handleSgipFile(file) {
   if (!file) return;
   document.getElementById('sgipStatus').innerHTML = '<span class="text-blue-400">Processing...</span>';
   
   Papa.parse(file, {
     header: true,
     skipEmptyLines: true,
-    complete: function(results) {
-      SGIP_DATA = results.data.map(row => ({
+    complete: async function(results) {
+      const newSgipData = results.data.map(row => ({
         email: (row['Host Customer Email'] || '').toLowerCase().trim(),
         applicationCode: row['Application Code'] || '',
         sgipStage: row['Stage'] || '',
@@ -543,11 +617,20 @@ function handleSgipFile(file) {
         nextDueDate: row['Next Due Date'] || '',
         siteAddress: row['Site Address'] || '',
         utility: row['Electric Utility'] || ''
-      })).filter(s => s.email || s.siteAddress || s.applicationCode);
+      })).filter(s => s.applicationCode);
       
-      state.sgipLoaded = true;
-      document.getElementById('sgipStatus').innerHTML = `<span class="text-emerald-400">✓ ${SGIP_DATA.length} records</span>`;
-      mergeData();
+      document.getElementById('sgipStatus').innerHTML = '<span class="text-blue-400">Saving to database...</span>';
+      
+      const saved = await saveSgipToSupabase(newSgipData);
+      
+      if (saved) {
+        SGIP_DATA = newSgipData;
+        state.sgipLoaded = true;
+        document.getElementById('sgipStatus').innerHTML = `<span class="text-emerald-400">✓ Saved ${SGIP_DATA.length} records!</span>`;
+        mergeData();
+      } else {
+        document.getElementById('sgipStatus').innerHTML = `<span class="text-red-400">Failed to save. Check console.</span>`;
+      }
     },
     error: function(err) {
       document.getElementById('sgipStatus').innerHTML = `<span class="text-red-400">Error: ${err.message}</span>`;
@@ -596,22 +679,18 @@ async function handleCorrectionFile(file) {
         }
       }
       
-      const manualCount = Object.keys(newCorrections.manualMatches).length;
-      const notInPortalCount = newCorrections.notInSgip.size;
-      const excludedCount = newCorrections.notSgipProject.size;
-      const totalCount = manualCount + notInPortalCount + excludedCount;
+      const totalCount = Object.keys(newCorrections.manualMatches).length + newCorrections.notInSgip.size + newCorrections.notSgipProject.size;
       
       document.getElementById('correctionUploadStatus').innerHTML = '<span class="text-blue-400">Saving to database...</span>';
       
       const saved = await saveCorrectionsToSupabase(newCorrections);
       
       if (saved) {
-        // Merge into current corrections
         Object.assign(CORRECTIONS.manualMatches, newCorrections.manualMatches);
         newCorrections.notInSgip.forEach(e => CORRECTIONS.notInSgip.add(e));
         newCorrections.notSgipProject.forEach(e => CORRECTIONS.notSgipProject.add(e));
         
-        document.getElementById('correctionUploadStatus').innerHTML = `<span class="text-emerald-400">✓ Saved ${totalCount} corrections permanently!</span>`;
+        document.getElementById('correctionUploadStatus').innerHTML = `<span class="text-emerald-400">✓ Saved ${totalCount} corrections!</span>`;
         document.getElementById('correctionCounts').innerHTML = `
           <span class="text-purple-400">${Object.keys(CORRECTIONS.manualMatches).length} manual matches</span> · 
           <span class="text-amber-400">${CORRECTIONS.notInSgip.size} not in portal</span> · 
@@ -620,10 +699,9 @@ async function handleCorrectionFile(file) {
         
         mergeData();
       } else {
-        document.getElementById('correctionUploadStatus').innerHTML = `<span class="text-red-400">Failed to save. Check console.</span>`;
+        document.getElementById('correctionUploadStatus').innerHTML = `<span class="text-red-400">Failed to save.</span>`;
       }
     } catch (err) {
-      console.error('Correction parse error:', err);
       document.getElementById('correctionUploadStatus').innerHTML = `<span class="text-red-400">Error: ${err.message}</span>`;
     }
   };
@@ -769,19 +847,13 @@ function render() {
         </div>
         <div class="flex items-center gap-2">
           <button onclick="triggerSync()" class="sync-btn ${state.syncing ? 'syncing' : ''} px-3 py-1.5 text-xs bg-blue-600 hover:bg-blue-500 rounded-lg font-medium" ${state.syncing ? 'disabled' : ''}>${state.syncing ? '⟳ Syncing...' : '⟳ Sync HubSpot'}</button>
-          <button onclick="showUploadModal()" class="px-3 py-1.5 text-xs ${state.sgipLoaded ? 'bg-slate-700 hover:bg-slate-600' : 'bg-emerald-600 hover:bg-emerald-500 animate-pulse'} rounded-lg font-medium">📤 Upload SGIP</button>
+          <button onclick="showUploadModal()" class="px-3 py-1.5 text-xs bg-slate-700 hover:bg-slate-600 rounded-lg font-medium">📤 Update SGIP</button>
           <button onclick="showCorrectionModal()" class="px-3 py-1.5 text-xs bg-slate-700 hover:bg-slate-600 rounded-lg font-medium">⚙️ Corrections ${correctionCount > 0 ? `(${correctionCount})` : ''}</button>
-          ${state.lastSync ? `<span class="text-xs text-slate-500">Synced: ${state.lastSync}</span>` : ''}
+          <span class="text-xs text-slate-500">${state.lastSync ? `HubSpot: ${state.lastSync}` : ''} ${state.sgipLastUpdated ? `• SGIP: ${state.sgipLastUpdated}` : ''}</span>
         </div>
       </div>
     </div>
     <div class="max-w-[1920px] mx-auto px-4 py-4">
-      ${!state.sgipLoaded && HUBSPOT_DATA.length > 0 ? `
-        <div class="bg-blue-500/10 border border-blue-500/30 rounded-lg p-4 mb-4">
-          <h3 class="font-semibold text-blue-400">HubSpot loaded! Now upload SGIP data</h3>
-          <p class="text-sm text-slate-400 mt-1">${HUBSPOT_DATA.length} deals. Click "Upload SGIP" to match with SGIP records.</p>
-        </div>
-      ` : ''}
       <div class="flex gap-2 mb-4">
         <button onclick="setTab('matched')" class="px-4 py-2 rounded-lg text-sm font-medium ${state.tab === 'matched' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40' : 'bg-slate-800/50 text-slate-400 border border-slate-700/50'}">Matched (${DATA.matched.length})</button>
         <button onclick="setTab('noSgip')" class="px-4 py-2 rounded-lg text-sm font-medium ${state.tab === 'noSgip' ? 'bg-amber-500/20 text-amber-400 border border-amber-500/40' : 'bg-slate-800/50 text-slate-400 border border-slate-700/50'}">Not in SGIP Portal (${DATA.hubspotWithoutSgip.length})</button>
@@ -819,7 +891,7 @@ function render() {
                 <th class="px-2 py-3 text-left text-xs font-semibold text-slate-400 uppercase cursor-pointer" onclick="setSort('incentive')">Incentive ${state.sortBy === 'incentive' ? (state.sortDir === 'asc' ? '↑' : '↓') : ''}</th>
                 ${filterHeader('Installer', 'installer', null, installerOpts)}
               </tr></thead>
-              <tbody class="divide-y divide-slate-700/30">${filtered.length === 0 ? '<tr><td colspan="12" class="p-8 text-center text-slate-500">No deals found. Upload SGIP data to see matches.</td></tr>' : filtered.map((d, i) => {
+              <tbody class="divide-y divide-slate-700/30">${filtered.length === 0 ? '<tr><td colspan="12" class="p-8 text-center text-slate-500">No deals found.</td></tr>' : filtered.map((d, i) => {
                 const info = getStageInfo(d.icfProgress);
                 return `<tr class="hover:bg-slate-800/50">
                   <td class="px-2 py-2"><div class="min-w-[150px]">${customerCell(d)}${d.applicationCode?`<br><span class="text-xs text-slate-500 mono">${d.applicationCode}</span>`:''}</div></td>
@@ -840,7 +912,7 @@ function render() {
           </div>
         </div>
       ` : `
-        <div class="bg-amber-500/10 border border-amber-500/30 rounded-lg p-4 mb-4"><h3 class="font-semibold text-amber-400">Not in SGIP Portal</h3><p class="text-sm text-slate-400 mt-1">${DATA.hubspotWithoutSgip.length} deals that couldn't be matched or are marked as "Not in SGIP portal".</p></div>
+        <div class="bg-amber-500/10 border border-amber-500/30 rounded-lg p-4 mb-4"><h3 class="font-semibold text-amber-400">Not in SGIP Portal</h3><p class="text-sm text-slate-400 mt-1">${DATA.hubspotWithoutSgip.length} deals that couldn't be matched.</p></div>
         <div class="bg-slate-800/50 rounded-lg border border-slate-700/50 overflow-hidden">
           <div class="table-container overflow-x-auto">
             <table class="w-full text-sm">
@@ -857,9 +929,15 @@ function render() {
 // Initialize
 async function init() {
   document.getElementById('app').innerHTML = '<div class="flex items-center justify-center h-64"><div class="text-center"><div class="text-2xl mb-2">⟳</div><p class="text-slate-400">Loading...</p></div></div>';
-  await loadCorrectionsFromSupabase();
-  await loadFromSupabase();
-  render();
+  
+  // Load all data from Supabase
+  await Promise.all([
+    loadCorrectionsFromSupabase(),
+    loadSgipFromSupabase(),
+    loadFromSupabase()
+  ]);
+  
+  mergeData();
 }
 
 init();
