@@ -22,7 +22,7 @@
     .filter-active { color: #10b981 !important; }
     .table-container { max-height: calc(100vh - 380px); overflow-y: auto; }
     .sticky-header th { position: sticky; top: 0; background: #0f172a; z-index: 10; }
-    .upload-zone { border: 2px dashed #475569; transition: all 0.2s; min-height: 100px; }
+    .upload-zone { border: 2px dashed #475569; transition: all 0.2s; min-height: 80px; }
     .upload-zone:hover, .upload-zone.dragover { border-color: #10b981; background: rgba(16, 185, 129, 0.1); }
     .editable { cursor: pointer; transition: all 0.15s; }
     .editable:hover { background: rgba(16, 185, 129, 0.1); border-radius: 4px; }
@@ -34,18 +34,48 @@
   <div id="uploadModal" class="edit-modal hidden">
     <div class="bg-slate-800 rounded-xl p-6 max-w-lg w-full mx-4 border border-slate-700">
       <h2 class="text-xl font-bold mb-4">📤 Upload SGIP Data</h2>
-      <p class="text-sm text-slate-400 mb-3">HubSpot syncs automatically. Upload your SGIP CSV to merge.</p>
-      <div id="sgipUploadZone" class="upload-zone rounded-lg p-4 text-center cursor-pointer flex flex-col items-center justify-center">
-        <div class="text-2xl mb-1">📄</div>
-        <p class="text-xs text-slate-400">Drop SGIP .csv here</p>
+      <p class="text-sm text-slate-400 mb-3">HubSpot syncs automatically. Corrections are saved permanently.</p>
+      
+      <div class="mb-4">
+        <h3 class="font-semibold text-cyan-400 mb-2">SGIP Export (CSV)</h3>
+        <div id="sgipUploadZone" class="upload-zone rounded-lg p-3 text-center cursor-pointer flex flex-col items-center justify-center">
+          <p class="text-xs text-slate-400">Drop SGIP .csv here</p>
+        </div>
+        <p id="sgipStatus" class="text-xs text-slate-500 mt-1"></p>
       </div>
-      <p id="sgipStatus" class="text-xs text-slate-500 mt-2"></p>
-      <div id="matchStats" class="mt-3 p-3 bg-slate-900 rounded-lg text-xs hidden">
+      
+      <div id="matchStats" class="p-3 bg-slate-900 rounded-lg text-xs hidden">
         <div class="font-semibold mb-1">Match Statistics:</div>
         <div id="matchStatsContent"></div>
       </div>
-      <div class="flex gap-3 mt-6">
+      
+      <div class="flex gap-3 mt-4">
         <button onclick="closeUploadModal()" class="flex-1 px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg font-medium">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="correctionModal" class="edit-modal hidden">
+    <div class="bg-slate-800 rounded-xl p-6 max-w-lg w-full mx-4 border border-slate-700">
+      <h2 class="text-xl font-bold mb-4">⚙️ Manage Corrections</h2>
+      <p class="text-sm text-slate-400 mb-3">Upload a correction sheet to permanently save manual matches and exclusions.</p>
+      
+      <div id="currentCorrections" class="mb-4 p-3 bg-slate-900 rounded-lg text-xs">
+        <div class="font-semibold mb-1">Current Corrections in Database:</div>
+        <div id="correctionCounts"></div>
+      </div>
+      
+      <div class="mb-4">
+        <h3 class="font-semibold text-amber-400 mb-2">Upload New Corrections (Excel)</h3>
+        <p class="text-xs text-slate-400 mb-2">Columns: Email, SGIP Status (code, "Not in SGIP portal", or "Not an SGIP project")</p>
+        <div id="correctionUploadZone" class="upload-zone rounded-lg p-3 text-center cursor-pointer flex flex-col items-center justify-center">
+          <p class="text-xs text-slate-400">Drop correction .xlsx here</p>
+        </div>
+        <p id="correctionUploadStatus" class="text-xs text-slate-500 mt-1"></p>
+      </div>
+      
+      <div class="flex gap-3 mt-4">
+        <button onclick="closeCorrectionModal()" class="flex-1 px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg font-medium">Close</button>
       </div>
     </div>
   </div>
@@ -64,6 +94,7 @@
   <div id="app">Loading...</div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   
   <script>
 // Supabase config
@@ -74,8 +105,9 @@ const HUBSPOT_PORTAL_ID = '23929498';
 let DATA = { matched: [], hubspotWithoutSgip: [] };
 let HUBSPOT_DATA = [];
 let SGIP_DATA = [];
+let CORRECTIONS = { manualMatches: {}, notInSgip: new Set(), notSgipProject: new Set() };
 let SEARCH_INDEX = [];
-let MATCH_STATS = { byEmail: 0, byAddress: 0, noMatch: 0 };
+let MATCH_STATS = { byEmail: 0, byAddress: 0, byManual: 0, noMatch: 0, excluded: 0 };
 let state = { 
   tab: 'matched', 
   search: '', 
@@ -86,12 +118,107 @@ let state = {
   editingField: null,
   syncing: false,
   lastSync: null,
-  sgipLoaded: false
+  sgipLoaded: false,
+  correctionsLoaded: false
 };
 
 let searchTimeout = null;
 
 // ============ SUPABASE FUNCTIONS ============
+
+async function loadCorrectionsFromSupabase() {
+  try {
+    const response = await fetch(`${SUPABASE_URL}/rest/v1/corrections?select=*`, {
+      headers: {
+        'apikey': SUPABASE_ANON_KEY,
+        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+      }
+    });
+    const corrections = await response.json();
+    
+    if (Array.isArray(corrections)) {
+      CORRECTIONS = { manualMatches: {}, notInSgip: new Set(), notSgipProject: new Set() };
+      
+      corrections.forEach(c => {
+        const email = c.email.toLowerCase().trim();
+        if (c.correction_type === 'manual_match' && c.sgip_code) {
+          CORRECTIONS.manualMatches[email] = c.sgip_code;
+        } else if (c.correction_type === 'not_in_portal') {
+          CORRECTIONS.notInSgip.add(email);
+        } else if (c.correction_type === 'not_sgip_project') {
+          CORRECTIONS.notSgipProject.add(email);
+        }
+      });
+      
+      state.correctionsLoaded = true;
+      console.log('Corrections loaded:', Object.keys(CORRECTIONS.manualMatches).length, 'manual,', 
+                  CORRECTIONS.notInSgip.size, 'not in portal,', CORRECTIONS.notSgipProject.size, 'excluded');
+      return true;
+    }
+  } catch (e) {
+    console.error('Failed to load corrections:', e);
+  }
+  return false;
+}
+
+async function saveCorrectionsToSupabase(newCorrections) {
+  const records = [];
+  
+  // Manual matches
+  for (const [email, code] of Object.entries(newCorrections.manualMatches)) {
+    records.push({
+      email: email.toLowerCase().trim(),
+      correction_type: 'manual_match',
+      sgip_code: code
+    });
+  }
+  
+  // Not in portal
+  for (const email of newCorrections.notInSgip) {
+    records.push({
+      email: email.toLowerCase().trim(),
+      correction_type: 'not_in_portal',
+      sgip_code: null
+    });
+  }
+  
+  // Not SGIP project
+  for (const email of newCorrections.notSgipProject) {
+    records.push({
+      email: email.toLowerCase().trim(),
+      correction_type: 'not_sgip_project',
+      sgip_code: null
+    });
+  }
+  
+  if (records.length === 0) return false;
+  
+  try {
+    // Upsert (insert or update on conflict)
+    const response = await fetch(`${SUPABASE_URL}/rest/v1/corrections`, {
+      method: 'POST',
+      headers: {
+        'apikey': SUPABASE_ANON_KEY,
+        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+        'Content-Type': 'application/json',
+        'Prefer': 'resolution=merge-duplicates'
+      },
+      body: JSON.stringify(records)
+    });
+    
+    if (response.ok) {
+      console.log('Saved', records.length, 'corrections to Supabase');
+      return true;
+    } else {
+      const err = await response.text();
+      console.error('Failed to save corrections:', err);
+      return false;
+    }
+  } catch (e) {
+    console.error('Failed to save corrections:', e);
+    return false;
+  }
+}
 
 async function loadFromSupabase() {
   try {
@@ -117,7 +244,6 @@ async function loadFromSupabase() {
         installer: d.installer
       }));
       
-      // Get last sync time
       const syncResponse = await fetch(`${SUPABASE_URL}/rest/v1/sync_log?select=completed_at&order=completed_at.desc&limit=1`, {
         headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` }
       });
@@ -165,9 +291,7 @@ async function triggerSync() {
 
 function normalizeAddress(addr) {
   if (!addr) return '';
-  // Take only first line (before newline or comma with city)
   let normalized = addr.split('\n')[0].split(',')[0];
-  // Lowercase, remove extra spaces, common abbreviations
   normalized = normalized.toLowerCase().trim()
     .replace(/\s+/g, ' ')
     .replace(/\bstreet\b/g, 'st')
@@ -187,7 +311,6 @@ function normalizeAddress(addr) {
 
 function extractAddressFromDealName(dealName) {
   if (!dealName) return '';
-  // Format: "Name : Address" or "Name (SGIP)" or just "Name"
   const parts = dealName.split(':');
   if (parts.length > 1) {
     return normalizeAddress(parts[1].trim());
@@ -232,9 +355,9 @@ function getIcfProgress(stage, status) {
 }
 
 function mergeData() {
-  // Build SGIP lookups
   const sgipByEmail = {};
   const sgipByAddress = {};
+  const sgipByCode = {};
   
   SGIP_DATA.forEach(s => {
     const email = (s.email || '').toLowerCase().trim();
@@ -242,27 +365,44 @@ function mergeData() {
     
     const addr = normalizeAddress(s.siteAddress);
     if (addr) sgipByAddress[addr] = s;
+    
+    if (s.applicationCode) sgipByCode[s.applicationCode] = s;
   });
 
   const matched = [];
   const hubspotWithoutSgip = [];
-  MATCH_STATS = { byEmail: 0, byAddress: 0, noMatch: 0 };
+  MATCH_STATS = { byEmail: 0, byAddress: 0, byManual: 0, noMatch: 0, excluded: 0 };
 
   console.log('Merging:', HUBSPOT_DATA.length, 'HubSpot,', SGIP_DATA.length, 'SGIP');
-  console.log('SGIP emails:', Object.keys(sgipByEmail).length, 'addresses:', Object.keys(sgipByAddress).length);
 
   HUBSPOT_DATA.forEach(h => {
     const email = (h.email || '').toLowerCase().trim();
     const hubspotAddr = extractAddressFromDealName(h.dealName);
     
-    // Try email match first
-    let sgip = sgipByEmail[email];
-    let matchType = 'email';
+    if (CORRECTIONS.notSgipProject.has(email)) {
+      MATCH_STATS.excluded++;
+      return;
+    }
     
-    // If no email match, try address match
-    if (!sgip && hubspotAddr) {
+    const isNotInPortal = CORRECTIONS.notInSgip.has(email);
+    
+    let sgip = null;
+    let matchType = null;
+    
+    if (CORRECTIONS.manualMatches[email]) {
+      const code = CORRECTIONS.manualMatches[email];
+      sgip = sgipByCode[code];
+      if (sgip) matchType = 'manual';
+    }
+    
+    if (!sgip && !isNotInPortal) {
+      sgip = sgipByEmail[email];
+      if (sgip) matchType = 'email';
+    }
+    
+    if (!sgip && !isNotInPortal && hubspotAddr) {
       sgip = sgipByAddress[hubspotAddr];
-      matchType = 'address';
+      if (sgip) matchType = 'address';
     }
     
     const record = {
@@ -276,13 +416,15 @@ function mergeData() {
       siteAddress: sgip?.siteAddress || '',
       utility: sgip?.utility || '',
       icfProgress: getIcfProgress(sgip?.sgipStage || '', sgip?.sgipStatus || ''),
-      matchType: sgip ? matchType : null
+      matchType: matchType,
+      notInPortal: isNotInPortal
     };
 
     if (sgip?.applicationCode) {
       matched.push(record);
       if (matchType === 'email') MATCH_STATS.byEmail++;
-      else MATCH_STATS.byAddress++;
+      else if (matchType === 'address') MATCH_STATS.byAddress++;
+      else if (matchType === 'manual') MATCH_STATS.byManual++;
     } else {
       hubspotWithoutSgip.push(record);
       MATCH_STATS.noMatch++;
@@ -290,7 +432,6 @@ function mergeData() {
   });
 
   console.log('Match stats:', MATCH_STATS);
-  console.log('Result:', matched.length, 'matched,', hubspotWithoutSgip.length, 'without SGIP');
 
   DATA = { matched, hubspotWithoutSgip };
   buildSearchIndex();
@@ -301,12 +442,14 @@ function mergeData() {
 function updateMatchStatsDisplay() {
   const statsDiv = document.getElementById('matchStats');
   const contentDiv = document.getElementById('matchStatsContent');
-  if (statsDiv && contentDiv && (MATCH_STATS.byEmail > 0 || MATCH_STATS.byAddress > 0)) {
+  if (statsDiv && contentDiv) {
     statsDiv.classList.remove('hidden');
     contentDiv.innerHTML = `
       <span class="text-emerald-400">✓ ${MATCH_STATS.byEmail} by email</span> · 
       <span class="text-cyan-400">✓ ${MATCH_STATS.byAddress} by address</span> · 
-      <span class="text-amber-400">${MATCH_STATS.noMatch} unmatched</span>
+      <span class="text-purple-400">✓ ${MATCH_STATS.byManual} manual</span><br>
+      <span class="text-amber-400">${MATCH_STATS.noMatch} unmatched</span> · 
+      <span class="text-slate-500">${MATCH_STATS.excluded} excluded</span>
     `;
   }
 }
@@ -323,17 +466,32 @@ function buildSearchIndex() {
 function showUploadModal() {
   document.getElementById('uploadModal').classList.remove('hidden');
   document.getElementById('sgipStatus').innerHTML = state.sgipLoaded 
-    ? `<span class="text-emerald-400">✓ ${SGIP_DATA.length} records loaded</span>` 
-    : '<span class="text-slate-500">Not loaded yet</span>';
+    ? `<span class="text-emerald-400">✓ ${SGIP_DATA.length} records</span>` 
+    : '<span class="text-slate-500">Not loaded</span>';
   updateMatchStatsDisplay();
-  setTimeout(setupUploadHandlers, 50);
+  setTimeout(setupSgipUpload, 50);
 }
 
 function closeUploadModal() { 
   document.getElementById('uploadModal').classList.add('hidden'); 
 }
 
-function setupUploadHandlers() {
+function showCorrectionModal() {
+  document.getElementById('correctionModal').classList.remove('hidden');
+  document.getElementById('correctionCounts').innerHTML = `
+    <span class="text-purple-400">${Object.keys(CORRECTIONS.manualMatches).length} manual matches</span> · 
+    <span class="text-amber-400">${CORRECTIONS.notInSgip.size} not in portal</span> · 
+    <span class="text-slate-500">${CORRECTIONS.notSgipProject.size} excluded</span>
+  `;
+  document.getElementById('correctionUploadStatus').innerHTML = '';
+  setTimeout(setupCorrectionUpload, 50);
+}
+
+function closeCorrectionModal() { 
+  document.getElementById('correctionModal').classList.add('hidden'); 
+}
+
+function setupSgipUpload() {
   const sgipZone = document.getElementById('sgipUploadZone');
   if (sgipZone._initialized) return;
   sgipZone._initialized = true;
@@ -343,12 +501,28 @@ function setupUploadHandlers() {
   sgipInput.accept = '.csv';
   sgipInput.style.display = 'none';
   sgipZone.appendChild(sgipInput);
-  
   sgipZone.onclick = () => sgipInput.click();
   sgipZone.ondragover = (e) => { e.preventDefault(); sgipZone.classList.add('dragover'); };
   sgipZone.ondragleave = () => sgipZone.classList.remove('dragover');
   sgipZone.ondrop = (e) => { e.preventDefault(); sgipZone.classList.remove('dragover'); handleSgipFile(e.dataTransfer.files[0]); };
   sgipInput.onchange = () => handleSgipFile(sgipInput.files[0]);
+}
+
+function setupCorrectionUpload() {
+  const corrZone = document.getElementById('correctionUploadZone');
+  if (corrZone._initialized) return;
+  corrZone._initialized = true;
+  
+  const corrInput = document.createElement('input');
+  corrInput.type = 'file';
+  corrInput.accept = '.xlsx,.xls';
+  corrInput.style.display = 'none';
+  corrZone.appendChild(corrInput);
+  corrZone.onclick = () => corrInput.click();
+  corrZone.ondragover = (e) => { e.preventDefault(); corrZone.classList.add('dragover'); };
+  corrZone.ondragleave = () => corrZone.classList.remove('dragover');
+  corrZone.ondrop = (e) => { e.preventDefault(); corrZone.classList.remove('dragover'); handleCorrectionFile(e.dataTransfer.files[0]); };
+  corrInput.onchange = () => handleCorrectionFile(corrInput.files[0]);
 }
 
 function handleSgipFile(file) {
@@ -359,8 +533,6 @@ function handleSgipFile(file) {
     header: true,
     skipEmptyLines: true,
     complete: function(results) {
-      console.log('SGIP parsed:', results.data.length, 'rows');
-      
       SGIP_DATA = results.data.map(row => ({
         email: (row['Host Customer Email'] || '').toLowerCase().trim(),
         applicationCode: row['Application Code'] || '',
@@ -371,19 +543,91 @@ function handleSgipFile(file) {
         nextDueDate: row['Next Due Date'] || '',
         siteAddress: row['Site Address'] || '',
         utility: row['Electric Utility'] || ''
-      })).filter(s => s.email || s.siteAddress);
+      })).filter(s => s.email || s.siteAddress || s.applicationCode);
       
       state.sgipLoaded = true;
-      document.getElementById('sgipStatus').innerHTML = `<span class="text-emerald-400">✓ ${SGIP_DATA.length} records loaded</span>`;
+      document.getElementById('sgipStatus').innerHTML = `<span class="text-emerald-400">✓ ${SGIP_DATA.length} records</span>`;
       mergeData();
-      
-      console.log('SGIP loaded:', SGIP_DATA.length, 'records');
     },
     error: function(err) {
-      console.error('SGIP parse error:', err);
       document.getElementById('sgipStatus').innerHTML = `<span class="text-red-400">Error: ${err.message}</span>`;
     }
   });
+}
+
+async function handleCorrectionFile(file) {
+  if (!file) return;
+  document.getElementById('correctionUploadStatus').innerHTML = '<span class="text-blue-400">Processing...</span>';
+  
+  const reader = new FileReader();
+  reader.onload = async function(e) {
+    try {
+      const workbook = XLSX.read(e.target.result, { type: 'array' });
+      const sheet = workbook.Sheets[workbook.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+      
+      let headerIdx = 0;
+      for (let i = 0; i < Math.min(5, rows.length); i++) {
+        if (rows[i].some(c => String(c).toLowerCase().includes('email'))) {
+          headerIdx = i;
+          break;
+        }
+      }
+      
+      const headers = rows[headerIdx].map(h => String(h).toLowerCase().trim());
+      const emailIdx = headers.findIndex(h => h.includes('email'));
+      const sgipIdx = headers.findIndex(h => h.includes('sgip'));
+      
+      const newCorrections = { manualMatches: {}, notInSgip: new Set(), notSgipProject: new Set() };
+      
+      for (let i = headerIdx + 1; i < rows.length; i++) {
+        const row = rows[i];
+        const email = (row[emailIdx] || '').toLowerCase().trim();
+        const sgipStatus = (row[sgipIdx] || '').trim();
+        
+        if (!email) continue;
+        
+        if (sgipStatus.toLowerCase() === 'not an sgip project') {
+          newCorrections.notSgipProject.add(email);
+        } else if (sgipStatus.toLowerCase() === 'not in sgip portal') {
+          newCorrections.notInSgip.add(email);
+        } else if (sgipStatus && sgipStatus.includes('SGIP')) {
+          newCorrections.manualMatches[email] = sgipStatus;
+        }
+      }
+      
+      const manualCount = Object.keys(newCorrections.manualMatches).length;
+      const notInPortalCount = newCorrections.notInSgip.size;
+      const excludedCount = newCorrections.notSgipProject.size;
+      const totalCount = manualCount + notInPortalCount + excludedCount;
+      
+      document.getElementById('correctionUploadStatus').innerHTML = '<span class="text-blue-400">Saving to database...</span>';
+      
+      const saved = await saveCorrectionsToSupabase(newCorrections);
+      
+      if (saved) {
+        // Merge into current corrections
+        Object.assign(CORRECTIONS.manualMatches, newCorrections.manualMatches);
+        newCorrections.notInSgip.forEach(e => CORRECTIONS.notInSgip.add(e));
+        newCorrections.notSgipProject.forEach(e => CORRECTIONS.notSgipProject.add(e));
+        
+        document.getElementById('correctionUploadStatus').innerHTML = `<span class="text-emerald-400">✓ Saved ${totalCount} corrections permanently!</span>`;
+        document.getElementById('correctionCounts').innerHTML = `
+          <span class="text-purple-400">${Object.keys(CORRECTIONS.manualMatches).length} manual matches</span> · 
+          <span class="text-amber-400">${CORRECTIONS.notInSgip.size} not in portal</span> · 
+          <span class="text-slate-500">${CORRECTIONS.notSgipProject.size} excluded</span>
+        `;
+        
+        mergeData();
+      } else {
+        document.getElementById('correctionUploadStatus').innerHTML = `<span class="text-red-400">Failed to save. Check console.</span>`;
+      }
+    } catch (err) {
+      console.error('Correction parse error:', err);
+      document.getElementById('correctionUploadStatus').innerHTML = `<span class="text-red-400">Error: ${err.message}</span>`;
+    }
+  };
+  reader.readAsArrayBuffer(file);
 }
 
 // ============ UI HELPERS ============
@@ -494,8 +738,10 @@ function filterHeader(label, filterKey, sortKey, options, editable = false) {
 function customerCell(d) {
   const url = getHubSpotUrl(d.dealId);
   const name = d.customerName || d.dealName || '—';
-  const matchBadge = d.matchType === 'address' ? '<span class="ml-1 text-[9px] px-1 py-0.5 bg-cyan-900/50 text-cyan-400 rounded">addr</span>' : '';
-  return url ? `<a href="${url}" target="_blank" class="font-medium text-cyan-400 hover:text-cyan-300 hover:underline">${name}</a>${matchBadge}` : `<span class="font-medium">${name}</span>${matchBadge}`;
+  let badge = '';
+  if (d.matchType === 'address') badge = '<span class="ml-1 text-[9px] px-1 py-0.5 bg-cyan-900/50 text-cyan-400 rounded">addr</span>';
+  else if (d.matchType === 'manual') badge = '<span class="ml-1 text-[9px] px-1 py-0.5 bg-purple-900/50 text-purple-400 rounded">manual</span>';
+  return url ? `<a href="${url}" target="_blank" class="font-medium text-cyan-400 hover:text-cyan-300 hover:underline">${name}</a>${badge}` : `<span class="font-medium">${name}</span>${badge}`;
 }
 
 function render() {
@@ -512,6 +758,8 @@ function render() {
   const icfOpts = STAGES.filter(s => stageCounts[s.key] > 0).map(s => [s.key, stageCounts[s.key]]);
   const installerOpts = getFilterCounts('installer', v => (!v || v === '(No value)') ? '(empty)' : v);
 
+  const correctionCount = Object.keys(CORRECTIONS.manualMatches).length + CORRECTIONS.notInSgip.size + CORRECTIONS.notSgipProject.size;
+
   document.getElementById('app').innerHTML = `
     <div class="bg-slate-800/80 border-b border-slate-700/50 sticky top-0 z-30">
       <div class="max-w-[1920px] mx-auto px-4 py-3 flex items-center justify-between">
@@ -522,6 +770,7 @@ function render() {
         <div class="flex items-center gap-2">
           <button onclick="triggerSync()" class="sync-btn ${state.syncing ? 'syncing' : ''} px-3 py-1.5 text-xs bg-blue-600 hover:bg-blue-500 rounded-lg font-medium" ${state.syncing ? 'disabled' : ''}>${state.syncing ? '⟳ Syncing...' : '⟳ Sync HubSpot'}</button>
           <button onclick="showUploadModal()" class="px-3 py-1.5 text-xs ${state.sgipLoaded ? 'bg-slate-700 hover:bg-slate-600' : 'bg-emerald-600 hover:bg-emerald-500 animate-pulse'} rounded-lg font-medium">📤 Upload SGIP</button>
+          <button onclick="showCorrectionModal()" class="px-3 py-1.5 text-xs bg-slate-700 hover:bg-slate-600 rounded-lg font-medium">⚙️ Corrections ${correctionCount > 0 ? `(${correctionCount})` : ''}</button>
           ${state.lastSync ? `<span class="text-xs text-slate-500">Synced: ${state.lastSync}</span>` : ''}
         </div>
       </div>
@@ -530,12 +779,12 @@ function render() {
       ${!state.sgipLoaded && HUBSPOT_DATA.length > 0 ? `
         <div class="bg-blue-500/10 border border-blue-500/30 rounded-lg p-4 mb-4">
           <h3 class="font-semibold text-blue-400">HubSpot loaded! Now upload SGIP data</h3>
-          <p class="text-sm text-slate-400 mt-1">${HUBSPOT_DATA.length} deals from HubSpot. Click "Upload SGIP" to match with SGIP records.</p>
+          <p class="text-sm text-slate-400 mt-1">${HUBSPOT_DATA.length} deals. Click "Upload SGIP" to match with SGIP records.</p>
         </div>
       ` : ''}
       <div class="flex gap-2 mb-4">
         <button onclick="setTab('matched')" class="px-4 py-2 rounded-lg text-sm font-medium ${state.tab === 'matched' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40' : 'bg-slate-800/50 text-slate-400 border border-slate-700/50'}">Matched (${DATA.matched.length})</button>
-        <button onclick="setTab('noSgip')" class="px-4 py-2 rounded-lg text-sm font-medium ${state.tab === 'noSgip' ? 'bg-amber-500/20 text-amber-400 border border-amber-500/40' : 'bg-slate-800/50 text-slate-400 border border-slate-700/50'}">HubSpot Without SGIP (${DATA.hubspotWithoutSgip.length})</button>
+        <button onclick="setTab('noSgip')" class="px-4 py-2 rounded-lg text-sm font-medium ${state.tab === 'noSgip' ? 'bg-amber-500/20 text-amber-400 border border-amber-500/40' : 'bg-slate-800/50 text-slate-400 border border-slate-700/50'}">Not in SGIP Portal (${DATA.hubspotWithoutSgip.length})</button>
       </div>
       ${state.tab === 'matched' ? `
         <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-2 mb-4">
@@ -553,7 +802,7 @@ function render() {
           ${hasActiveFilters() ? `<button onclick="clearFilters()" class="px-4 py-2 bg-red-600 hover:bg-red-500 rounded-lg text-sm font-medium">✕ Clear Filters</button>` : ''}
         </div>
         <div class="bg-slate-800/50 rounded-lg border border-slate-700/50 overflow-hidden">
-          <div class="px-3 py-2 border-b border-slate-700/50 text-sm"><span class="font-semibold">${filtered.length}</span> deals ${hasActiveFilters() ? '<span class="text-emerald-400">(filtered)</span>' : ''} <span class="text-slate-500 text-xs ml-2">• Click name to open HubSpot • <span class="text-cyan-400">addr</span> = matched by address</span></div>
+          <div class="px-3 py-2 border-b border-slate-700/50 text-sm"><span class="font-semibold">${filtered.length}</span> deals ${hasActiveFilters() ? '<span class="text-emerald-400">(filtered)</span>' : ''} <span class="text-slate-500 text-xs ml-2">• <span class="text-cyan-400">addr</span>=address • <span class="text-purple-400">manual</span>=correction</span></div>
           <div class="table-container overflow-x-auto">
             <table class="w-full text-sm">
               <thead class="sticky-header"><tr>
@@ -591,7 +840,7 @@ function render() {
           </div>
         </div>
       ` : `
-        <div class="bg-amber-500/10 border border-amber-500/30 rounded-lg p-4 mb-4"><h3 class="font-semibold text-amber-400">HubSpot Installs Without SGIP Match</h3><p class="text-sm text-slate-400 mt-1">${DATA.hubspotWithoutSgip.length} deals - couldn't match by email or address.</p></div>
+        <div class="bg-amber-500/10 border border-amber-500/30 rounded-lg p-4 mb-4"><h3 class="font-semibold text-amber-400">Not in SGIP Portal</h3><p class="text-sm text-slate-400 mt-1">${DATA.hubspotWithoutSgip.length} deals that couldn't be matched or are marked as "Not in SGIP portal".</p></div>
         <div class="bg-slate-800/50 rounded-lg border border-slate-700/50 overflow-hidden">
           <div class="table-container overflow-x-auto">
             <table class="w-full text-sm">
@@ -607,7 +856,8 @@ function render() {
 
 // Initialize
 async function init() {
-  document.getElementById('app').innerHTML = '<div class="flex items-center justify-center h-64"><div class="text-center"><div class="text-2xl mb-2">⟳</div><p class="text-slate-400">Loading from Supabase...</p></div></div>';
+  document.getElementById('app').innerHTML = '<div class="flex items-center justify-center h-64"><div class="text-center"><div class="text-2xl mb-2">⟳</div><p class="text-slate-400">Loading...</p></div></div>';
+  await loadCorrectionsFromSupabase();
   await loadFromSupabase();
   render();
 }
