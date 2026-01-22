@@ -28,6 +28,9 @@
     .editable:hover { background: rgba(16, 185, 129, 0.1); border-radius: 4px; }
     .sync-btn.syncing { animation: pulse 1s infinite; }
     @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+    .subtab { transition: all 0.15s; }
+    .subtab:hover { background: rgba(255,255,255,0.05); }
+    .subtab.active { background: rgba(59, 130, 246, 0.2); border-color: rgba(59, 130, 246, 0.5); }
   </style>
 </head>
 <body class="bg-slate-900 text-slate-100 min-h-screen">
@@ -35,7 +38,6 @@
     <div class="bg-slate-800 rounded-xl p-6 max-w-lg w-full mx-4 border border-slate-700">
       <h2 class="text-xl font-bold mb-4">📤 Update SGIP Data</h2>
       <p class="text-sm text-slate-400 mb-3">Upload a new SGIP export to replace the saved data.</p>
-      
       <div class="mb-4">
         <h3 class="font-semibold text-cyan-400 mb-2">SGIP Export (CSV)</h3>
         <div id="sgipUploadZone" class="upload-zone rounded-lg p-3 text-center cursor-pointer flex flex-col items-center justify-center">
@@ -43,12 +45,10 @@
         </div>
         <p id="sgipStatus" class="text-xs text-slate-500 mt-1"></p>
       </div>
-      
       <div id="matchStats" class="p-3 bg-slate-900 rounded-lg text-xs hidden">
         <div class="font-semibold mb-1">Match Statistics:</div>
         <div id="matchStatsContent"></div>
       </div>
-      
       <div class="flex gap-3 mt-4">
         <button onclick="closeUploadModal()" class="flex-1 px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg font-medium">Close</button>
       </div>
@@ -59,12 +59,10 @@
     <div class="bg-slate-800 rounded-xl p-6 max-w-lg w-full mx-4 border border-slate-700">
       <h2 class="text-xl font-bold mb-4">⚙️ Manage Corrections</h2>
       <p class="text-sm text-slate-400 mb-3">Upload a correction sheet to permanently save manual matches and exclusions.</p>
-      
       <div id="currentCorrections" class="mb-4 p-3 bg-slate-900 rounded-lg text-xs">
         <div class="font-semibold mb-1">Current Corrections in Database:</div>
         <div id="correctionCounts"></div>
       </div>
-      
       <div class="mb-4">
         <h3 class="font-semibold text-amber-400 mb-2">Upload New Corrections (Excel)</h3>
         <p class="text-xs text-slate-400 mb-2">Columns: Email, SGIP Status (code, "Not in SGIP portal", or "Not an SGIP project")</p>
@@ -73,7 +71,6 @@
         </div>
         <p id="correctionUploadStatus" class="text-xs text-slate-500 mt-1"></p>
       </div>
-      
       <div class="flex gap-3 mt-4">
         <button onclick="closeCorrectionModal()" class="flex-1 px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg font-medium">Close</button>
       </div>
@@ -97,7 +94,6 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   
   <script>
-// Supabase config
 const SUPABASE_URL = 'https://vnxerxefgodekwjdxfqc.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_BjuP0L7Bw2_903MXWqf6Ag_c5QOuB3r';
 const HUBSPOT_PORTAL_ID = '23929498';
@@ -110,8 +106,9 @@ let SEARCH_INDEX = [];
 let MATCH_STATS = { byEmail: 0, byAddress: 0, byManual: 0, noMatch: 0, excluded: 0 };
 let state = { 
   tab: 'matched', 
+  statsSubTab: 'activity',
   search: '', 
-  filters: { permitStatus: [], inspectionStatus: [], ptoStatus: [], sgipStage: [], sgipStatus: [], icfProgress: [], installer: [] },
+  filters: { permitStatus: [], inspectionStatus: [], ptoStatus: [], sgipStage: [], sgipStatus: [], icfProgress: [], installer: [], installMonth: [] },
   sortBy: 'daysSinceInstall', 
   sortDir: 'desc', 
   editingDeal: null, 
@@ -124,42 +121,22 @@ let state = {
 
 let searchTimeout = null;
 
-// ============ SUPABASE FUNCTIONS ============
-
 async function loadSgipFromSupabase() {
   try {
-    console.log('Loading SGIP from Supabase...');
-    
-    // Fetch all records (Supabase defaults to 1000 limit, so we need to paginate)
     let allApplications = [];
     let offset = 0;
     const limit = 1000;
-    
     while (true) {
       const response = await fetch(`${SUPABASE_URL}/rest/v1/sgip_applications?select=*&limit=${limit}&offset=${offset}`, {
-        headers: {
-          'apikey': SUPABASE_ANON_KEY,
-          'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
-        }
+        headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` }
       });
-      
-      if (!response.ok) {
-        console.error('SGIP fetch failed:', response.status, response.statusText);
-        break;
-      }
-      
+      if (!response.ok) break;
       const batch = await response.json();
       if (!Array.isArray(batch) || batch.length === 0) break;
-      
       allApplications = allApplications.concat(batch);
-      console.log(`SGIP batch: ${batch.length} records (total: ${allApplications.length})`);
-      
-      if (batch.length < limit) break; // Last page
+      if (batch.length < limit) break;
       offset += limit;
     }
-    
-    console.log('SGIP total response:', allApplications.length, 'records');
-    
     if (allApplications.length > 0) {
       SGIP_DATA = allApplications.map(a => ({
         email: (a.email || '').toLowerCase().trim(),
@@ -175,274 +152,136 @@ async function loadSgipFromSupabase() {
         icfResubmittedDate: a.icf_resubmitted_date || '',
         icfPendingPaymentDate: a.icf_pending_payment_date || ''
       }));
-      
       state.sgipLoaded = true;
-      
-      // Get last updated time
-      const maxUpdated = allApplications.reduce((max, a) => {
-        const t = new Date(a.updated_at).getTime();
-        return t > max ? t : max;
-      }, 0);
-      if (maxUpdated) {
-        state.sgipLastUpdated = new Date(maxUpdated).toLocaleString();
-      }
-      
-      console.log('SGIP loaded from Supabase:', SGIP_DATA.length, 'records');
+      const maxUpdated = allApplications.reduce((max, a) => { const t = new Date(a.updated_at).getTime(); return t > max ? t : max; }, 0);
+      if (maxUpdated) state.sgipLastUpdated = new Date(maxUpdated).toLocaleString();
       return true;
-    } else {
-      console.log('SGIP: No data found');
     }
-  } catch (e) {
-    console.error('Failed to load SGIP from Supabase:', e);
-  }
+  } catch (e) { console.error('Failed to load SGIP:', e); }
   return false;
 }
 
 async function saveSgipToSupabase(sgipData) {
   if (!sgipData || sgipData.length === 0) return false;
-  
   const records = sgipData.map(s => ({
-    application_code: s.applicationCode,
-    email: s.email,
-    stage: s.sgipStage,
-    status: s.sgipStatus,
-    current_incentive: s.currentIncentive,
-    final_incentive: s.finalIncentive,
-    next_due_date: s.nextDueDate,
-    site_address: s.siteAddress,
-    utility: s.utility,
-    icf_submitted_date: s.icfSubmittedDate || null,
-    icf_resubmitted_date: s.icfResubmittedDate || null,
-    icf_pending_payment_date: s.icfPendingPaymentDate || null,
+    application_code: s.applicationCode, email: s.email, stage: s.sgipStage, status: s.sgipStatus,
+    current_incentive: s.currentIncentive, final_incentive: s.finalIncentive, next_due_date: s.nextDueDate,
+    site_address: s.siteAddress, utility: s.utility, icf_submitted_date: s.icfSubmittedDate || null,
+    icf_resubmitted_date: s.icfResubmittedDate || null, icf_pending_payment_date: s.icfPendingPaymentDate || null,
     updated_at: new Date().toISOString()
-  })).filter(r => r.application_code); // Must have application code
-  
+  })).filter(r => r.application_code);
   if (records.length === 0) return false;
-  
   try {
-    // Delete all existing records first
     await fetch(`${SUPABASE_URL}/rest/v1/sgip_applications?application_code=neq.IMPOSSIBLE`, {
-      method: 'DELETE',
-      headers: {
-        'apikey': SUPABASE_ANON_KEY,
-        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
-      }
+      method: 'DELETE', headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` }
     });
-    
-    // Insert in batches of 500
     for (let i = 0; i < records.length; i += 500) {
       const batch = records.slice(i, i + 500);
       const response = await fetch(`${SUPABASE_URL}/rest/v1/sgip_applications`, {
         method: 'POST',
-        headers: {
-          'apikey': SUPABASE_ANON_KEY,
-          'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-          'Content-Type': 'application/json',
-          'Prefer': 'resolution=merge-duplicates'
-        },
+        headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}`, 'Content-Type': 'application/json', 'Prefer': 'resolution=merge-duplicates' },
         body: JSON.stringify(batch)
       });
-      
-      if (!response.ok) {
-        const err = await response.text();
-        console.error('Failed to save SGIP batch:', err);
-        return false;
-      }
+      if (!response.ok) return false;
     }
-    
     state.sgipLastUpdated = new Date().toLocaleString();
-    console.log('Saved', records.length, 'SGIP records to Supabase');
     return true;
-  } catch (e) {
-    console.error('Failed to save SGIP:', e);
-    return false;
-  }
+  } catch (e) { console.error('Failed to save SGIP:', e); return false; }
 }
 
 async function loadCorrectionsFromSupabase() {
   try {
     const response = await fetch(`${SUPABASE_URL}/rest/v1/corrections?select=*`, {
-      headers: {
-        'apikey': SUPABASE_ANON_KEY,
-        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
-      }
+      headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` }
     });
     const corrections = await response.json();
-    
     if (Array.isArray(corrections)) {
       CORRECTIONS = { manualMatches: {}, notInSgip: new Set(), notSgipProject: new Set() };
-      
       corrections.forEach(c => {
         const email = c.email.toLowerCase().trim();
-        if (c.correction_type === 'manual_match' && c.sgip_code) {
-          CORRECTIONS.manualMatches[email] = c.sgip_code;
-        } else if (c.correction_type === 'not_in_portal') {
-          CORRECTIONS.notInSgip.add(email);
-        } else if (c.correction_type === 'not_sgip_project') {
-          CORRECTIONS.notSgipProject.add(email);
-        }
+        if (c.correction_type === 'manual_match' && c.sgip_code) CORRECTIONS.manualMatches[email] = c.sgip_code;
+        else if (c.correction_type === 'not_in_portal') CORRECTIONS.notInSgip.add(email);
+        else if (c.correction_type === 'not_sgip_project') CORRECTIONS.notSgipProject.add(email);
       });
-      
-      console.log('Corrections loaded:', Object.keys(CORRECTIONS.manualMatches).length, 'manual,', 
-                  CORRECTIONS.notInSgip.size, 'not in portal,', CORRECTIONS.notSgipProject.size, 'excluded');
       return true;
     }
-  } catch (e) {
-    console.error('Failed to load corrections:', e);
-  }
+  } catch (e) { console.error('Failed to load corrections:', e); }
   return false;
 }
 
 async function saveCorrectionsToSupabase(newCorrections) {
   const records = [];
-  
-  for (const [email, code] of Object.entries(newCorrections.manualMatches)) {
-    records.push({ email: email.toLowerCase().trim(), correction_type: 'manual_match', sgip_code: code });
-  }
-  for (const email of newCorrections.notInSgip) {
-    records.push({ email: email.toLowerCase().trim(), correction_type: 'not_in_portal', sgip_code: null });
-  }
-  for (const email of newCorrections.notSgipProject) {
-    records.push({ email: email.toLowerCase().trim(), correction_type: 'not_sgip_project', sgip_code: null });
-  }
-  
+  for (const [email, code] of Object.entries(newCorrections.manualMatches)) records.push({ email: email.toLowerCase().trim(), correction_type: 'manual_match', sgip_code: code });
+  for (const email of newCorrections.notInSgip) records.push({ email: email.toLowerCase().trim(), correction_type: 'not_in_portal', sgip_code: null });
+  for (const email of newCorrections.notSgipProject) records.push({ email: email.toLowerCase().trim(), correction_type: 'not_sgip_project', sgip_code: null });
   if (records.length === 0) return false;
-  
   try {
     const response = await fetch(`${SUPABASE_URL}/rest/v1/corrections`, {
       method: 'POST',
-      headers: {
-        'apikey': SUPABASE_ANON_KEY,
-        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-        'Content-Type': 'application/json',
-        'Prefer': 'resolution=merge-duplicates'
-      },
+      headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}`, 'Content-Type': 'application/json', 'Prefer': 'resolution=merge-duplicates' },
       body: JSON.stringify(records)
     });
-    
-    if (response.ok) {
-      console.log('Saved', records.length, 'corrections');
-      return true;
-    }
-  } catch (e) {
-    console.error('Failed to save corrections:', e);
-  }
-  return false;
+    return response.ok;
+  } catch (e) { console.error('Failed to save corrections:', e); return false; }
 }
 
 async function loadFromSupabase() {
   try {
     const response = await fetch(`${SUPABASE_URL}/rest/v1/deals?select=*`, {
-      headers: {
-        'apikey': SUPABASE_ANON_KEY,
-        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
-      }
+      headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` }
     });
     const deals = await response.json();
-    
     if (Array.isArray(deals)) {
       HUBSPOT_DATA = deals.map(d => ({
-        dealId: String(d.id),
-        dealName: d.deal_name,
-        customerName: parseCustomerName(d.deal_name),
-        email: (d.email || '').toLowerCase().trim(),
-        installDate: d.install_date,
-        permitStatus: mapPermit(d.permit_status),
-        ptoDate: d.pto_date,
-        inspectionStatus: mapInspection(d.inspection_status),
-        sgipStatusHubspot: d.sgip_status_hubspot,
-        installer: d.installer
+        dealId: String(d.id), dealName: d.deal_name, customerName: parseCustomerName(d.deal_name),
+        email: (d.email || '').toLowerCase().trim(), installDate: d.install_date,
+        permitStatus: mapPermit(d.permit_status), ptoDate: d.pto_date,
+        inspectionStatus: mapInspection(d.inspection_status), sgipStatusHubspot: d.sgip_status_hubspot, installer: d.installer
       }));
-      
       const syncResponse = await fetch(`${SUPABASE_URL}/rest/v1/sync_log?select=completed_at&order=completed_at.desc&limit=1`, {
         headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` }
       });
       const syncLog = await syncResponse.json();
-      if (syncLog?.[0]?.completed_at) {
-        state.lastSync = new Date(syncLog[0].completed_at).toLocaleString();
-      }
-      
+      if (syncLog?.[0]?.completed_at) state.lastSync = new Date(syncLog[0].completed_at).toLocaleString();
       return true;
     }
-  } catch (e) {
-    console.error('Failed to load from Supabase:', e);
-  }
+  } catch (e) { console.error('Failed to load from Supabase:', e); }
   return false;
 }
 
 async function triggerSync() {
-  state.syncing = true;
-  render();
-  
+  state.syncing = true; render();
   try {
-    const response = await fetch(`${SUPABASE_URL}/functions/v1/sync-hubspot`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' }
-    });
+    const response = await fetch(`${SUPABASE_URL}/functions/v1/sync-hubspot`, { method: 'POST', headers: { 'Content-Type': 'application/json' } });
     const result = await response.json();
-    
-    if (result.success) {
-      state.lastSync = new Date().toLocaleString();
-      await loadFromSupabase();
-      mergeData();
-      alert(`Synced ${result.deals_synced} deals, ${result.emails_fetched} emails`);
-    } else {
-      alert('Sync failed: ' + (result.error || 'Unknown error'));
-    }
-  } catch (e) {
-    alert('Sync failed: ' + e.message);
-  }
-  
-  state.syncing = false;
-  render();
+    if (result.success) { state.lastSync = new Date().toLocaleString(); await loadFromSupabase(); mergeData(); alert(`Synced ${result.deals_synced} deals, ${result.emails_fetched} emails`); }
+    else alert('Sync failed: ' + (result.error || 'Unknown error'));
+  } catch (e) { alert('Sync failed: ' + e.message); }
+  state.syncing = false; render();
 }
-
-// ============ ADDRESS NORMALIZATION ============
 
 function normalizeAddress(addr) {
   if (!addr) return '';
   let normalized = addr.split('\n')[0].split(',')[0];
-  normalized = normalized.toLowerCase().trim()
-    .replace(/\s+/g, ' ')
-    .replace(/\bstreet\b/g, 'st')
-    .replace(/\bavenue\b/g, 'ave')
-    .replace(/\bdrive\b/g, 'dr')
-    .replace(/\broad\b/g, 'rd')
-    .replace(/\bcourt\b/g, 'ct')
-    .replace(/\bcircle\b/g, 'cir')
-    .replace(/\blane\b/g, 'ln')
-    .replace(/\bplace\b/g, 'pl')
-    .replace(/\bboulevard\b/g, 'blvd')
-    .replace(/\./g, '')
-    .replace(/,/g, '')
-    .trim();
+  normalized = normalized.toLowerCase().trim().replace(/\s+/g, ' ').replace(/\bstreet\b/g, 'st').replace(/\bavenue\b/g, 'ave').replace(/\bdrive\b/g, 'dr').replace(/\broad\b/g, 'rd').replace(/\bcourt\b/g, 'ct').replace(/\bcircle\b/g, 'cir').replace(/\blane\b/g, 'ln').replace(/\bplace\b/g, 'pl').replace(/\bboulevard\b/g, 'blvd').replace(/\./g, '').replace(/,/g, '').trim();
   return normalized;
 }
 
 function extractAddressFromDealName(dealName) {
   if (!dealName) return '';
   const parts = dealName.split(':');
-  if (parts.length > 1) {
-    return normalizeAddress(parts[1].trim());
-  }
-  return '';
+  return parts.length > 1 ? normalizeAddress(parts[1].trim()) : '';
 }
-
-// ============ DATA PROCESSING ============
 
 function parseCustomerName(dealName) {
   if (!dealName) return null;
-  let name = dealName.split(':')[0].trim();
-  name = name.replace(/\s*\(.*?\)\s*/g, '').trim();
-  if (name.includes(',')) {
-    const [last, first] = name.split(',', 2);
-    return first ? `${first.trim()} ${last.trim()}` : last.trim();
-  }
+  let name = dealName.split(':')[0].trim().replace(/\s*\(.*?\)\s*/g, '').trim();
+  if (name.includes(',')) { const [last, first] = name.split(',', 2); return first ? `${first.trim()} ${last.trim()}` : last.trim(); }
   return name;
 }
 
 const permitMap = { 'DONE: Permit approved': 'Approved', 'Permit Rejected': 'Rejected', 'Permit Submitted': 'Submitted', 'Permit Resubmitted': 'Resubmitted', 'Permit revisions in progress': 'Revisions in progress' };
-const inspectionMap = { 'Inspection passed': 'Passed', 'Inspection failed': 'Failed', 'Inspection Scheduled': 'Scheduled', 'Inspection requested': 'Requested', 'Inspection Pending HO Action': 'Pending HO Action' };
+const inspectionMap = { 'Inspection passed': 'Passed', 'Inspection failed': 'Failed', 'Inspection Scheduled': 'Scheduled', 'Inspection requested': 'Requested', 'Inspection Pending HO Action': 'Pending HO Action', 'Meter collar needed': 'Meter Collar Needed' };
 function mapPermit(s) { return permitMap[s] || s; }
 function mapInspection(s) { return inspectionMap[s] || s; }
 
@@ -458,87 +297,35 @@ function getIcfProgress(stage, status) {
     if (["Suspended", "Inspection Suspended", "Resubmitted"].includes(status)) return "ICF Suspended";
     if (status === "Inspection") return "ICF Inspection";
     if (status === "Pending Payment") return "Pending Payment";
-  } else if (stage === "Payment") {
-    return status === "Completed" ? "Payment Completed" : "Payment Processing";
-  } else if (stage === "Cancelled") return "Cancelled";
+  } else if (stage === "Payment") return status === "Completed" ? "Payment Completed" : "Payment Processing";
+  else if (stage === "Cancelled") return "Cancelled";
   return "Not Started";
 }
 
 function mergeData() {
-  const sgipByEmail = {};
-  const sgipByAddress = {};
-  const sgipByCode = {};
-  
+  const sgipByEmail = {}, sgipByAddress = {}, sgipByCode = {};
   SGIP_DATA.forEach(s => {
     const email = (s.email || '').toLowerCase().trim();
     if (email) sgipByEmail[email] = s;
-    
     const addr = normalizeAddress(s.siteAddress);
     if (addr) sgipByAddress[addr] = s;
-    
     if (s.applicationCode) sgipByCode[s.applicationCode] = s;
   });
-
-  const matched = [];
-  const hubspotWithoutSgip = [];
+  const matched = [], hubspotWithoutSgip = [];
   MATCH_STATS = { byEmail: 0, byAddress: 0, byManual: 0, noMatch: 0, excluded: 0 };
-
   HUBSPOT_DATA.forEach(h => {
     const email = (h.email || '').toLowerCase().trim();
     const hubspotAddr = extractAddressFromDealName(h.dealName);
-    
-    if (CORRECTIONS.notSgipProject.has(email)) {
-      MATCH_STATS.excluded++;
-      return;
-    }
-    
+    if (CORRECTIONS.notSgipProject.has(email)) { MATCH_STATS.excluded++; return; }
     const isNotInPortal = CORRECTIONS.notInSgip.has(email);
-    
-    let sgip = null;
-    let matchType = null;
-    
-    if (CORRECTIONS.manualMatches[email]) {
-      const code = CORRECTIONS.manualMatches[email];
-      sgip = sgipByCode[code];
-      if (sgip) matchType = 'manual';
-    }
-    
-    if (!sgip && !isNotInPortal) {
-      sgip = sgipByEmail[email];
-      if (sgip) matchType = 'email';
-    }
-    
-    if (!sgip && !isNotInPortal && hubspotAddr) {
-      sgip = sgipByAddress[hubspotAddr];
-      if (sgip) matchType = 'address';
-    }
-    
-    const record = {
-      ...h,
-      applicationCode: sgip?.applicationCode || '',
-      sgipStage: sgip?.sgipStage || '',
-      sgipStatus: sgip?.sgipStatus || '',
-      currentIncentive: sgip?.currentIncentive || '',
-      finalIncentive: sgip?.finalIncentive || '',
-      nextDueDate: sgip?.nextDueDate || '',
-      siteAddress: sgip?.siteAddress || '',
-      utility: sgip?.utility || '',
-      icfProgress: getIcfProgress(sgip?.sgipStage || '', sgip?.sgipStatus || ''),
-      matchType: matchType,
-      notInPortal: isNotInPortal
-    };
-
-    if (sgip?.applicationCode) {
-      matched.push(record);
-      if (matchType === 'email') MATCH_STATS.byEmail++;
-      else if (matchType === 'address') MATCH_STATS.byAddress++;
-      else if (matchType === 'manual') MATCH_STATS.byManual++;
-    } else {
-      hubspotWithoutSgip.push(record);
-      MATCH_STATS.noMatch++;
-    }
+    let sgip = null, matchType = null;
+    if (CORRECTIONS.manualMatches[email]) { sgip = sgipByCode[CORRECTIONS.manualMatches[email]]; if (sgip) matchType = 'manual'; }
+    if (!sgip && !isNotInPortal) { sgip = sgipByEmail[email]; if (sgip) matchType = 'email'; }
+    if (!sgip && !isNotInPortal && hubspotAddr) { sgip = sgipByAddress[hubspotAddr]; if (sgip) matchType = 'address'; }
+    const record = { ...h, applicationCode: sgip?.applicationCode || '', sgipStage: sgip?.sgipStage || '', sgipStatus: sgip?.sgipStatus || '', currentIncentive: sgip?.currentIncentive || '', finalIncentive: sgip?.finalIncentive || '', nextDueDate: sgip?.nextDueDate || '', siteAddress: sgip?.siteAddress || '', utility: sgip?.utility || '', icfProgress: getIcfProgress(sgip?.sgipStage || '', sgip?.sgipStatus || ''), matchType, notInPortal: isNotInPortal };
+    if (sgip?.applicationCode) { matched.push(record); if (matchType === 'email') MATCH_STATS.byEmail++; else if (matchType === 'address') MATCH_STATS.byAddress++; else if (matchType === 'manual') MATCH_STATS.byManual++; }
+    else { hubspotWithoutSgip.push(record); MATCH_STATS.noMatch++; }
   });
-
   DATA = { matched, hubspotWithoutSgip };
   buildSearchIndex();
   updateMatchStatsDisplay();
@@ -546,66 +333,39 @@ function mergeData() {
 }
 
 function updateMatchStatsDisplay() {
-  const statsDiv = document.getElementById('matchStats');
-  const contentDiv = document.getElementById('matchStatsContent');
+  const statsDiv = document.getElementById('matchStats'), contentDiv = document.getElementById('matchStatsContent');
   if (statsDiv && contentDiv) {
     statsDiv.classList.remove('hidden');
-    contentDiv.innerHTML = `
-      <span class="text-emerald-400">✓ ${MATCH_STATS.byEmail} by email</span> · 
-      <span class="text-cyan-400">✓ ${MATCH_STATS.byAddress} by address</span> · 
-      <span class="text-purple-400">✓ ${MATCH_STATS.byManual} manual</span><br>
-      <span class="text-amber-400">${MATCH_STATS.noMatch} unmatched</span> · 
-      <span class="text-slate-500">${MATCH_STATS.excluded} excluded</span>
-    `;
+    contentDiv.innerHTML = `<span class="text-emerald-400">✓ ${MATCH_STATS.byEmail} by email</span> · <span class="text-cyan-400">✓ ${MATCH_STATS.byAddress} by address</span> · <span class="text-purple-400">✓ ${MATCH_STATS.byManual} manual</span><br><span class="text-amber-400">${MATCH_STATS.noMatch} unmatched</span> · <span class="text-slate-500">${MATCH_STATS.excluded} excluded</span>`;
   }
 }
 
 function buildSearchIndex() {
-  SEARCH_INDEX = DATA.matched.map((d, i) => ({
-    idx: i,
-    text: [d.dealName||'', d.customerName||'', d.applicationCode||'', d.email||'', d.installer||'', d.siteAddress||''].join(' ').toLowerCase()
-  }));
+  SEARCH_INDEX = DATA.matched.map((d, i) => ({ idx: i, text: [d.dealName||'', d.customerName||'', d.applicationCode||'', d.email||'', d.installer||'', d.siteAddress||''].join(' ').toLowerCase() }));
 }
-
-// ============ FILE UPLOAD ============
 
 function showUploadModal() {
   document.getElementById('uploadModal').classList.remove('hidden');
-  document.getElementById('sgipStatus').innerHTML = state.sgipLoaded 
-    ? `<span class="text-emerald-400">✓ ${SGIP_DATA.length} records (saved ${state.sgipLastUpdated || 'unknown'})</span>` 
-    : '<span class="text-slate-500">Not loaded</span>';
+  document.getElementById('sgipStatus').innerHTML = state.sgipLoaded ? `<span class="text-emerald-400">✓ ${SGIP_DATA.length} records (saved ${state.sgipLastUpdated || 'unknown'})</span>` : '<span class="text-slate-500">Not loaded</span>';
   updateMatchStatsDisplay();
   setTimeout(setupSgipUpload, 50);
 }
-
-function closeUploadModal() { 
-  document.getElementById('uploadModal').classList.add('hidden'); 
-}
+function closeUploadModal() { document.getElementById('uploadModal').classList.add('hidden'); }
 
 function showCorrectionModal() {
   document.getElementById('correctionModal').classList.remove('hidden');
-  document.getElementById('correctionCounts').innerHTML = `
-    <span class="text-purple-400">${Object.keys(CORRECTIONS.manualMatches).length} manual matches</span> · 
-    <span class="text-amber-400">${CORRECTIONS.notInSgip.size} not in portal</span> · 
-    <span class="text-slate-500">${CORRECTIONS.notSgipProject.size} excluded</span>
-  `;
+  document.getElementById('correctionCounts').innerHTML = `<span class="text-purple-400">${Object.keys(CORRECTIONS.manualMatches).length} manual matches</span> · <span class="text-amber-400">${CORRECTIONS.notInSgip.size} not in portal</span> · <span class="text-slate-500">${CORRECTIONS.notSgipProject.size} excluded</span>`;
   document.getElementById('correctionUploadStatus').innerHTML = '';
   setTimeout(setupCorrectionUpload, 50);
 }
-
-function closeCorrectionModal() { 
-  document.getElementById('correctionModal').classList.add('hidden'); 
-}
+function closeCorrectionModal() { document.getElementById('correctionModal').classList.add('hidden'); }
 
 function setupSgipUpload() {
   const sgipZone = document.getElementById('sgipUploadZone');
   if (sgipZone._initialized) return;
   sgipZone._initialized = true;
-  
   const sgipInput = document.createElement('input');
-  sgipInput.type = 'file';
-  sgipInput.accept = '.csv';
-  sgipInput.style.display = 'none';
+  sgipInput.type = 'file'; sgipInput.accept = '.csv'; sgipInput.style.display = 'none';
   sgipZone.appendChild(sgipInput);
   sgipZone.onclick = () => sgipInput.click();
   sgipZone.ondragover = (e) => { e.preventDefault(); sgipZone.classList.add('dragover'); };
@@ -618,11 +378,8 @@ function setupCorrectionUpload() {
   const corrZone = document.getElementById('correctionUploadZone');
   if (corrZone._initialized) return;
   corrZone._initialized = true;
-  
   const corrInput = document.createElement('input');
-  corrInput.type = 'file';
-  corrInput.accept = '.xlsx,.xls';
-  corrInput.style.display = 'none';
+  corrInput.type = 'file'; corrInput.accept = '.xlsx,.xls'; corrInput.style.display = 'none';
   corrZone.appendChild(corrInput);
   corrZone.onclick = () => corrInput.click();
   corrZone.ondragover = (e) => { e.preventDefault(); corrZone.classList.add('dragover'); };
@@ -634,116 +391,65 @@ function setupCorrectionUpload() {
 async function handleSgipFile(file) {
   if (!file) return;
   document.getElementById('sgipStatus').innerHTML = '<span class="text-blue-400">Processing...</span>';
-  
   Papa.parse(file, {
-    header: true,
-    skipEmptyLines: true,
+    header: true, skipEmptyLines: true,
     complete: async function(results) {
       const newSgipData = results.data.map(row => ({
         email: (row['Host Customer Email'] || '').toLowerCase().trim(),
-        applicationCode: row['Application Code'] || '',
-        sgipStage: row['Stage'] || '',
-        sgipStatus: row['Status'] || '',
-        currentIncentive: row['Current Incentive ($)'] || '',
-        finalIncentive: row['Final Incentive (ICF)'] || '',
-        nextDueDate: row['Next Due Date'] || '',
-        siteAddress: row['Site Address'] || '',
-        utility: row['Electric Utility'] || '',
-        icfSubmittedDate: row['ICF Submitted Date'] || '',
-        icfResubmittedDate: row['Last ICF Resubmitted Date'] || '',
+        applicationCode: row['Application Code'] || '', sgipStage: row['Stage'] || '', sgipStatus: row['Status'] || '',
+        currentIncentive: row['Current Incentive ($)'] || '', finalIncentive: row['Final Incentive (ICF)'] || '',
+        nextDueDate: row['Next Due Date'] || '', siteAddress: row['Site Address'] || '', utility: row['Electric Utility'] || '',
+        icfSubmittedDate: row['ICF Submitted Date'] || '', icfResubmittedDate: row['Last ICF Resubmitted Date'] || '',
         icfPendingPaymentDate: row['ICF Pending Payment Date'] || ''
       })).filter(s => s.applicationCode);
-      
       document.getElementById('sgipStatus').innerHTML = '<span class="text-blue-400">Saving to database...</span>';
-      
       const saved = await saveSgipToSupabase(newSgipData);
-      
-      if (saved) {
-        SGIP_DATA = newSgipData;
-        state.sgipLoaded = true;
-        document.getElementById('sgipStatus').innerHTML = `<span class="text-emerald-400">✓ Saved ${SGIP_DATA.length} records!</span>`;
-        mergeData();
-      } else {
-        document.getElementById('sgipStatus').innerHTML = `<span class="text-red-400">Failed to save. Check console.</span>`;
-      }
+      if (saved) { SGIP_DATA = newSgipData; state.sgipLoaded = true; document.getElementById('sgipStatus').innerHTML = `<span class="text-emerald-400">✓ Saved ${SGIP_DATA.length} records!</span>`; mergeData(); }
+      else document.getElementById('sgipStatus').innerHTML = `<span class="text-red-400">Failed to save. Check console.</span>`;
     },
-    error: function(err) {
-      document.getElementById('sgipStatus').innerHTML = `<span class="text-red-400">Error: ${err.message}</span>`;
-    }
+    error: function(err) { document.getElementById('sgipStatus').innerHTML = `<span class="text-red-400">Error: ${err.message}</span>`; }
   });
 }
 
 async function handleCorrectionFile(file) {
   if (!file) return;
   document.getElementById('correctionUploadStatus').innerHTML = '<span class="text-blue-400">Processing...</span>';
-  
   const reader = new FileReader();
   reader.onload = async function(e) {
     try {
       const workbook = XLSX.read(e.target.result, { type: 'array' });
       const sheet = workbook.Sheets[workbook.SheetNames[0]];
       const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
-      
       let headerIdx = 0;
-      for (let i = 0; i < Math.min(5, rows.length); i++) {
-        if (rows[i].some(c => String(c).toLowerCase().includes('email'))) {
-          headerIdx = i;
-          break;
-        }
-      }
-      
+      for (let i = 0; i < Math.min(5, rows.length); i++) { if (rows[i].some(c => String(c).toLowerCase().includes('email'))) { headerIdx = i; break; } }
       const headers = rows[headerIdx].map(h => String(h).toLowerCase().trim());
       const emailIdx = headers.findIndex(h => h.includes('email'));
       const sgipIdx = headers.findIndex(h => h.includes('sgip'));
-      
       const newCorrections = { manualMatches: {}, notInSgip: new Set(), notSgipProject: new Set() };
-      
       for (let i = headerIdx + 1; i < rows.length; i++) {
         const row = rows[i];
         const email = (row[emailIdx] || '').toLowerCase().trim();
         const sgipStatus = (row[sgipIdx] || '').trim();
-        
         if (!email) continue;
-        
-        if (sgipStatus.toLowerCase() === 'not an sgip project') {
-          newCorrections.notSgipProject.add(email);
-        } else if (sgipStatus.toLowerCase() === 'not in sgip portal') {
-          newCorrections.notInSgip.add(email);
-        } else if (sgipStatus && sgipStatus.includes('SGIP')) {
-          newCorrections.manualMatches[email] = sgipStatus;
-        }
+        if (sgipStatus.toLowerCase() === 'not an sgip project') newCorrections.notSgipProject.add(email);
+        else if (sgipStatus.toLowerCase() === 'not in sgip portal') newCorrections.notInSgip.add(email);
+        else if (sgipStatus && sgipStatus.includes('SGIP')) newCorrections.manualMatches[email] = sgipStatus;
       }
-      
       const totalCount = Object.keys(newCorrections.manualMatches).length + newCorrections.notInSgip.size + newCorrections.notSgipProject.size;
-      
       document.getElementById('correctionUploadStatus').innerHTML = '<span class="text-blue-400">Saving to database...</span>';
-      
       const saved = await saveCorrectionsToSupabase(newCorrections);
-      
       if (saved) {
         Object.assign(CORRECTIONS.manualMatches, newCorrections.manualMatches);
         newCorrections.notInSgip.forEach(e => CORRECTIONS.notInSgip.add(e));
         newCorrections.notSgipProject.forEach(e => CORRECTIONS.notSgipProject.add(e));
-        
         document.getElementById('correctionUploadStatus').innerHTML = `<span class="text-emerald-400">✓ Saved ${totalCount} corrections!</span>`;
-        document.getElementById('correctionCounts').innerHTML = `
-          <span class="text-purple-400">${Object.keys(CORRECTIONS.manualMatches).length} manual matches</span> · 
-          <span class="text-amber-400">${CORRECTIONS.notInSgip.size} not in portal</span> · 
-          <span class="text-slate-500">${CORRECTIONS.notSgipProject.size} excluded</span>
-        `;
-        
+        document.getElementById('correctionCounts').innerHTML = `<span class="text-purple-400">${Object.keys(CORRECTIONS.manualMatches).length} manual matches</span> · <span class="text-amber-400">${CORRECTIONS.notInSgip.size} not in portal</span> · <span class="text-slate-500">${CORRECTIONS.notSgipProject.size} excluded</span>`;
         mergeData();
-      } else {
-        document.getElementById('correctionUploadStatus').innerHTML = `<span class="text-red-400">Failed to save.</span>`;
-      }
-    } catch (err) {
-      document.getElementById('correctionUploadStatus').innerHTML = `<span class="text-red-400">Error: ${err.message}</span>`;
-    }
+      } else document.getElementById('correctionUploadStatus').innerHTML = `<span class="text-red-400">Failed to save.</span>`;
+    } catch (err) { document.getElementById('correctionUploadStatus').innerHTML = `<span class="text-red-400">Error: ${err.message}</span>`; }
   };
   reader.readAsArrayBuffer(file);
 }
-
-// ============ UI HELPERS ============
 
 const STAGES = [
   { key: 'Not Started', label: 'Not Started', color: '#64748b', stage: 0 },
@@ -766,16 +472,24 @@ const getDaysSince = d => { if (!d || d === 'None') return null; try { return Ma
 const parseDate = d => { if (!d || d === 'None' || d === '(No value)') return null; try { if (String(d).includes('/')) { const [m, day, y] = String(d).split('/'); return new Date(2000 + parseInt(y), parseInt(m) - 1, parseInt(day)); } return new Date(d); } catch { return null; } };
 const getHubSpotUrl = id => id ? `https://app.hubspot.com/contacts/${HUBSPOT_PORTAL_ID}/deal/${id}` : null;
 
+function getInstallMonth(dateStr) { const d = parseDate(dateStr); if (!d) return null; return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; }
+function formatMonthLabel(monthKey) { if (!monthKey) return '(No date)'; const [year, month] = monthKey.split('-'); const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']; return `${monthNames[parseInt(month) - 1]} ${year}`; }
+
 function getFilterCounts(field, transform = v => v) {
   const counts = {};
   DATA.matched.forEach(d => { let val = transform(d[field]); if (!val || val === '(No value)' || val === 'None') val = '(empty)'; counts[val] = (counts[val] || 0) + 1; });
   return Object.entries(counts).sort((a,b) => b[1] - a[1]);
 }
 
+function getInstallMonthCounts() {
+  const counts = {};
+  DATA.matched.forEach(d => { const month = getInstallMonth(d.installDate); const key = month || '(No date)'; counts[key] = (counts[key] || 0) + 1; });
+  return Object.entries(counts).sort((a, b) => { if (a[0] === '(No date)') return 1; if (b[0] === '(No date)') return -1; return b[0].localeCompare(a[0]); });
+}
+
 function getFilteredData() {
   let indices = state.search ? SEARCH_INDEX.filter(s => s.text.includes(state.search.toLowerCase())).map(s => s.idx) : DATA.matched.map((_, i) => i);
   let r = indices.map(i => ({ ...DATA.matched[i], _index: i, daysSinceInstall: getDaysSince(DATA.matched[i].installDate) }));
-  
   if (state.filters.permitStatus.length > 0) r = r.filter(d => state.filters.permitStatus.includes(d.permitStatus || '(empty)') || (!d.permitStatus && state.filters.permitStatus.includes('(empty)')));
   if (state.filters.inspectionStatus.length > 0) r = r.filter(d => { let v = d.inspectionStatus; if (!v || v === '(No value)') v = '(empty)'; return state.filters.inspectionStatus.includes(v); });
   if (state.filters.ptoStatus.length > 0) r = r.filter(d => { const has = d.ptoDate && d.ptoDate !== '(No value)' && d.ptoDate !== 'None'; return state.filters.ptoStatus.includes(has ? 'Complete' : 'Pending'); });
@@ -783,7 +497,7 @@ function getFilteredData() {
   if (state.filters.sgipStatus.length > 0) r = r.filter(d => state.filters.sgipStatus.includes(d.sgipStatus || '(empty)'));
   if (state.filters.icfProgress.length > 0) r = r.filter(d => state.filters.icfProgress.includes(d.icfProgress));
   if (state.filters.installer.length > 0) r = r.filter(d => { let v = d.installer; if (!v || v === '(No value)') v = '(empty)'; return state.filters.installer.includes(v); });
-
+  if (state.filters.installMonth.length > 0) r = r.filter(d => { const month = getInstallMonth(d.installDate) || '(No date)'; return state.filters.installMonth.includes(month); });
   r.sort((a, b) => {
     let av, bv;
     if (state.sortBy === 'daysSinceInstall') { av = a.daysSinceInstall ?? -1; bv = b.daysSinceInstall ?? -1; }
@@ -803,107 +517,84 @@ function getPeriodicStats() {
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const tomorrow = new Date(today); tomorrow.setDate(tomorrow.getDate() + 1);
   const yesterday = new Date(today); yesterday.setDate(yesterday.getDate() - 1);
-  const dayOfWeek = today.getDay(); // 0 = Sunday
+  const dayOfWeek = today.getDay();
   const weekStart = new Date(today); weekStart.setDate(weekStart.getDate() - dayOfWeek);
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const lastWeekEnd = new Date(weekStart);
+  const lastWeekStart = new Date(weekStart); lastWeekStart.setDate(lastWeekStart.getDate() - 7);
+  const lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 1);
+  const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
   
-  const parseAnyDate = (dateStr) => {
-    if (!dateStr) return null;
-    let d;
-    if (dateStr.includes('/')) {
-      const parts = dateStr.split('/');
-      if (parts.length === 3) {
-        let year = parseInt(parts[2]);
-        if (year < 100) year += 2000;
-        d = new Date(year, parseInt(parts[0]) - 1, parseInt(parts[1]));
-      }
-    } else {
-      d = new Date(dateStr);
-    }
-    return (d && !isNaN(d.getTime())) ? d : null;
-  };
-  
-  const isInRange = (dateStr, start, end) => {
-    const d = parseAnyDate(dateStr);
-    if (!d) return false;
-    return d >= start && d < end;
-  };
-  
+  const parseAnyDate = (dateStr) => { if (!dateStr) return null; let d; if (dateStr.includes('/')) { const parts = dateStr.split('/'); if (parts.length === 3) { let year = parseInt(parts[2]); if (year < 100) year += 2000; d = new Date(year, parseInt(parts[0]) - 1, parseInt(parts[1])); } } else d = new Date(dateStr); return (d && !isNaN(d.getTime())) ? d : null; };
+  const isInRange = (dateStr, start, end) => { const d = parseAnyDate(dateStr); if (!d) return false; return d >= start && d < end; };
   const isYesterday = (dateStr) => isInRange(dateStr, yesterday, today);
   const isWTD = (dateStr) => isInRange(dateStr, weekStart, tomorrow);
   const isMTD = (dateStr) => isInRange(dateStr, monthStart, tomorrow);
+  const isLastWeek = (dateStr) => isInRange(dateStr, lastWeekStart, lastWeekEnd);
+  const isLastMonth = (dateStr) => isInRange(dateStr, lastMonthStart, lastMonthEnd);
   
-  // Installs Completed - based on installDate from HubSpot
   const allDeals = [...DATA.matched, ...DATA.hubspotWithoutSgip];
-  const installsYesterday = allDeals.filter(d => isYesterday(d.installDate)).length;
-  const installsWTD = allDeals.filter(d => isWTD(d.installDate)).length;
-  const installsMTD = allDeals.filter(d => isMTD(d.installDate)).length;
-  
-  // ICFs Submitted - from SGIP icfSubmittedDate
-  const icfSubmittedYesterday = SGIP_DATA.filter(d => isYesterday(d.icfSubmittedDate)).length;
-  const icfSubmittedWTD = SGIP_DATA.filter(d => isWTD(d.icfSubmittedDate)).length;
-  const icfSubmittedMTD = SGIP_DATA.filter(d => isMTD(d.icfSubmittedDate)).length;
-  
-  // ICFs Resubmitted - from SGIP icfResubmittedDate
-  const icfResubmittedYesterday = SGIP_DATA.filter(d => isYesterday(d.icfResubmittedDate)).length;
-  const icfResubmittedWTD = SGIP_DATA.filter(d => isWTD(d.icfResubmittedDate)).length;
-  const icfResubmittedMTD = SGIP_DATA.filter(d => isMTD(d.icfResubmittedDate)).length;
-  
-  // ICFs Approved (Pending Payment) - from SGIP icfPendingPaymentDate
-  const icfApprovedYesterday = SGIP_DATA.filter(d => isYesterday(d.icfPendingPaymentDate)).length;
-  const icfApprovedWTD = SGIP_DATA.filter(d => isWTD(d.icfPendingPaymentDate)).length;
-  const icfApprovedMTD = SGIP_DATA.filter(d => isMTD(d.icfPendingPaymentDate)).length;
-  
   return {
-    installs: { yesterday: installsYesterday, wtd: installsWTD, mtd: installsMTD },
-    icfSubmitted: { yesterday: icfSubmittedYesterday, wtd: icfSubmittedWTD, mtd: icfSubmittedMTD },
-    icfResubmitted: { yesterday: icfResubmittedYesterday, wtd: icfResubmittedWTD, mtd: icfResubmittedMTD },
-    icfApproved: { yesterday: icfApprovedYesterday, wtd: icfApprovedWTD, mtd: icfApprovedMTD },
-    weekStart: weekStart.toLocaleDateString(),
-    monthStart: monthStart.toLocaleDateString()
+    installs: { yesterday: allDeals.filter(d => isYesterday(d.installDate)).length, wtd: allDeals.filter(d => isWTD(d.installDate)).length, mtd: allDeals.filter(d => isMTD(d.installDate)).length, lastWeek: allDeals.filter(d => isLastWeek(d.installDate)).length, lastMonth: allDeals.filter(d => isLastMonth(d.installDate)).length },
+    icfSubmitted: { yesterday: SGIP_DATA.filter(d => isYesterday(d.icfSubmittedDate)).length, wtd: SGIP_DATA.filter(d => isWTD(d.icfSubmittedDate)).length, mtd: SGIP_DATA.filter(d => isMTD(d.icfSubmittedDate)).length, lastWeek: SGIP_DATA.filter(d => isLastWeek(d.icfSubmittedDate)).length, lastMonth: SGIP_DATA.filter(d => isLastMonth(d.icfSubmittedDate)).length },
+    icfResubmitted: { yesterday: SGIP_DATA.filter(d => isYesterday(d.icfResubmittedDate)).length, wtd: SGIP_DATA.filter(d => isWTD(d.icfResubmittedDate)).length, mtd: SGIP_DATA.filter(d => isMTD(d.icfResubmittedDate)).length, lastWeek: SGIP_DATA.filter(d => isLastWeek(d.icfResubmittedDate)).length, lastMonth: SGIP_DATA.filter(d => isLastMonth(d.icfResubmittedDate)).length },
+    icfApproved: { yesterday: SGIP_DATA.filter(d => isYesterday(d.icfPendingPaymentDate)).length, wtd: SGIP_DATA.filter(d => isWTD(d.icfPendingPaymentDate)).length, mtd: SGIP_DATA.filter(d => isMTD(d.icfPendingPaymentDate)).length, lastWeek: SGIP_DATA.filter(d => isLastWeek(d.icfPendingPaymentDate)).length, lastMonth: SGIP_DATA.filter(d => isLastMonth(d.icfPendingPaymentDate)).length },
+    weekStart: weekStart.toLocaleDateString(), monthStart: monthStart.toLocaleDateString(),
+    lastWeekStart: lastWeekStart.toLocaleDateString(), lastWeekEnd: new Date(lastWeekEnd.getTime() - 86400000).toLocaleDateString(),
+    lastMonthStart: lastMonthStart.toLocaleDateString(), lastMonthEnd: new Date(lastMonthEnd.getTime() - 86400000).toLocaleDateString()
   };
+}
+
+function getStatusCounts() {
+  const allDeals = [...DATA.matched, ...DATA.hubspotWithoutSgip];
+  const permitApproved = allDeals.filter(d => d.permitStatus === 'Approved').length;
+  const inspectionComplete = allDeals.filter(d => d.inspectionStatus === 'Passed').length;
+  const inspectionScheduled = allDeals.filter(d => d.inspectionStatus === 'Scheduled' || d.inspectionStatus === 'Requested').length;
+  const inspectionMeterCollar = allDeals.filter(d => d.inspectionStatus === 'Meter Collar Needed' || (d.inspectionStatus && d.inspectionStatus.toLowerCase().includes('meter collar'))).length;
+  const inspectionNotComplete = allDeals.filter(d => !d.inspectionStatus || d.inspectionStatus === '(No value)' || d.inspectionStatus === 'Failed' || d.inspectionStatus === 'Pending HO Action').length;
+  const ptoComplete = allDeals.filter(d => d.ptoDate && d.ptoDate !== '(No value)' && d.ptoDate !== 'None').length;
+  return {
+    permit: { approved: permitApproved, notApproved: allDeals.length - permitApproved },
+    inspection: { complete: inspectionComplete, scheduled: inspectionScheduled, meterCollar: inspectionMeterCollar, notComplete: inspectionNotComplete },
+    pto: { complete: ptoComplete, pending: allDeals.length - ptoComplete },
+    total: allDeals.length
+  };
+}
+
+function getInstallsByMonth() {
+  const allDeals = [...DATA.matched, ...DATA.hubspotWithoutSgip];
+  const byMonth = {};
+  allDeals.forEach(d => {
+    const month = getInstallMonth(d.installDate);
+    if (!month) return;
+    if (!byMonth[month]) byMonth[month] = { total: 0, icfComplete: 0, icfPending: 0 };
+    byMonth[month].total++;
+    const icfProgress = d.icfProgress || 'Not Started';
+    if (icfProgress === 'Pending Payment' || icfProgress === 'Payment Completed') byMonth[month].icfComplete++;
+    else byMonth[month].icfPending++;
+  });
+  return Object.entries(byMonth).sort((a, b) => b[0].localeCompare(a[0])).map(([month, data]) => ({ month, ...data }));
+}
+
+function getActionItems() {
+  const allDeals = [...DATA.matched, ...DATA.hubspotWithoutSgip];
+  const notPermitted = allDeals.filter(d => d.permitStatus !== 'Approved');
+  const meterCollar = allDeals.filter(d => d.inspectionStatus === 'Meter Collar Needed' || (d.inspectionStatus && d.inspectionStatus.toLowerCase().includes('meter collar')));
+  const awaitingInspection = allDeals.filter(d => { const status = d.inspectionStatus; return status === 'Failed' || status === 'Scheduled' || status === 'Requested' || status === 'Pending HO Action' || !status || status === '(No value)'; });
+  const icfInProgress = ['ICF Under Review', 'ICF Inspection', 'Pending Payment', 'Payment Completed'];
+  const ptoButNoIcf = allDeals.filter(d => { const hasPto = d.ptoDate && d.ptoDate !== '(No value)' && d.ptoDate !== 'None'; return hasPto && !icfInProgress.includes(d.icfProgress || 'Not Started'); });
+  const inspectionPassedNoPto = allDeals.filter(d => { const hasPto = d.ptoDate && d.ptoDate !== '(No value)' && d.ptoDate !== 'None'; return d.inspectionStatus === 'Passed' && !hasPto; });
+  return { notPermitted, meterCollar, awaitingInspection, ptoButNoIcf, inspectionPassedNoPto };
 }
 
 function getStats() {
   const m = DATA.matched;
   const cutoffDate = new Date('2025-04-01');
-  
-  // Helper to check if install date is after cutoff
-  const isAfterCutoff = (dateStr) => {
-    if (!dateStr) return false;
-    let d;
-    if (dateStr.includes('/')) {
-      const parts = dateStr.split('/');
-      if (parts.length === 3) {
-        let year = parseInt(parts[2]);
-        if (year < 100) year += 2000;
-        d = new Date(year, parseInt(parts[0]) - 1, parseInt(parts[1]));
-      }
-    } else {
-      d = new Date(dateStr);
-    }
-    return d && !isNaN(d.getTime()) && d >= cutoffDate;
-  };
-  
-  // Get application codes for deals installed after cutoff
+  const isAfterCutoff = (dateStr) => { if (!dateStr) return false; let d; if (dateStr.includes('/')) { const parts = dateStr.split('/'); if (parts.length === 3) { let year = parseInt(parts[2]); if (year < 100) year += 2000; d = new Date(year, parseInt(parts[0]) - 1, parseInt(parts[1])); } } else d = new Date(dateStr); return d && !isNaN(d.getTime()) && d >= cutoffDate; };
   const postCutoffCodes = new Set(m.filter(d => isAfterCutoff(d.installDate)).map(d => d.applicationCode).filter(c => c));
-  
-  // ICF Submitted = has icfSubmittedDate AND is in our post-cutoff deals
   const icfSubmittedTotal = SGIP_DATA.filter(d => d.icfSubmittedDate && postCutoffCodes.has(d.applicationCode)).length;
-  // ICF Approved = has icfPendingPaymentDate AND is in our post-cutoff deals
   const icfApprovedTotal = SGIP_DATA.filter(d => d.icfPendingPaymentDate && postCutoffCodes.has(d.applicationCode)).length;
-  
-  return { 
-    total: m.length, 
-    paid: m.filter(d => d.icfProgress === 'Payment Completed').length, 
-    suspended: m.filter(d => (d.icfProgress || '').includes('Suspended')).length, 
-    totalIncentive: m.reduce((s, d) => s + parseNum(d.currentIncentive), 0), 
-    paidIncentive: m.filter(d => d.icfProgress === 'Payment Completed').reduce((s, d) => s + parseNum(d.finalIncentive), 0), 
-    ptoComplete: m.filter(d => d.ptoDate && d.ptoDate !== '(No value)' && d.ptoDate !== 'None').length, 
-    permitted: m.filter(d => d.permitStatus === 'Approved').length,
-    icfSubmitted: icfSubmittedTotal,
-    icfApproved: icfApprovedTotal
-  };
+  return { total: m.length, paid: m.filter(d => d.icfProgress === 'Payment Completed').length, suspended: m.filter(d => (d.icfProgress || '').includes('Suspended')).length, totalIncentive: m.reduce((s, d) => s + parseNum(d.currentIncentive), 0), paidIncentive: m.filter(d => d.icfProgress === 'Payment Completed').reduce((s, d) => s + parseNum(d.finalIncentive), 0), ptoComplete: m.filter(d => d.ptoDate && d.ptoDate !== '(No value)' && d.ptoDate !== 'None').length, permitted: m.filter(d => d.permitStatus === 'Approved').length, icfSubmitted: icfSubmittedTotal, icfApproved: icfApprovedTotal };
 }
 
 const getPermitStyle = s => { if (!s) return 'bg-slate-800 text-slate-500 border-slate-700'; if (s === 'Approved') return 'bg-green-900/50 text-green-400 border-green-800'; if (s === 'Rejected') return 'bg-red-900/50 text-red-400 border-red-800'; if (s === 'Submitted' || s === 'Resubmitted') return 'bg-blue-900/50 text-blue-400 border-blue-800'; return 'bg-amber-900/50 text-amber-400 border-amber-800'; };
@@ -912,66 +603,19 @@ const getPTOStyle = d => (!d || d === '(No value)' || d === 'None') ? 'bg-slate-
 const getDaysColor = d => d === null ? 'text-slate-600' : d > 90 ? 'text-red-400' : d > 60 ? 'text-amber-400' : d > 30 ? 'text-yellow-400' : 'text-slate-300';
 
 function setTab(t) { state.tab = t; state.search = ''; render(); }
+function setStatsSubTab(t) { state.statsSubTab = t; render(); }
 function updateSearch(v) { state.search = v; if (searchTimeout) clearTimeout(searchTimeout); searchTimeout = setTimeout(() => render(), 150); }
 function setSort(col) { if (state.sortBy === col) state.sortDir = state.sortDir === 'asc' ? 'desc' : 'asc'; else { state.sortBy = col; state.sortDir = 'desc'; } closeAllDropdowns(); render(); }
 
-// Dropdown management
 let openDropdownId = null;
+function toggleDropdown(id, event) { event.stopPropagation(); const menu = document.getElementById(id); if (!menu) return; if (menu.classList.contains('open')) { menu.classList.remove('open'); openDropdownId = null; } else { closeAllDropdowns(); menu.classList.add('open'); openDropdownId = id; } }
+function closeAllDropdowns() { document.querySelectorAll('.dropdown-menu.open').forEach(m => m.classList.remove('open')); openDropdownId = null; }
+document.addEventListener('click', function(e) { if (!e.target.closest('.dropdown')) closeAllDropdowns(); });
 
-function toggleDropdown(id, event) {
-  event.stopPropagation();
-  const menu = document.getElementById(id);
-  if (!menu) return;
-  
-  if (menu.classList.contains('open')) {
-    menu.classList.remove('open');
-    openDropdownId = null;
-  } else {
-    // Close any other open dropdown
-    closeAllDropdowns();
-    menu.classList.add('open');
-    openDropdownId = id;
-  }
-}
-
-function closeAllDropdowns() {
-  document.querySelectorAll('.dropdown-menu.open').forEach(m => m.classList.remove('open'));
-  openDropdownId = null;
-}
-
-// Close dropdown when clicking outside
-document.addEventListener('click', function(e) {
-  if (!e.target.closest('.dropdown')) {
-    closeAllDropdowns();
-  }
-});
-
-function toggleFilterKeepOpen(key, val) { 
-  const idx = state.filters[key].indexOf(val); 
-  if (idx >= 0) state.filters[key].splice(idx, 1); 
-  else state.filters[key].push(val); 
-  renderKeepDropdown();
-}
-
-function selectAllFilterKeepOpen(key, options) { 
-  state.filters[key] = options.map(o => o[0]); 
-  renderKeepDropdown();
-}
-
-function clearFilterKeyKeepOpen(key) { 
-  state.filters[key] = []; 
-  renderKeepDropdown();
-}
-
-function renderKeepDropdown() {
-  const currentOpenId = openDropdownId;
-  render();
-  if (currentOpenId) {
-    const menu = document.getElementById(currentOpenId);
-    if (menu) menu.classList.add('open');
-  }
-}
-
+function toggleFilterKeepOpen(key, val) { const idx = state.filters[key].indexOf(val); if (idx >= 0) state.filters[key].splice(idx, 1); else state.filters[key].push(val); renderKeepDropdown(); }
+function selectAllFilterKeepOpen(key, options) { state.filters[key] = options.map(o => o[0]); renderKeepDropdown(); }
+function clearFilterKeyKeepOpen(key) { state.filters[key] = []; renderKeepDropdown(); }
+function renderKeepDropdown() { const currentOpenId = openDropdownId; render(); if (currentOpenId) { const menu = document.getElementById(currentOpenId); if (menu) menu.classList.add('open'); } }
 function toggleFilter(key, val) { const idx = state.filters[key].indexOf(val); if (idx >= 0) state.filters[key].splice(idx, 1); else state.filters[key].push(val); render(); }
 function selectAllFilter(key, options) { state.filters[key] = options.map(o => o[0]); render(); }
 function clearFilterKey(key) { state.filters[key] = []; render(); }
@@ -979,7 +623,7 @@ function clearFilters() { Object.keys(state.filters).forEach(k => state.filters[
 function hasActiveFilters() { return state.search || Object.values(state.filters).some(v => v.length > 0); }
 
 const PERMIT_OPTIONS = ['Approved', 'Rejected', 'Submitted', 'Resubmitted', 'Revisions in progress'];
-const INSPECTION_OPTIONS = ['Passed', 'Failed', 'Scheduled', 'Requested', 'Pending HO Action'];
+const INSPECTION_OPTIONS = ['Passed', 'Failed', 'Scheduled', 'Requested', 'Pending HO Action', 'Meter Collar Needed'];
 
 function openEditModal(idx, field) {
   const deal = getFilteredData()[idx];
@@ -1007,35 +651,16 @@ function filterHeader(label, filterKey, sortKey, options, editable = false) {
   const isFiltered = cnt > 0;
   const isSorted = state.sortBy === sortKey;
   const dropdownId = `dropdown-${filterKey}`;
-  return `<th class="px-2 py-3 text-left text-xs font-semibold uppercase">
-    <div class="dropdown">
-      <span class="cursor-pointer hover:text-slate-200 ${isFiltered ? 'filter-active' : 'text-slate-400'}" onclick="toggleDropdown('${dropdownId}', event)">
-        ${label}${isSorted ? (state.sortDir === 'asc' ? ' ↑' : ' ↓') : ''}${isFiltered ? ` (${cnt})` : ''}${editable ? ' ✎' : ''}
-        <svg class="w-3 h-3 inline ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
-      </span>
-      <div id="${dropdownId}" class="dropdown-menu" onclick="event.stopPropagation()">
-        ${sortKey ? `<div class="p-2 border-b border-slate-700">
-          <div class="text-[10px] text-slate-500 uppercase mb-1">Sort</div>
-          <div class="dropdown-item rounded px-2 py-1 cursor-pointer hover:bg-slate-700 ${isSorted && state.sortDir === 'desc' ? 'bg-slate-700' : ''}" onclick="setSort('${sortKey}')">Highest First</div>
-          <div class="dropdown-item rounded px-2 py-1 cursor-pointer hover:bg-slate-700 ${isSorted && state.sortDir === 'asc' ? 'bg-slate-700' : ''}" onclick="state.sortBy='${sortKey}';state.sortDir='asc';closeAllDropdowns();render();">Lowest First</div>
-        </div>` : ''}
-        <div class="p-2">
-          <div class="flex justify-between items-center mb-2">
-            <div class="text-[10px] text-slate-500 uppercase">Filter</div>
-            <div class="flex gap-1">
-              <button onclick="selectAllFilterKeepOpen('${filterKey}',${JSON.stringify(options).replace(/"/g,'&quot;')})" class="text-[10px] px-2 py-0.5 bg-slate-700 hover:bg-slate-600 rounded">All</button>
-              <button onclick="clearFilterKeyKeepOpen('${filterKey}')" class="text-[10px] px-2 py-0.5 bg-slate-700 hover:bg-slate-600 rounded">None</button>
-            </div>
-          </div>
-          ${options.map(([v,c]) => `<label class="checkbox-item rounded" onclick="event.stopPropagation()">
-            <input type="checkbox" ${state.filters[filterKey].includes(v) ? 'checked' : ''} onchange="toggleFilterKeepOpen('${filterKey}','${v.replace(/'/g,"\\'")}')">
-            <span class="flex-1">${v.length > 25 ? v.slice(0,23)+'..' : v}</span>
-            <span class="text-slate-500">(${c})</span>
-          </label>`).join('')}
-        </div>
-      </div>
-    </div>
-  </th>`;
+  return `<th class="px-2 py-3 text-left text-xs font-semibold uppercase"><div class="dropdown"><span class="cursor-pointer hover:text-slate-200 ${isFiltered ? 'filter-active' : 'text-slate-400'}" onclick="toggleDropdown('${dropdownId}', event)">${label}${isSorted ? (state.sortDir === 'asc' ? ' ↑' : ' ↓') : ''}${isFiltered ? ` (${cnt})` : ''}${editable ? ' ✎' : ''}<svg class="w-3 h-3 inline ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg></span><div id="${dropdownId}" class="dropdown-menu" onclick="event.stopPropagation()">${sortKey ? `<div class="p-2 border-b border-slate-700"><div class="text-[10px] text-slate-500 uppercase mb-1">Sort</div><div class="dropdown-item rounded px-2 py-1 cursor-pointer hover:bg-slate-700 ${isSorted && state.sortDir === 'desc' ? 'bg-slate-700' : ''}" onclick="setSort('${sortKey}')">Highest First</div><div class="dropdown-item rounded px-2 py-1 cursor-pointer hover:bg-slate-700 ${isSorted && state.sortDir === 'asc' ? 'bg-slate-700' : ''}" onclick="state.sortBy='${sortKey}';state.sortDir='asc';closeAllDropdowns();render();">Lowest First</div></div>` : ''}<div class="p-2"><div class="flex justify-between items-center mb-2"><div class="text-[10px] text-slate-500 uppercase">Filter</div><div class="flex gap-1"><button onclick="selectAllFilterKeepOpen('${filterKey}',${JSON.stringify(options).replace(/"/g,'&quot;')})" class="text-[10px] px-2 py-0.5 bg-slate-700 hover:bg-slate-600 rounded">All</button><button onclick="clearFilterKeyKeepOpen('${filterKey}')" class="text-[10px] px-2 py-0.5 bg-slate-700 hover:bg-slate-600 rounded">None</button></div></div>${options.map(([v,c]) => `<label class="checkbox-item rounded" onclick="event.stopPropagation()"><input type="checkbox" ${state.filters[filterKey].includes(v) ? 'checked' : ''} onchange="toggleFilterKeepOpen('${filterKey}','${v.replace(/'/g,"\\'")}')"><span class="flex-1">${v.length > 25 ? v.slice(0,23)+'..' : v}</span><span class="text-slate-500">(${c})</span></label>`).join('')}</div></div></div></th>`;
+}
+
+function installMonthFilterHeader() {
+  const options = getInstallMonthCounts();
+  const cnt = state.filters.installMonth.length;
+  const isFiltered = cnt > 0;
+  const isSorted = state.sortBy === 'installDate';
+  const dropdownId = 'dropdown-installMonth';
+  return `<th class="px-2 py-3 text-left text-xs font-semibold uppercase"><div class="dropdown"><span class="cursor-pointer hover:text-slate-200 ${isFiltered ? 'filter-active' : 'text-slate-400'}" onclick="toggleDropdown('${dropdownId}', event)">Install${isSorted ? (state.sortDir === 'asc' ? ' ↑' : ' ↓') : ''}${isFiltered ? ` (${cnt})` : ''}<svg class="w-3 h-3 inline ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg></span><div id="${dropdownId}" class="dropdown-menu" onclick="event.stopPropagation()"><div class="p-2 border-b border-slate-700"><div class="text-[10px] text-slate-500 uppercase mb-1">Sort</div><div class="dropdown-item rounded px-2 py-1 cursor-pointer hover:bg-slate-700 ${isSorted && state.sortDir === 'desc' ? 'bg-slate-700' : ''}" onclick="setSort('installDate')">Newest First</div><div class="dropdown-item rounded px-2 py-1 cursor-pointer hover:bg-slate-700 ${isSorted && state.sortDir === 'asc' ? 'bg-slate-700' : ''}" onclick="state.sortBy='installDate';state.sortDir='asc';closeAllDropdowns();render();">Oldest First</div></div><div class="p-2"><div class="flex justify-between items-center mb-2"><div class="text-[10px] text-slate-500 uppercase">Filter by Month</div><div class="flex gap-1"><button onclick="selectAllFilterKeepOpen('installMonth',${JSON.stringify(options).replace(/"/g,'&quot;')})" class="text-[10px] px-2 py-0.5 bg-slate-700 hover:bg-slate-600 rounded">All</button><button onclick="clearFilterKeyKeepOpen('installMonth')" class="text-[10px] px-2 py-0.5 bg-slate-700 hover:bg-slate-600 rounded">None</button></div></div>${options.map(([v,c]) => `<label class="checkbox-item rounded" onclick="event.stopPropagation()"><input type="checkbox" ${state.filters.installMonth.includes(v) ? 'checked' : ''} onchange="toggleFilterKeepOpen('installMonth','${v.replace(/'/g,"\\'")}')"><span class="flex-1">${v === '(No date)' ? v : formatMonthLabel(v)}</span><span class="text-slate-500">(${c})</span></label>`).join('')}</div></div></div></th>`;
 }
 
 function customerCell(d) {
@@ -1046,172 +671,335 @@ function customerCell(d) {
   else if (d.matchType === 'manual') badge = '<span class="ml-1 text-[9px] px-1 py-0.5 bg-purple-900/50 text-purple-400 rounded">manual</span>';
   return url ? `<a href="${url}" target="_blank" class="font-medium text-cyan-400 hover:text-cyan-300 hover:underline">${name}</a>${badge}` : `<span class="font-medium">${name}</span>${badge}`;
 }
-
-function render() {
-  const stats = getStats();
-  const filtered = state.tab === 'matched' ? getFilteredData() : DATA.hubspotWithoutSgip;
-  const stageCounts = {}; DATA.matched.forEach(d => stageCounts[d.icfProgress] = (stageCounts[d.icfProgress] || 0) + 1);
-  const activeStages = STAGES.filter(s => stageCounts[s.key] > 0);
-
-  const permitOpts = getFilterCounts('permitStatus');
-  const inspectOpts = getFilterCounts('inspectionStatus', v => (!v || v === '(No value)') ? '(empty)' : v);
-  const ptoOpts = [['Complete', DATA.matched.filter(d => d.ptoDate && d.ptoDate !== '(No value)' && d.ptoDate !== 'None').length], ['Pending', DATA.matched.filter(d => !d.ptoDate || d.ptoDate === '(No value)' || d.ptoDate === 'None').length]];
-  const sgipStageOpts = getFilterCounts('sgipStage', v => v || '(empty)');
-  const sgipStatusOpts = getFilterCounts('sgipStatus', v => v || '(empty)');
-  const icfOpts = STAGES.filter(s => stageCounts[s.key] > 0).map(s => [s.key, stageCounts[s.key]]);
-  const installerOpts = getFilterCounts('installer', v => (!v || v === '(No value)') ? '(empty)' : v);
-
-  const correctionCount = Object.keys(CORRECTIONS.manualMatches).length + CORRECTIONS.notInSgip.size + CORRECTIONS.notSgipProject.size;
-
-  document.getElementById('app').innerHTML = `
-    <div class="bg-slate-800/80 border-b border-slate-700/50 sticky top-0 z-30">
-      <div class="max-w-[1920px] mx-auto px-4 py-3 flex items-center justify-between">
-        <div class="flex items-center gap-3">
-          <div class="w-9 h-9 rounded-lg bg-gradient-to-br from-emerald-500 to-cyan-500 flex items-center justify-center"><svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg></div>
-          <div><h1 class="text-lg font-bold bg-gradient-to-r from-emerald-400 to-cyan-400 bg-clip-text text-transparent">Haven Energy</h1><p class="text-xs text-slate-400">Post-Install Portal</p></div>
-        </div>
-        <div class="flex items-center gap-2">
-          <button onclick="triggerSync()" class="sync-btn ${state.syncing ? 'syncing' : ''} px-3 py-1.5 text-xs bg-blue-600 hover:bg-blue-500 rounded-lg font-medium" ${state.syncing ? 'disabled' : ''}>${state.syncing ? '⟳ Syncing...' : '⟳ Sync HubSpot'}</button>
-          <button onclick="showUploadModal()" class="px-3 py-1.5 text-xs bg-slate-700 hover:bg-slate-600 rounded-lg font-medium">📤 Update SGIP</button>
-          <span class="text-xs text-slate-500">${state.lastSync ? `HubSpot: ${state.lastSync}` : ''} ${state.sgipLastUpdated ? `• SGIP: ${state.sgipLastUpdated}` : ''}</span>
-        </div>
+Status)}" onclick="openEditModal(${i},'inspectionStatus')">${d.inspectionStatus&&d.inspectionStatus!=='(No value)'?d.inspectionStatus:'—'}</span></td>
+              <td class="px-2 py-2"><span class="editable px-1.5 py-0.5 rounded text-xs border ${getPTOStyle(d.ptoDate)}" onclick="openEditModal(${i},'ptoDate')">${d.ptoDate&&d.ptoDate!=='(No value)'&&d.ptoDate!=='None'?d.ptoDate:'Pending'}</span></td>
+              <td class="px-2 py-2 text-xs">${d.sgipStage||'—'}</td>
+              <td class="px-2 py-2 text-xs text-slate-400">${d.sgipStatus||'—'}</td>
+              <td class="px-2 py-2"><span class="px-1.5 py-0.5 rounded text-xs font-medium" style="background:${info.color}20;color:${info.color}">${info.label}</span></td>
+              <td class="px-2 py-2 text-xs mono">${d.nextDueDate||'—'}</td>
+              <td class="px-2 py-2 text-right"><span class="${d.icfProgress==='Payment Completed'?'text-emerald-400':'text-slate-300'}">${d.currentIncentive||'—'}</span></td>
+              <td class="px-2 py-2 text-xs text-slate-400">${d.installer||'—'}</td>
+            </tr>`;
+          }).join('')}</tbody>
+        </table>
       </div>
-    </div>
-    <div class="max-w-[1920px] mx-auto px-4 py-4">
-      <div class="flex gap-2 mb-4">
-        <button onclick="setTab('matched')" class="px-4 py-2 rounded-lg text-sm font-medium ${state.tab === 'matched' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40' : 'bg-slate-800/50 text-slate-400 border border-slate-700/50'}">Matched (${DATA.matched.length})</button>
-        <button onclick="setTab('noSgip')" class="px-4 py-2 rounded-lg text-sm font-medium ${state.tab === 'noSgip' ? 'bg-amber-500/20 text-amber-400 border border-amber-500/40' : 'bg-slate-800/50 text-slate-400 border border-slate-700/50'}">Not in SGIP Portal (${DATA.hubspotWithoutSgip.length})</button>
-        <button onclick="setTab('stats')" class="px-4 py-2 rounded-lg text-sm font-medium ${state.tab === 'stats' ? 'bg-blue-500/20 text-blue-400 border border-blue-500/40' : 'bg-slate-800/50 text-slate-400 border border-slate-700/50'}">📊 Weekly Stats</button>
-      </div>
-      ${state.tab === 'matched' ? `
-        <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-2 mb-4">
-          <div class="bg-slate-800/50 rounded-lg p-3 border border-slate-700/50"><p class="text-slate-500 text-xs uppercase">Total</p><p class="text-lg font-bold">${stats.total}</p></div>
-          <div class="bg-slate-800/50 rounded-lg p-3 border border-slate-700/50"><p class="text-slate-500 text-xs uppercase">Permitted</p><p class="text-lg font-bold">${stats.permitted}</p></div>
-          <div class="bg-slate-800/50 rounded-lg p-3 border border-slate-700/50"><p class="text-slate-500 text-xs uppercase">PTO Done</p><p class="text-lg font-bold">${stats.ptoComplete}</p></div>
-          <div class="bg-slate-800/50 rounded-lg p-3 border border-slate-700/50"><p class="text-slate-500 text-xs uppercase">ICF Submitted</p><p class="text-lg font-bold text-blue-400">${stats.icfSubmitted}</p></div>
-          <div class="bg-slate-800/50 rounded-lg p-3 border border-slate-700/50"><p class="text-slate-500 text-xs uppercase">ICF Approved</p><p class="text-lg font-bold text-purple-400">${stats.icfApproved}</p></div>
-          <div class="bg-slate-800/50 rounded-lg p-3 border border-slate-700/50"><p class="text-slate-500 text-xs uppercase">Pipeline</p><p class="text-lg font-bold">${fmtCurrency(stats.totalIncentive)}</p></div>
-          <div class="bg-slate-800/50 rounded-lg p-3 border border-slate-700/50"><p class="text-slate-500 text-xs uppercase">Paid</p><p class="text-lg font-bold text-emerald-400">${fmtCurrency(stats.paidIncentive)}</p></div>
-          <div class="bg-slate-800/50 rounded-lg p-3 border border-slate-700/50"><p class="text-slate-500 text-xs uppercase">Suspended</p><p class="text-lg font-bold text-red-400">${stats.suspended}</p></div>
-        </div>
-        ${activeStages.length > 0 ? `<div class="bg-slate-800/50 rounded-lg p-3 border border-slate-700/50 mb-4"><div class="flex rounded overflow-hidden h-6 bg-slate-900">${activeStages.map(s => { const cnt = stageCounts[s.key] || 0, pct = (cnt / DATA.matched.length) * 100; return pct < 0.5 ? '' : `<div style="width:${pct}%;background:${s.color};min-width:18px" class="flex items-center justify-center text-white text-xs font-bold">${cnt}</div>`; }).join('')}</div><div class="flex flex-wrap gap-2 mt-2">${activeStages.map(s => `<span class="flex items-center gap-1 text-xs"><span class="w-2 h-2 rounded-full" style="background:${s.color}"></span><span class="text-slate-500">${s.label}</span></span>`).join('')}</div></div>` : ''}
-        <div class="flex flex-wrap gap-3 mb-4 items-center">
-          <input type="text" placeholder="Search customer, code, email, installer..." class="flex-1 min-w-[250px] max-w-md px-4 py-2 rounded-lg bg-slate-800 border border-slate-700 text-sm" value="${state.search}" oninput="updateSearch(this.value)">
-          ${hasActiveFilters() ? `<button onclick="clearFilters()" class="px-4 py-2 bg-red-600 hover:bg-red-500 rounded-lg text-sm font-medium">✕ Clear Filters</button>` : ''}
-        </div>
-        <div class="bg-slate-800/50 rounded-lg border border-slate-700/50 overflow-hidden">
-          <div class="px-3 py-2 border-b border-slate-700/50 text-sm"><span class="font-semibold">${filtered.length}</span> deals ${hasActiveFilters() ? '<span class="text-emerald-400">(filtered)</span>' : ''} <span class="text-slate-500 text-xs ml-2">• <span class="text-cyan-400">addr</span>=address • <span class="text-purple-400">manual</span>=correction</span></div>
-          <div class="table-container overflow-x-auto">
-            <table class="w-full text-sm">
-              <thead class="sticky-header"><tr>
-                <th class="px-2 py-3 text-left text-xs font-semibold text-slate-400 uppercase cursor-pointer" onclick="setSort('name')">Customer ${state.sortBy === 'name' ? (state.sortDir === 'asc' ? '↑' : '↓') : ''}</th>
-                <th class="px-2 py-3 text-left text-xs font-semibold text-slate-400 uppercase cursor-pointer" onclick="setSort('installDate')">Install ${state.sortBy === 'installDate' ? (state.sortDir === 'asc' ? '↑' : '↓') : ''}</th>
-                <th class="px-2 py-3 text-left text-xs font-semibold text-slate-400 uppercase cursor-pointer" onclick="setSort('daysSinceInstall')">Days ${state.sortBy === 'daysSinceInstall' ? (state.sortDir === 'asc' ? '↑' : '↓') : ''}</th>
-                ${filterHeader('Permit', 'permitStatus', null, permitOpts, true)}
-                ${filterHeader('Inspection', 'inspectionStatus', null, inspectOpts, true)}
-                ${filterHeader('PTO', 'ptoStatus', null, ptoOpts, true)}
-                ${filterHeader('SGIP Stage', 'sgipStage', null, sgipStageOpts)}
-                ${filterHeader('SGIP Status', 'sgipStatus', null, sgipStatusOpts)}
-                ${filterHeader('ICF Progress', 'icfProgress', 'stage', icfOpts)}
-                <th class="px-2 py-3 text-left text-xs font-semibold text-slate-400 uppercase cursor-pointer" onclick="setSort('nextDue')">Next Due ${state.sortBy === 'nextDue' ? (state.sortDir === 'asc' ? '↑' : '↓') : ''}</th>
-                <th class="px-2 py-3 text-left text-xs font-semibold text-slate-400 uppercase cursor-pointer" onclick="setSort('incentive')">Incentive ${state.sortBy === 'incentive' ? (state.sortDir === 'asc' ? '↑' : '↓') : ''}</th>
-                ${filterHeader('Installer', 'installer', null, installerOpts)}
-              </tr></thead>
-              <tbody class="divide-y divide-slate-700/30">${filtered.length === 0 ? '<tr><td colspan="12" class="p-8 text-center text-slate-500">No deals found.</td></tr>' : filtered.map((d, i) => {
-                const info = getStageInfo(d.icfProgress);
-                return `<tr class="hover:bg-slate-800/50">
-                  <td class="px-2 py-2"><div class="min-w-[150px]">${customerCell(d)}${d.applicationCode?`<br><span class="text-xs text-slate-500 mono">${d.applicationCode}</span>`:''}</div></td>
-                  <td class="px-2 py-2 text-xs mono">${d.installDate||'—'}</td>
-                  <td class="px-2 py-2"><span class="font-semibold ${getDaysColor(d.daysSinceInstall)}">${d.daysSinceInstall!==null?d.daysSinceInstall+'d':'—'}</span></td>
-                  <td class="px-2 py-2"><span class="editable px-1.5 py-0.5 rounded text-xs border ${getPermitStyle(d.permitStatus)}" onclick="openEditModal(${i},'permitStatus')">${d.permitStatus||'—'}</span></td>
-                  <td class="px-2 py-2"><span class="editable px-1.5 py-0.5 rounded text-xs border ${getInspectionStyle(d.inspectionStatus)}" onclick="openEditModal(${i},'inspectionStatus')">${d.inspectionStatus&&d.inspectionStatus!=='(No value)'?d.inspectionStatus:'—'}</span></td>
-                  <td class="px-2 py-2"><span class="editable px-1.5 py-0.5 rounded text-xs border ${getPTOStyle(d.ptoDate)}" onclick="openEditModal(${i},'ptoDate')">${d.ptoDate&&d.ptoDate!=='(No value)'&&d.ptoDate!=='None'?d.ptoDate:'Pending'}</span></td>
-                  <td class="px-2 py-2 text-xs">${d.sgipStage||'—'}</td>
-                  <td class="px-2 py-2 text-xs text-slate-400">${d.sgipStatus||'—'}</td>
-                  <td class="px-2 py-2"><span class="px-1.5 py-0.5 rounded text-xs font-medium" style="background:${info.color}20;color:${info.color}">${info.label}</span></td>
-                  <td class="px-2 py-2 text-xs mono">${d.nextDueDate||'—'}</td>
-                  <td class="px-2 py-2 text-right"><span class="${d.icfProgress==='Payment Completed'?'text-emerald-400':'text-slate-300'}">${d.currentIncentive||'—'}</span></td>
-                  <td class="px-2 py-2 text-xs text-slate-400">${d.installer||'—'}</td>
-                </tr>`;
-              }).join('')}</tbody>
-            </table>
-          </div>
-        </div>
-      ` : state.tab === 'noSgip' ? `
-        <div class="bg-amber-500/10 border border-amber-500/30 rounded-lg p-4 mb-4"><h3 class="font-semibold text-amber-400">Not in SGIP Portal</h3><p class="text-sm text-slate-400 mt-1">${DATA.hubspotWithoutSgip.length} deals that couldn't be matched.</p></div>
-        <div class="bg-slate-800/50 rounded-lg border border-slate-700/50 overflow-hidden">
-          <div class="table-container overflow-x-auto">
-            <table class="w-full text-sm">
-              <thead class="sticky-header"><tr><th class="px-3 py-3 text-left text-xs font-semibold text-slate-400 uppercase">Customer</th><th class="px-3 py-3 text-left text-xs font-semibold text-slate-400 uppercase">Email</th><th class="px-3 py-3 text-left text-xs font-semibold text-slate-400 uppercase">Install</th><th class="px-3 py-3 text-left text-xs font-semibold text-slate-400 uppercase">Permit</th><th class="px-3 py-3 text-left text-xs font-semibold text-slate-400 uppercase">Inspection</th><th class="px-3 py-3 text-left text-xs font-semibold text-slate-400 uppercase">Installer</th></tr></thead>
-              <tbody class="divide-y divide-slate-700/30">${DATA.hubspotWithoutSgip.map(d => `<tr class="hover:bg-slate-800/50"><td class="px-3 py-2">${customerCell(d)}</td><td class="px-3 py-2 text-xs mono text-slate-400">${d.email||'—'}</td><td class="px-3 py-2 mono text-xs">${d.installDate||'—'}</td><td class="px-3 py-2"><span class="px-1.5 py-0.5 rounded text-xs border ${getPermitStyle(d.permitStatus)}">${d.permitStatus||'—'}</span></td><td class="px-3 py-2"><span class="px-1.5 py-0.5 rounded text-xs border ${getInspectionStyle(d.inspectionStatus)}">${d.inspectionStatus||'—'}</span></td><td class="px-3 py-2 text-xs text-slate-400">${d.installer||'—'}</td></tr>`).join('')}</tbody>
-            </table>
-          </div>
-        </div>
-      ` : `
-        ${(() => {
-          const ps = getPeriodicStats();
-          return `
-        <div class="bg-blue-500/10 border border-blue-500/30 rounded-lg p-4 mb-4">
-          <h3 class="font-semibold text-blue-400">📊 Activity Summary</h3>
-          <p class="text-sm text-slate-400 mt-1">Week starting ${ps.weekStart} • Month starting ${ps.monthStart}</p>
-        </div>
-        <div class="bg-slate-800/50 rounded-lg border border-slate-700/50 overflow-hidden">
-          <table class="w-full text-sm">
-            <thead>
-              <tr class="border-b border-slate-700">
-                <th class="px-6 py-4 text-left text-sm font-semibold text-slate-300">Metric</th>
-                <th class="px-6 py-4 text-center text-sm font-semibold text-slate-300">Yesterday</th>
-                <th class="px-6 py-4 text-center text-sm font-semibold text-slate-300">Week to Date</th>
-                <th class="px-6 py-4 text-center text-sm font-semibold text-slate-300">Month to Date</th>
-              </tr>
-            </thead>
-            <tbody class="divide-y divide-slate-700/30">
-              <tr class="hover:bg-slate-800/50">
-                <td class="px-6 py-4 font-medium text-emerald-400">Installs Completed</td>
-                <td class="px-6 py-4 text-center text-2xl font-bold">${ps.installs.yesterday}</td>
-                <td class="px-6 py-4 text-center text-2xl font-bold">${ps.installs.wtd}</td>
-                <td class="px-6 py-4 text-center text-2xl font-bold">${ps.installs.mtd}</td>
-              </tr>
-              <tr class="hover:bg-slate-800/50">
-                <td class="px-6 py-4 font-medium text-blue-400">ICFs Submitted</td>
-                <td class="px-6 py-4 text-center text-2xl font-bold">${ps.icfSubmitted.yesterday}</td>
-                <td class="px-6 py-4 text-center text-2xl font-bold">${ps.icfSubmitted.wtd}</td>
-                <td class="px-6 py-4 text-center text-2xl font-bold">${ps.icfSubmitted.mtd}</td>
-              </tr>
-              <tr class="hover:bg-slate-800/50">
-                <td class="px-6 py-4 font-medium text-amber-400">ICFs Resubmitted</td>
-                <td class="px-6 py-4 text-center text-2xl font-bold">${ps.icfResubmitted.yesterday}</td>
-                <td class="px-6 py-4 text-center text-2xl font-bold">${ps.icfResubmitted.wtd}</td>
-                <td class="px-6 py-4 text-center text-2xl font-bold">${ps.icfResubmitted.mtd}</td>
-              </tr>
-              <tr class="hover:bg-slate-800/50">
-                <td class="px-6 py-4 font-medium text-purple-400">ICFs Approved</td>
-                <td class="px-6 py-4 text-center text-2xl font-bold">${ps.icfApproved.yesterday}</td>
-                <td class="px-6 py-4 text-center text-2xl font-bold">${ps.icfApproved.wtd}</td>
-                <td class="px-6 py-4 text-center text-2xl font-bold">${ps.icfApproved.mtd}</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-        <p class="text-xs text-slate-500 mt-4">Data sources: Installs from HubSpot install date • ICF dates from SGIP export</p>
-          `;
-        })()}
-      `}
     </div>
   `;
 }
 
-// Initialize
+function renderNoSgipTab() {
+  return `
+    <div class="bg-amber-500/10 border border-amber-500/30 rounded-lg p-4 mb-4"><h3 class="font-semibold text-amber-400">Not in SGIP Portal</h3><p class="text-sm text-slate-400 mt-1">${DATA.hubspotWithoutSgip.length} deals that couldn't be matched.</p></div>
+    <div class="bg-slate-800/50 rounded-lg border border-slate-700/50 overflow-hidden">
+      <div class="table-container overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead class="sticky-header"><tr><th class="px-3 py-3 text-left text-xs font-semibold text-slate-400 uppercase">Customer</th><th class="px-3 py-3 text-left text-xs font-semibold text-slate-400 uppercase">Email</th><th class="px-3 py-3 text-left text-xs font-semibold text-slate-400 uppercase">Install</th><th class="px-3 py-3 text-left text-xs font-semibold text-slate-400 uppercase">Permit</th><th class="px-3 py-3 text-left text-xs font-semibold text-slate-400 uppercase">Inspection</th><th class="px-3 py-3 text-left text-xs font-semibold text-slate-400 uppercase">Installer</th></tr></thead>
+          <tbody class="divide-y divide-slate-700/30">${DATA.hubspotWithoutSgip.map(d => `<tr class="hover:bg-slate-800/50"><td class="px-3 py-2">${customerCell(d)}</td><td class="px-3 py-2 text-xs mono text-slate-400">${d.email||'—'}</td><td class="px-3 py-2 mono text-xs">${d.installDate||'—'}</td><td class="px-3 py-2"><span class="px-1.5 py-0.5 rounded text-xs border ${getPermitStyle(d.permitStatus)}">${d.permitStatus||'—'}</span></td><td class="px-3 py-2"><span class="px-1.5 py-0.5 rounded text-xs border ${getInspectionStyle(d.inspectionStatus)}">${d.inspectionStatus||'—'}</span></td><td class="px-3 py-2 text-xs text-slate-400">${d.installer||'—'}</td></tr>`).join('')}</tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
+
+function renderStatsTab() {
+  return `
+    <div class="flex gap-2 mb-4 flex-wrap">
+      <button onclick="setStatsSubTab('activity')" class="subtab px-3 py-1.5 rounded-lg text-sm font-medium border ${state.statsSubTab === 'activity' ? 'active border-blue-500/40 text-blue-400' : 'border-slate-700/50 text-slate-400'}">📊 Activity</button>
+      <button onclick="setStatsSubTab('status')" class="subtab px-3 py-1.5 rounded-lg text-sm font-medium border ${state.statsSubTab === 'status' ? 'active border-purple-500/40 text-purple-400' : 'border-slate-700/50 text-slate-400'}">📋 Status Counts</button>
+      <button onclick="setStatsSubTab('monthly')" class="subtab px-3 py-1.5 rounded-lg text-sm font-medium border ${state.statsSubTab === 'monthly' ? 'active border-cyan-500/40 text-cyan-400' : 'border-slate-700/50 text-slate-400'}">📅 Installs by Month</button>
+      <button onclick="setStatsSubTab('action')" class="subtab px-3 py-1.5 rounded-lg text-sm font-medium border ${state.statsSubTab === 'action' ? 'active border-amber-500/40 text-amber-400' : 'border-slate-700/50 text-slate-400'}">⚡ Action Items</button>
+    </div>
+    ${state.statsSubTab === 'activity' ? renderActivityStats() : 
+      state.statsSubTab === 'status' ? renderStatusCounts() : 
+      state.statsSubTab === 'monthly' ? renderMonthlyStats() : 
+      renderActionItems()}
+  `;
+}
+
+function renderActivityStats() {
+  const ps = getPeriodicStats();
+  return `
+    <div class="bg-blue-500/10 border border-blue-500/30 rounded-lg p-4 mb-4">
+      <h3 class="font-semibold text-blue-400">📊 Activity Summary</h3>
+      <p class="text-sm text-slate-400 mt-1">Current week starting ${ps.weekStart} • Current month starting ${ps.monthStart}</p>
+    </div>
+    <div class="bg-slate-800/50 rounded-lg border border-slate-700/50 overflow-hidden overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="border-b border-slate-700">
+            <th class="px-4 py-4 text-left text-sm font-semibold text-slate-300">Metric</th>
+            <th class="px-3 py-4 text-center text-sm font-semibold text-slate-300">Yesterday</th>
+            <th class="px-3 py-4 text-center text-sm font-semibold text-slate-300">Week to Date</th>
+            <th class="px-3 py-4 text-center text-sm font-semibold text-slate-300">Month to Date</th>
+            <th class="px-3 py-4 text-center text-sm font-semibold text-slate-400 border-l border-slate-700">Last Week<br><span class="text-[10px] font-normal">${ps.lastWeekStart} - ${ps.lastWeekEnd}</span></th>
+            <th class="px-3 py-4 text-center text-sm font-semibold text-slate-400">Last Month<br><span class="text-[10px] font-normal">${ps.lastMonthStart}</span></th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-700/30">
+          <tr class="hover:bg-slate-800/50">
+            <td class="px-4 py-4 font-medium text-emerald-400">Installs Completed</td>
+            <td class="px-3 py-4 text-center text-2xl font-bold">${ps.installs.yesterday}</td>
+            <td class="px-3 py-4 text-center text-2xl font-bold">${ps.installs.wtd}</td>
+            <td class="px-3 py-4 text-center text-2xl font-bold">${ps.installs.mtd}</td>
+            <td class="px-3 py-4 text-center text-xl font-bold text-slate-400 border-l border-slate-700">${ps.installs.lastWeek}</td>
+            <td class="px-3 py-4 text-center text-xl font-bold text-slate-400">${ps.installs.lastMonth}</td>
+          </tr>
+          <tr class="hover:bg-slate-800/50">
+            <td class="px-4 py-4 font-medium text-blue-400">ICFs Submitted</td>
+            <td class="px-3 py-4 text-center text-2xl font-bold">${ps.icfSubmitted.yesterday}</td>
+            <td class="px-3 py-4 text-center text-2xl font-bold">${ps.icfSubmitted.wtd}</td>
+            <td class="px-3 py-4 text-center text-2xl font-bold">${ps.icfSubmitted.mtd}</td>
+            <td class="px-3 py-4 text-center text-xl font-bold text-slate-400 border-l border-slate-700">${ps.icfSubmitted.lastWeek}</td>
+            <td class="px-3 py-4 text-center text-xl font-bold text-slate-400">${ps.icfSubmitted.lastMonth}</td>
+          </tr>
+          <tr class="hover:bg-slate-800/50">
+            <td class="px-4 py-4 font-medium text-amber-400">ICFs Resubmitted</td>
+            <td class="px-3 py-4 text-center text-2xl font-bold">${ps.icfResubmitted.yesterday}</td>
+            <td class="px-3 py-4 text-center text-2xl font-bold">${ps.icfResubmitted.wtd}</td>
+            <td class="px-3 py-4 text-center text-2xl font-bold">${ps.icfResubmitted.mtd}</td>
+            <td class="px-3 py-4 text-center text-xl font-bold text-slate-400 border-l border-slate-700">${ps.icfResubmitted.lastWeek}</td>
+            <td class="px-3 py-4 text-center text-xl font-bold text-slate-400">${ps.icfResubmitted.lastMonth}</td>
+          </tr>
+          <tr class="hover:bg-slate-800/50">
+            <td class="px-4 py-4 font-medium text-purple-400">ICFs Approved</td>
+            <td class="px-3 py-4 text-center text-2xl font-bold">${ps.icfApproved.yesterday}</td>
+            <td class="px-3 py-4 text-center text-2xl font-bold">${ps.icfApproved.wtd}</td>
+            <td class="px-3 py-4 text-center text-2xl font-bold">${ps.icfApproved.mtd}</td>
+            <td class="px-3 py-4 text-center text-xl font-bold text-slate-400 border-l border-slate-700">${ps.icfApproved.lastWeek}</td>
+            <td class="px-3 py-4 text-center text-xl font-bold text-slate-400">${ps.icfApproved.lastMonth}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="text-xs text-slate-500 mt-4">Data sources: Installs from HubSpot install date • ICF dates from SGIP export</p>
+  `;
+}
+
+function renderStatusCounts() {
+  const sc = getStatusCounts();
+  return `
+    <div class="bg-purple-500/10 border border-purple-500/30 rounded-lg p-4 mb-4">
+      <h3 class="font-semibold text-purple-400">📋 Status Breakdown</h3>
+      <p class="text-sm text-slate-400 mt-1">Count of all ${sc.total} projects by workflow status</p>
+    </div>
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div class="bg-slate-800/50 rounded-lg border border-slate-700/50 p-4">
+        <h4 class="font-semibold text-slate-300 mb-4 flex items-center gap-2"><span class="w-3 h-3 rounded-full bg-green-500"></span>Permit Status</h4>
+        <div class="space-y-3">
+          <div class="flex justify-between items-center"><span class="text-slate-400">Approved</span><span class="text-2xl font-bold text-green-400">${sc.permit.approved}</span></div>
+          <div class="flex justify-between items-center"><span class="text-slate-400">Not Approved</span><span class="text-2xl font-bold text-amber-400">${sc.permit.notApproved}</span></div>
+          <div class="h-2 bg-slate-900 rounded-full overflow-hidden"><div class="h-full bg-green-500" style="width: ${(sc.permit.approved / sc.total * 100)}%"></div></div>
+        </div>
+      </div>
+      <div class="bg-slate-800/50 rounded-lg border border-slate-700/50 p-4">
+        <h4 class="font-semibold text-slate-300 mb-4 flex items-center gap-2"><span class="w-3 h-3 rounded-full bg-blue-500"></span>Inspection Status</h4>
+        <div class="space-y-3">
+          <div class="flex justify-between items-center"><span class="text-slate-400">Complete (Passed)</span><span class="text-xl font-bold text-green-400">${sc.inspection.complete}</span></div>
+          <div class="flex justify-between items-center"><span class="text-slate-400">Scheduled/Requested</span><span class="text-xl font-bold text-blue-400">${sc.inspection.scheduled}</span></div>
+          <div class="flex justify-between items-center"><span class="text-slate-400">Meter Collar Needed</span><span class="text-xl font-bold text-red-400">${sc.inspection.meterCollar}</span></div>
+          <div class="flex justify-between items-center"><span class="text-slate-400">Not Complete</span><span class="text-xl font-bold text-slate-400">${sc.inspection.notComplete}</span></div>
+          <div class="h-2 bg-slate-900 rounded-full overflow-hidden flex">
+            <div class="h-full bg-green-500" style="width: ${(sc.inspection.complete / sc.total * 100)}%"></div>
+            <div class="h-full bg-blue-500" style="width: ${(sc.inspection.scheduled / sc.total * 100)}%"></div>
+            <div class="h-full bg-red-500" style="width: ${(sc.inspection.meterCollar / sc.total * 100)}%"></div>
+          </div>
+        </div>
+      </div>
+      <div class="bg-slate-800/50 rounded-lg border border-slate-700/50 p-4">
+        <h4 class="font-semibold text-slate-300 mb-4 flex items-center gap-2"><span class="w-3 h-3 rounded-full bg-cyan-500"></span>PTO Status</h4>
+        <div class="space-y-3">
+          <div class="flex justify-between items-center"><span class="text-slate-400">Complete</span><span class="text-2xl font-bold text-green-400">${sc.pto.complete}</span></div>
+          <div class="flex justify-between items-center"><span class="text-slate-400">Pending</span><span class="text-2xl font-bold text-amber-400">${sc.pto.pending}</span></div>
+          <div class="h-2 bg-slate-900 rounded-full overflow-hidden"><div class="h-full bg-green-500" style="width: ${(sc.pto.complete / sc.total * 100)}%"></div></div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderMonthlyStats() {
+  const monthlyData = getInstallsByMonth();
+  return `
+    <div class="bg-cyan-500/10 border border-cyan-500/30 rounded-lg p-4 mb-4">
+      <h3 class="font-semibold text-cyan-400">📅 Installs by Month</h3>
+      <p class="text-sm text-slate-400 mt-1">Total installs per month with ICF completion status (Pending Payment + Payment Complete vs all others)</p>
+    </div>
+    <div class="bg-slate-800/50 rounded-lg border border-slate-700/50 overflow-hidden">
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="border-b border-slate-700">
+            <th class="px-4 py-3 text-left text-sm font-semibold text-slate-300">Month</th>
+            <th class="px-4 py-3 text-center text-sm font-semibold text-slate-300">Total Installs</th>
+            <th class="px-4 py-3 text-center text-sm font-semibold text-green-400">ICF Complete</th>
+            <th class="px-4 py-3 text-center text-sm font-semibold text-amber-400">ICF Pending</th>
+            <th class="px-4 py-3 text-left text-sm font-semibold text-slate-300">Progress</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-700/30">
+          ${monthlyData.map(m => `
+            <tr class="hover:bg-slate-800/50">
+              <td class="px-4 py-3 font-medium">${formatMonthLabel(m.month)}</td>
+              <td class="px-4 py-3 text-center text-xl font-bold">${m.total}</td>
+              <td class="px-4 py-3 text-center text-xl font-bold text-green-400">${m.icfComplete}</td>
+              <td class="px-4 py-3 text-center text-xl font-bold text-amber-400">${m.icfPending}</td>
+              <td class="px-4 py-3">
+                <div class="flex items-center gap-2">
+                  <div class="flex-1 h-3 bg-slate-900 rounded-full overflow-hidden flex">
+                    <div class="h-full bg-green-500" style="width: ${m.total > 0 ? (m.icfComplete / m.total * 100) : 0}%"></div>
+                  </div>
+                  <span class="text-xs text-slate-400 w-12">${m.total > 0 ? Math.round(m.icfComplete / m.total * 100) : 0}%</span>
+                </div>
+              </td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+    <p class="text-xs text-slate-500 mt-4">ICF Complete = Pending Payment or Payment Completed • ICF Pending = All other statuses</p>
+  `;
+}
+
+function renderActionItems() {
+  const ai = getActionItems();
+  return `
+    <div class="bg-amber-500/10 border border-amber-500/30 rounded-lg p-4 mb-4">
+      <h3 class="font-semibold text-amber-400">⚡ Action Items Dashboard</h3>
+      <p class="text-sm text-slate-400 mt-1">Projects requiring attention based on workflow status</p>
+    </div>
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+      <div class="bg-slate-800/50 rounded-lg border border-red-500/30 p-4">
+        <div class="flex items-center justify-between mb-2">
+          <h4 class="font-semibold text-red-400">🚫 Not Permitted</h4>
+          <span class="text-2xl font-bold text-red-400">${ai.notPermitted.length}</span>
+        </div>
+        <p class="text-xs text-slate-400">Permitting status is not completed</p>
+      </div>
+      <div class="bg-slate-800/50 rounded-lg border border-orange-500/30 p-4">
+        <div class="flex items-center justify-between mb-2">
+          <h4 class="font-semibold text-orange-400">🔌 Meter Collar Needed</h4>
+          <span class="text-2xl font-bold text-orange-400">${ai.meterCollar.length}</span>
+        </div>
+        <p class="text-xs text-slate-400">Inspection status is meter collar needed</p>
+      </div>
+      <div class="bg-slate-800/50 rounded-lg border border-blue-500/30 p-4">
+        <div class="flex items-center justify-between mb-2">
+          <h4 class="font-semibold text-blue-400">🔍 Awaiting Inspection</h4>
+          <span class="text-2xl font-bold text-blue-400">${ai.awaitingInspection.length}</span>
+        </div>
+        <p class="text-xs text-slate-400">Inspection not passed or scheduled</p>
+      </div>
+      <div class="bg-slate-800/50 rounded-lg border border-purple-500/30 p-4">
+        <div class="flex items-center justify-between mb-2">
+          <h4 class="font-semibold text-purple-400">📄 PTO'd but not ICF'd</h4>
+          <span class="text-2xl font-bold text-purple-400">${ai.ptoButNoIcf.length}</span>
+        </div>
+        <p class="text-xs text-slate-400">PTO complete, ICF not in review/inspection/payment</p>
+      </div>
+      <div class="bg-slate-800/50 rounded-lg border border-cyan-500/30 p-4">
+        <div class="flex items-center justify-between mb-2">
+          <h4 class="font-semibold text-cyan-400">✅ Inspection Passed, No PTO</h4>
+          <span class="text-2xl font-bold text-cyan-400">${ai.inspectionPassedNoPto.length}</span>
+        </div>
+        <p class="text-xs text-slate-400">Inspection passed but PTO not complete</p>
+      </div>
+    </div>
+
+    ${ai.ptoButNoIcf.length > 0 ? `
+    <div class="mb-6">
+      <h4 class="text-lg font-semibold text-purple-400 mb-3">📄 PTO'd but not ICF'd (${ai.ptoButNoIcf.length})</h4>
+      <div class="bg-slate-800/50 rounded-lg border border-slate-700/50 overflow-hidden">
+        <div class="table-container overflow-x-auto" style="max-height: 300px;">
+          <table class="w-full text-sm">
+            <thead class="sticky-header"><tr>
+              <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Customer</th>
+              <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Install</th>
+              <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">PTO Date</th>
+              <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">ICF Progress</th>
+              <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Installer</th>
+            </tr></thead>
+            <tbody class="divide-y divide-slate-700/30">
+              ${ai.ptoButNoIcf.slice(0, 20).map(d => `
+                <tr class="hover:bg-slate-800/50">
+                  <td class="px-3 py-2">${customerCell(d)}</td>
+                  <td class="px-3 py-2 text-xs mono">${d.installDate || '—'}</td>
+                  <td class="px-3 py-2 text-xs mono text-green-400">${d.ptoDate}</td>
+                  <td class="px-3 py-2"><span class="px-1.5 py-0.5 rounded text-xs" style="background:${getStageInfo(d.icfProgress||'Not Started').color}20;color:${getStageInfo(d.icfProgress||'Not Started').color}">${d.icfProgress || 'Not Started'}</span></td>
+                  <td class="px-3 py-2 text-xs text-slate-400">${d.installer || '—'}</td>
+                </tr>
+              `).join('')}
+              ${ai.ptoButNoIcf.length > 20 ? `<tr><td colspan="5" class="px-3 py-2 text-center text-slate-500 text-xs">...and ${ai.ptoButNoIcf.length - 20} more</td></tr>` : ''}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+    ` : ''}
+
+    ${ai.inspectionPassedNoPto.length > 0 ? `
+    <div class="mb-6">
+      <h4 class="text-lg font-semibold text-cyan-400 mb-3">✅ Inspection Passed, No PTO (${ai.inspectionPassedNoPto.length})</h4>
+      <div class="bg-slate-800/50 rounded-lg border border-slate-700/50 overflow-hidden">
+        <div class="table-container overflow-x-auto" style="max-height: 300px;">
+          <table class="w-full text-sm">
+            <thead class="sticky-header"><tr>
+              <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Customer</th>
+              <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Install</th>
+              <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Inspection</th>
+              <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Permit</th>
+              <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Installer</th>
+            </tr></thead>
+            <tbody class="divide-y divide-slate-700/30">
+              ${ai.inspectionPassedNoPto.slice(0, 20).map(d => `
+                <tr class="hover:bg-slate-800/50">
+                  <td class="px-3 py-2">${customerCell(d)}</td>
+                  <td class="px-3 py-2 text-xs mono">${d.installDate || '—'}</td>
+                  <td class="px-3 py-2"><span class="px-1.5 py-0.5 rounded text-xs border bg-green-900/50 text-green-400 border-green-800">Passed</span></td>
+                  <td class="px-3 py-2"><span class="px-1.5 py-0.5 rounded text-xs border ${getPermitStyle(d.permitStatus)}">${d.permitStatus || '—'}</span></td>
+                  <td class="px-3 py-2 text-xs text-slate-400">${d.installer || '—'}</td>
+                </tr>
+              `).join('')}
+              ${ai.inspectionPassedNoPto.length > 20 ? `<tr><td colspan="5" class="px-3 py-2 text-center text-slate-500 text-xs">...and ${ai.inspectionPassedNoPto.length - 20} more</td></tr>` : ''}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+    ` : ''}
+
+    ${ai.meterCollar.length > 0 ? `
+    <div class="mb-6">
+      <h4 class="text-lg font-semibold text-orange-400 mb-3">🔌 Meter Collar Needed (${ai.meterCollar.length})</h4>
+      <div class="bg-slate-800/50 rounded-lg border border-slate-700/50 overflow-hidden">
+        <div class="table-container overflow-x-auto" style="max-height: 300px;">
+          <table class="w-full text-sm">
+            <thead class="sticky-header"><tr>
+              <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Customer</th>
+              <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Install</th>
+              <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Permit</th>
+              <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Installer</th>
+            </tr></thead>
+            <tbody class="divide-y divide-slate-700/30">
+              ${ai.meterCollar.slice(0, 20).map(d => `
+                <tr class="hover:bg-slate-800/50">
+                  <td class="px-3 py-2">${customerCell(d)}</td>
+                  <td class="px-3 py-2 text-xs mono">${d.installDate || '—'}</td>
+                  <td class="px-3 py-2"><span class="px-1.5 py-0.5 rounded text-xs border ${getPermitStyle(d.permitStatus)}">${d.permitStatus || '—'}</span></td>
+                  <td class="px-3 py-2 text-xs text-slate-400">${d.installer || '—'}</td>
+                </tr>
+              `).join('')}
+              ${ai.meterCollar.length > 20 ? `<tr><td colspan="4" class="px-3 py-2 text-center text-slate-500 text-xs">...and ${ai.meterCollar.length - 20} more</td></tr>` : ''}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+    ` : ''}
+  `;
+}
+
 async function init() {
   document.getElementById('app').innerHTML = '<div class="flex items-center justify-center h-64"><div class="text-center"><div class="text-2xl mb-2">⟳</div><p class="text-slate-400">Loading...</p></div></div>';
-  
-  // Load all data from Supabase
-  await Promise.all([
-    loadCorrectionsFromSupabase(),
-    loadSgipFromSupabase(),
-    loadFromSupabase()
-  ]);
-  
+  await Promise.all([loadCorrectionsFromSupabase(), loadSgipFromSupabase(), loadFromSupabase()]);
   mergeData();
 }
 
