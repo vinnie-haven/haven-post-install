@@ -151,7 +151,9 @@ async function loadSgipFromSupabase() {
         utility: a.utility || '',
         icfSubmittedDate: a.icf_submitted_date || '',
         icfResubmittedDate: a.icf_resubmitted_date || '',
-        icfPendingPaymentDate: a.icf_pending_payment_date || ''
+        icfPendingPaymentDate: a.icf_pending_payment_date || '',
+        paymentAmount: a.payment_amount || '',
+        paymentDate: a.payment_date || ''
       }));
       state.sgipLoaded = true;
       const maxUpdated = allApplications.reduce((max, a) => { const t = new Date(a.updated_at).getTime(); return t > max ? t : max; }, 0);
@@ -170,6 +172,7 @@ async function saveSgipToSupabase(sgipData) {
     current_incentive: s.currentIncentive, final_incentive: s.finalIncentive, next_due_date: s.nextDueDate,
     site_address: s.siteAddress, utility: s.utility, icf_submitted_date: s.icfSubmittedDate || null,
     icf_resubmitted_date: s.icfResubmittedDate || null, icf_pending_payment_date: s.icfPendingPaymentDate || null,
+    payment_amount: s.paymentAmount || null, payment_date: s.paymentDate || null,
     updated_at: new Date().toISOString()
   })).filter(r => r.application_code);
   if (records.length === 0) return false;
@@ -386,7 +389,9 @@ async function handleSgipFile(file) {
         currentIncentive: row['Current Incentive ($)'] || '', finalIncentive: row['Final Incentive (ICF)'] || '',
         nextDueDate: row['Next Due Date'] || '', siteAddress: row['Site Address'] || '', utility: row['Electric Utility'] || '',
         icfSubmittedDate: row['ICF Submitted Date'] || '', icfResubmittedDate: row['Last ICF Resubmitted Date'] || '',
-        icfPendingPaymentDate: row['ICF Pending Payment Date'] || ''
+        icfPendingPaymentDate: row['ICF Pending Payment Date'] || '',
+        paymentAmount: row['Payment Amount ($)'] || '',
+        paymentDate: row['Payment Completed Date'] || ''
       })).filter(s => s.applicationCode);
       document.getElementById('sgipStatus').innerHTML = '<span class="text-blue-400">Saving to database...</span>';
       const saved = await saveSgipToSupabase(newSgipData);
@@ -564,12 +569,17 @@ function getPeriodicStats() {
   const icfResubmittedLifetime = SGIP_DATA.filter(d => hasDate(d.icfResubmittedDate) && postCutoffCodes.has(d.applicationCode)).length;
   const icfApprovedLifetime = SGIP_DATA.filter(d => hasDate(d.icfPendingPaymentDate) && postCutoffCodes.has(d.applicationCode)).length;
   
+  // Payment amounts - sum by payment date
+  const sumPayments = (filterFn) => SGIP_DATA.filter(d => d.paymentAmount && filterFn(d.paymentDate)).reduce((sum, d) => sum + parseNum(d.paymentAmount), 0);
+  const sumPaymentsLifetime = SGIP_DATA.filter(d => d.paymentAmount && hasDate(d.paymentDate) && postCutoffCodes.has(d.applicationCode)).reduce((sum, d) => sum + parseNum(d.paymentAmount), 0);
+  
   return {
     installs: { yesterday: allDeals.filter(d => isYesterday(d.installDate)).length, wtd: allDeals.filter(d => isWTD(d.installDate)).length, mtd: allDeals.filter(d => isMTD(d.installDate)).length, lastWeek: allDeals.filter(d => isLastWeek(d.installDate)).length, lastMonth: allDeals.filter(d => isLastMonth(d.installDate)).length, lifetime: installsLifetime },
     ptos: { yesterday: ptoYesterday, wtd: ptoWTD, mtd: ptoMTD, lastWeek: ptoLastWeek, lastMonth: ptoLastMonth, lifetime: ptoLifetime },
     icfSubmitted: { yesterday: SGIP_DATA.filter(d => isYesterday(d.icfSubmittedDate)).length, wtd: SGIP_DATA.filter(d => isWTD(d.icfSubmittedDate)).length, mtd: SGIP_DATA.filter(d => isMTD(d.icfSubmittedDate)).length, lastWeek: SGIP_DATA.filter(d => isLastWeek(d.icfSubmittedDate)).length, lastMonth: SGIP_DATA.filter(d => isLastMonth(d.icfSubmittedDate)).length, lifetime: icfSubmittedLifetime },
     icfResubmitted: { yesterday: SGIP_DATA.filter(d => isYesterday(d.icfResubmittedDate)).length, wtd: SGIP_DATA.filter(d => isWTD(d.icfResubmittedDate)).length, mtd: SGIP_DATA.filter(d => isMTD(d.icfResubmittedDate)).length, lastWeek: SGIP_DATA.filter(d => isLastWeek(d.icfResubmittedDate)).length, lastMonth: SGIP_DATA.filter(d => isLastMonth(d.icfResubmittedDate)).length, lifetime: icfResubmittedLifetime },
     icfApproved: { yesterday: SGIP_DATA.filter(d => isYesterday(d.icfPendingPaymentDate)).length, wtd: SGIP_DATA.filter(d => isWTD(d.icfPendingPaymentDate)).length, mtd: SGIP_DATA.filter(d => isMTD(d.icfPendingPaymentDate)).length, lastWeek: SGIP_DATA.filter(d => isLastWeek(d.icfPendingPaymentDate)).length, lastMonth: SGIP_DATA.filter(d => isLastMonth(d.icfPendingPaymentDate)).length, lifetime: icfApprovedLifetime },
+    paymentAmount: { yesterday: sumPayments(isYesterday), wtd: sumPayments(isWTD), mtd: sumPayments(isMTD), lastWeek: sumPayments(isLastWeek), lastMonth: sumPayments(isLastMonth), lifetime: sumPaymentsLifetime },
     weekStart: weekStart.toLocaleDateString(), monthStart: monthStart.toLocaleDateString(),
     lastWeekStart: lastWeekStart.toLocaleDateString(), lastWeekEnd: new Date(lastWeekEnd.getTime() - 86400000).toLocaleDateString(),
     lastMonthStart: lastMonthStart.toLocaleDateString(), lastMonthEnd: new Date(lastMonthEnd.getTime() - 86400000).toLocaleDateString()
@@ -885,10 +895,19 @@ function renderActivityStats() {
             <td class="px-3 py-4 text-center text-xl font-bold text-slate-400">${ps.icfApproved.lastMonth}</td>
             <td class="px-3 py-4 text-center text-xl font-bold text-emerald-400 border-l border-slate-700">${ps.icfApproved.lifetime}</td>
           </tr>
+          <tr class="hover:bg-slate-800/50 bg-slate-800/30">
+            <td class="px-4 py-4 font-medium text-green-400">💰 Payment Amount</td>
+            <td class="px-3 py-4 text-center text-lg font-bold text-green-400">${fmtCurrency(ps.paymentAmount.yesterday)}</td>
+            <td class="px-3 py-4 text-center text-lg font-bold text-green-400">${fmtCurrency(ps.paymentAmount.wtd)}</td>
+            <td class="px-3 py-4 text-center text-lg font-bold text-green-400">${fmtCurrency(ps.paymentAmount.mtd)}</td>
+            <td class="px-3 py-4 text-center text-base font-bold text-slate-400 border-l border-slate-700">${fmtCurrency(ps.paymentAmount.lastWeek)}</td>
+            <td class="px-3 py-4 text-center text-base font-bold text-slate-400">${fmtCurrency(ps.paymentAmount.lastMonth)}</td>
+            <td class="px-3 py-4 text-center text-base font-bold text-emerald-400 border-l border-slate-700">${fmtCurrency(ps.paymentAmount.lifetime)}</td>
+          </tr>
         </tbody>
       </table>
     </div>
-    <p class="text-xs text-slate-500 mt-4">Data sources: Installs & PTOs from HubSpot • ICF dates from SGIP export</p>
+    <p class="text-xs text-slate-500 mt-4">Data sources: Installs & PTOs from HubSpot • ICF dates & Payment amounts from SGIP export</p>
   `;
 }
 
