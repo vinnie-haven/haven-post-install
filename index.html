@@ -569,9 +569,11 @@ function getPeriodicStats() {
   const icfResubmittedLifetime = SGIP_DATA.filter(d => hasDate(d.icfResubmittedDate) && postCutoffCodes.has(d.applicationCode)).length;
   const icfApprovedLifetime = SGIP_DATA.filter(d => hasDate(d.icfPendingPaymentDate) && postCutoffCodes.has(d.applicationCode)).length;
   
-  // Payment amounts - sum by payment date
-  const sumPayments = (filterFn) => SGIP_DATA.filter(d => d.paymentAmount && filterFn(d.paymentDate)).reduce((sum, d) => sum + parseNum(d.paymentAmount), 0);
+  // Payment amounts - sum by payment date (use all SGIP data, not just matched)
+  const sumPayments = (filterFn) => SGIP_DATA.filter(d => d.paymentAmount && d.paymentDate && filterFn(d.paymentDate)).reduce((sum, d) => sum + parseNum(d.paymentAmount), 0);
   const sumPaymentsLifetime = SGIP_DATA.filter(d => d.paymentAmount && hasDate(d.paymentDate) && postCutoffCodes.has(d.applicationCode)).reduce((sum, d) => sum + parseNum(d.paymentAmount), 0);
+  // Also calculate total payments regardless of install date cutoff for debugging
+  const totalAllPayments = SGIP_DATA.filter(d => d.paymentAmount && hasDate(d.paymentDate)).reduce((sum, d) => sum + parseNum(d.paymentAmount), 0);
   
   return {
     installs: { yesterday: allDeals.filter(d => isYesterday(d.installDate)).length, wtd: allDeals.filter(d => isWTD(d.installDate)).length, mtd: allDeals.filter(d => isMTD(d.installDate)).length, lastWeek: allDeals.filter(d => isLastWeek(d.installDate)).length, lastMonth: allDeals.filter(d => isLastMonth(d.installDate)).length, lifetime: installsLifetime },
@@ -579,7 +581,7 @@ function getPeriodicStats() {
     icfSubmitted: { yesterday: SGIP_DATA.filter(d => isYesterday(d.icfSubmittedDate)).length, wtd: SGIP_DATA.filter(d => isWTD(d.icfSubmittedDate)).length, mtd: SGIP_DATA.filter(d => isMTD(d.icfSubmittedDate)).length, lastWeek: SGIP_DATA.filter(d => isLastWeek(d.icfSubmittedDate)).length, lastMonth: SGIP_DATA.filter(d => isLastMonth(d.icfSubmittedDate)).length, lifetime: icfSubmittedLifetime },
     icfResubmitted: { yesterday: SGIP_DATA.filter(d => isYesterday(d.icfResubmittedDate)).length, wtd: SGIP_DATA.filter(d => isWTD(d.icfResubmittedDate)).length, mtd: SGIP_DATA.filter(d => isMTD(d.icfResubmittedDate)).length, lastWeek: SGIP_DATA.filter(d => isLastWeek(d.icfResubmittedDate)).length, lastMonth: SGIP_DATA.filter(d => isLastMonth(d.icfResubmittedDate)).length, lifetime: icfResubmittedLifetime },
     icfApproved: { yesterday: SGIP_DATA.filter(d => isYesterday(d.icfPendingPaymentDate)).length, wtd: SGIP_DATA.filter(d => isWTD(d.icfPendingPaymentDate)).length, mtd: SGIP_DATA.filter(d => isMTD(d.icfPendingPaymentDate)).length, lastWeek: SGIP_DATA.filter(d => isLastWeek(d.icfPendingPaymentDate)).length, lastMonth: SGIP_DATA.filter(d => isLastMonth(d.icfPendingPaymentDate)).length, lifetime: icfApprovedLifetime },
-    paymentAmount: { yesterday: sumPayments(isYesterday), wtd: sumPayments(isWTD), mtd: sumPayments(isMTD), lastWeek: sumPayments(isLastWeek), lastMonth: sumPayments(isLastMonth), lifetime: sumPaymentsLifetime },
+    paymentAmount: { yesterday: sumPayments(isYesterday), wtd: sumPayments(isWTD), mtd: sumPayments(isMTD), lastWeek: sumPayments(isLastWeek), lastMonth: sumPayments(isLastMonth), lifetime: sumPaymentsLifetime, allTime: totalAllPayments },
     weekStart: weekStart.toLocaleDateString(), monthStart: monthStart.toLocaleDateString(),
     lastWeekStart: lastWeekStart.toLocaleDateString(), lastWeekEnd: new Date(lastWeekEnd.getTime() - 86400000).toLocaleDateString(),
     lastMonthStart: lastMonthStart.toLocaleDateString(), lastMonthEnd: new Date(lastMonthEnd.getTime() - 86400000).toLocaleDateString()
@@ -904,7 +906,7 @@ function renderActivityStats() {
             <td class="px-3 py-4 text-center text-lg font-bold text-green-400">${fmtCurrency(ps.paymentAmount.mtd)}</td>
             <td class="px-3 py-4 text-center text-base font-bold text-slate-400 border-l border-slate-700">${fmtCurrency(ps.paymentAmount.lastWeek)}</td>
             <td class="px-3 py-4 text-center text-base font-bold text-slate-400">${fmtCurrency(ps.paymentAmount.lastMonth)}</td>
-            <td class="px-3 py-4 text-center text-base font-bold text-emerald-400 border-l border-slate-700">${fmtCurrency(ps.paymentAmount.lifetime)}</td>
+            <td class="px-3 py-4 text-center text-base font-bold text-emerald-400 border-l border-slate-700">${fmtCurrency(ps.paymentAmount.lifetime)}<br><span class="text-[10px] text-slate-500">All: ${fmtCurrency(ps.paymentAmount.allTime)}</span></td>
           </tr>
         </tbody>
       </table>
