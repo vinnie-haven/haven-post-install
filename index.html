@@ -577,10 +577,6 @@ function getPeriodicStats() {
   const sumApprovedLifetime = approvedSgip.filter(d => postCutoffCodes.has(d.applicationCode)).reduce((sum, d) => sum + parseNum(d.finalIncentive), 0);
   const totalAllApproved = approvedSgip.reduce((sum, d) => sum + parseNum(d.finalIncentive), 0);
   
-  const sumPaidByDate = (filterFn) => approvedSgip.filter(d => filterFn(d.icfPendingPaymentDate)).reduce((sum, d) => sum + parseNum(d.finalIncentive), 0);
-  const sumPaidLifetime = paidSgip.filter(d => postCutoffCodes.has(d.applicationCode)).reduce((sum, d) => sum + parseNum(d.finalIncentive), 0);
-  const totalAllPaid = paidSgip.reduce((sum, d) => sum + parseNum(d.finalIncentive), 0);
-  
   return {
     installs: { yesterday: allDeals.filter(d => isYesterday(d.installDate)).length, wtd: allDeals.filter(d => isWTD(d.installDate)).length, mtd: allDeals.filter(d => isMTD(d.installDate)).length, lastWeek: allDeals.filter(d => isLastWeek(d.installDate)).length, lastMonth: allDeals.filter(d => isLastMonth(d.installDate)).length, lifetime: installsLifetime },
     ptos: { yesterday: ptoYesterday, wtd: ptoWTD, mtd: ptoMTD, lastWeek: ptoLastWeek, lastMonth: ptoLastMonth, lifetime: ptoLifetime },
