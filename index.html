@@ -671,15 +671,83 @@ function customerCell(d) {
   else if (d.matchType === 'manual') badge = '<span class="ml-1 text-[9px] px-1 py-0.5 bg-purple-900/50 text-purple-400 rounded">manual</span>';
   return url ? `<a href="${url}" target="_blank" class="font-medium text-cyan-400 hover:text-cyan-300 hover:underline">${name}</a>${badge}` : `<span class="font-medium">${name}</span>${badge}`;
 }
-Status)}" onclick="openEditModal(${i},'inspectionStatus')">${d.inspectionStatus&&d.inspectionStatus!=='(No value)'?d.inspectionStatus:'—'}</span></td>
-              <td class="px-2 py-2"><span class="editable px-1.5 py-0.5 rounded text-xs border ${getPTOStyle(d.ptoDate)}" onclick="openEditModal(${i},'ptoDate')">${d.ptoDate&&d.ptoDate!=='(No value)'&&d.ptoDate!=='None'?d.ptoDate:'Pending'}</span></td>
-              <td class="px-2 py-2 text-xs">${d.sgipStage||'—'}</td>
-              <td class="px-2 py-2 text-xs text-slate-400">${d.sgipStatus||'—'}</td>
-              <td class="px-2 py-2"><span class="px-1.5 py-0.5 rounded text-xs font-medium" style="background:${info.color}20;color:${info.color}">${info.label}</span></td>
-              <td class="px-2 py-2 text-xs mono">${d.nextDueDate||'—'}</td>
-              <td class="px-2 py-2 text-right"><span class="${d.icfProgress==='Payment Completed'?'text-emerald-400':'text-slate-300'}">${d.currentIncentive||'—'}</span></td>
-              <td class="px-2 py-2 text-xs text-slate-400">${d.installer||'—'}</td>
-            </tr>`;
+
+function render() {
+  const stats = getStats();
+  const filtered = state.tab === 'matched' ? getFilteredData() : DATA.hubspotWithoutSgip;
+  const stageCounts = {}; DATA.matched.forEach(d => stageCounts[d.icfProgress] = (stageCounts[d.icfProgress] || 0) + 1);
+  const activeStages = STAGES.filter(s => stageCounts[s.key] > 0);
+  const permitOpts = getFilterCounts('permitStatus');
+  const inspectOpts = getFilterCounts('inspectionStatus', v => (!v || v === '(No value)') ? '(empty)' : v);
+  const ptoOpts = [['Complete', DATA.matched.filter(d => d.ptoDate && d.ptoDate !== '(No value)' && d.ptoDate !== 'None').length], ['Pending', DATA.matched.filter(d => !d.ptoDate || d.ptoDate === '(No value)' || d.ptoDate === 'None').length]];
+  const sgipStageOpts = getFilterCounts('sgipStage', v => v || '(empty)');
+  const sgipStatusOpts = getFilterCounts('sgipStatus', v => v || '(empty)');
+  const icfOpts = STAGES.filter(s => stageCounts[s.key] > 0).map(s => [s.key, stageCounts[s.key]]);
+  const installerOpts = getFilterCounts('installer', v => (!v || v === '(No value)') ? '(empty)' : v);
+
+  document.getElementById('app').innerHTML = `
+    <div class="bg-slate-800/80 border-b border-slate-700/50 sticky top-0 z-30">
+      <div class="max-w-[1920px] mx-auto px-4 py-3 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+          <div class="w-9 h-9 rounded-lg bg-gradient-to-br from-emerald-500 to-cyan-500 flex items-center justify-center"><svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg></div>
+          <div><h1 class="text-lg font-bold bg-gradient-to-r from-emerald-400 to-cyan-400 bg-clip-text text-transparent">Haven Energy</h1><p class="text-xs text-slate-400">Post-Install Portal</p></div>
+        </div>
+        <div class="flex items-center gap-2">
+          <button onclick="triggerSync()" class="sync-btn ${state.syncing ? 'syncing' : ''} px-3 py-1.5 text-xs bg-blue-600 hover:bg-blue-500 rounded-lg font-medium" ${state.syncing ? 'disabled' : ''}>${state.syncing ? '⟳ Syncing...' : '⟳ Sync HubSpot'}</button>
+          <button onclick="showUploadModal()" class="px-3 py-1.5 text-xs bg-slate-700 hover:bg-slate-600 rounded-lg font-medium">📤 Update SGIP</button>
+          <span class="text-xs text-slate-500">${state.lastSync ? 'HubSpot: '+state.lastSync : ''} ${state.sgipLastUpdated ? '• SGIP: '+state.sgipLastUpdated : ''}</span>
+        </div>
+      </div>
+    </div>
+    <div class="max-w-[1920px] mx-auto px-4 py-4">
+      <div class="flex gap-2 mb-4 flex-wrap">
+        <button onclick="setTab('matched')" class="px-4 py-2 rounded-lg text-sm font-medium ${state.tab === 'matched' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40' : 'bg-slate-800/50 text-slate-400 border border-slate-700/50'}">Matched (${DATA.matched.length})</button>
+        <button onclick="setTab('noSgip')" class="px-4 py-2 rounded-lg text-sm font-medium ${state.tab === 'noSgip' ? 'bg-amber-500/20 text-amber-400 border border-amber-500/40' : 'bg-slate-800/50 text-slate-400 border border-slate-700/50'}">Not in SGIP Portal (${DATA.hubspotWithoutSgip.length})</button>
+        <button onclick="setTab('stats')" class="px-4 py-2 rounded-lg text-sm font-medium ${state.tab === 'stats' ? 'bg-blue-500/20 text-blue-400 border border-blue-500/40' : 'bg-slate-800/50 text-slate-400 border border-slate-700/50'}">📊 Stats & Reports</button>
+      </div>
+      ${state.tab === 'matched' ? renderMatchedTab(stats, filtered, activeStages, stageCounts, permitOpts, inspectOpts, ptoOpts, sgipStageOpts, sgipStatusOpts, icfOpts, installerOpts) : state.tab === 'noSgip' ? renderNoSgipTab() : renderStatsTab()}
+    </div>
+  `;
+}
+
+function renderMatchedTab(stats, filtered, activeStages, stageCounts, permitOpts, inspectOpts, ptoOpts, sgipStageOpts, sgipStatusOpts, icfOpts, installerOpts) {
+  return `
+    <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-2 mb-4">
+      <div class="bg-slate-800/50 rounded-lg p-3 border border-slate-700/50"><p class="text-slate-500 text-xs uppercase">Total</p><p class="text-lg font-bold">${stats.total}</p></div>
+      <div class="bg-slate-800/50 rounded-lg p-3 border border-slate-700/50"><p class="text-slate-500 text-xs uppercase">Permitted</p><p class="text-lg font-bold">${stats.permitted}</p></div>
+      <div class="bg-slate-800/50 rounded-lg p-3 border border-slate-700/50"><p class="text-slate-500 text-xs uppercase">PTO Done</p><p class="text-lg font-bold">${stats.ptoComplete}</p></div>
+      <div class="bg-slate-800/50 rounded-lg p-3 border border-slate-700/50"><p class="text-slate-500 text-xs uppercase">ICF Submitted</p><p class="text-lg font-bold text-blue-400">${stats.icfSubmitted}</p></div>
+      <div class="bg-slate-800/50 rounded-lg p-3 border border-slate-700/50"><p class="text-slate-500 text-xs uppercase">ICF Approved</p><p class="text-lg font-bold text-purple-400">${stats.icfApproved}</p></div>
+      <div class="bg-slate-800/50 rounded-lg p-3 border border-slate-700/50"><p class="text-slate-500 text-xs uppercase">Pipeline</p><p class="text-lg font-bold">${fmtCurrency(stats.totalIncentive)}</p></div>
+      <div class="bg-slate-800/50 rounded-lg p-3 border border-slate-700/50"><p class="text-slate-500 text-xs uppercase">Paid</p><p class="text-lg font-bold text-emerald-400">${fmtCurrency(stats.paidIncentive)}</p></div>
+      <div class="bg-slate-800/50 rounded-lg p-3 border border-slate-700/50"><p class="text-slate-500 text-xs uppercase">Suspended</p><p class="text-lg font-bold text-red-400">${stats.suspended}</p></div>
+    </div>
+    ${activeStages.length > 0 ? '<div class="bg-slate-800/50 rounded-lg p-3 border border-slate-700/50 mb-4"><div class="flex rounded overflow-hidden h-6 bg-slate-900">'+activeStages.map(s => { const cnt = stageCounts[s.key] || 0, pct = (cnt / DATA.matched.length) * 100; return pct < 0.5 ? '' : '<div style="width:'+pct+'%;background:'+s.color+';min-width:18px" class="flex items-center justify-center text-white text-xs font-bold">'+cnt+'</div>'; }).join('')+'</div><div class="flex flex-wrap gap-2 mt-2">'+activeStages.map(s => '<span class="flex items-center gap-1 text-xs"><span class="w-2 h-2 rounded-full" style="background:'+s.color+'"></span><span class="text-slate-500">'+s.label+'</span></span>').join('')+'</div></div>' : ''}
+    <div class="flex flex-wrap gap-3 mb-4 items-center">
+      <input type="text" placeholder="Search customer, code, email, installer..." class="flex-1 min-w-[250px] max-w-md px-4 py-2 rounded-lg bg-slate-800 border border-slate-700 text-sm" value="${state.search}" oninput="updateSearch(this.value)">
+      ${hasActiveFilters() ? '<button onclick="clearFilters()" class="px-4 py-2 bg-red-600 hover:bg-red-500 rounded-lg text-sm font-medium">✕ Clear Filters</button>' : ''}
+    </div>
+    <div class="bg-slate-800/50 rounded-lg border border-slate-700/50 overflow-hidden">
+      <div class="px-3 py-2 border-b border-slate-700/50 text-sm"><span class="font-semibold">${filtered.length}</span> deals ${hasActiveFilters() ? '<span class="text-emerald-400">(filtered)</span>' : ''}</div>
+      <div class="table-container overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead class="sticky-header"><tr>
+            <th class="px-2 py-3 text-left text-xs font-semibold text-slate-400 uppercase cursor-pointer" onclick="setSort('name')">Customer ${state.sortBy === 'name' ? (state.sortDir === 'asc' ? '↑' : '↓') : ''}</th>
+            ${installMonthFilterHeader()}
+            <th class="px-2 py-3 text-left text-xs font-semibold text-slate-400 uppercase cursor-pointer" onclick="setSort('daysSinceInstall')">Days ${state.sortBy === 'daysSinceInstall' ? (state.sortDir === 'asc' ? '↑' : '↓') : ''}</th>
+            ${filterHeader('Permit', 'permitStatus', null, permitOpts, true)}
+            ${filterHeader('Inspection', 'inspectionStatus', null, inspectOpts, true)}
+            ${filterHeader('PTO', 'ptoStatus', null, ptoOpts, true)}
+            ${filterHeader('SGIP Stage', 'sgipStage', null, sgipStageOpts)}
+            ${filterHeader('SGIP Status', 'sgipStatus', null, sgipStatusOpts)}
+            ${filterHeader('ICF Progress', 'icfProgress', 'stage', icfOpts)}
+            <th class="px-2 py-3 text-left text-xs font-semibold text-slate-400 uppercase cursor-pointer" onclick="setSort('nextDue')">Next Due ${state.sortBy === 'nextDue' ? (state.sortDir === 'asc' ? '↑' : '↓') : ''}</th>
+            <th class="px-2 py-3 text-left text-xs font-semibold text-slate-400 uppercase cursor-pointer" onclick="setSort('incentive')">Incentive ${state.sortBy === 'incentive' ? (state.sortDir === 'asc' ? '↑' : '↓') : ''}</th>
+            ${filterHeader('Installer', 'installer', null, installerOpts)}
+          </tr></thead>
+          <tbody class="divide-y divide-slate-700/30">${filtered.length === 0 ? '<tr><td colspan="12" class="p-8 text-center text-slate-500">No deals found.</td></tr>' : filtered.map((d, i) => {
+            const info = getStageInfo(d.icfProgress);
+            return '<tr class="hover:bg-slate-800/50"><td class="px-2 py-2"><div class="min-w-[150px]">'+customerCell(d)+(d.applicationCode?'<br><span class="text-xs text-slate-500 mono">'+d.applicationCode+'</span>':'')+'</div></td><td class="px-2 py-2 text-xs mono">'+(d.installDate||'—')+'</td><td class="px-2 py-2"><span class="font-semibold '+getDaysColor(d.daysSinceInstall)+'">'+(d.daysSinceInstall!==null?d.daysSinceInstall+'d':'—')+'</span></td><td class="px-2 py-2"><span class="editable px-1.5 py-0.5 rounded text-xs border '+getPermitStyle(d.permitStatus)+'" onclick="openEditModal('+i+',\'permitStatus\')">'+(d.permitStatus||'—')+'</span></td><td class="px-2 py-2"><span class="editable px-1.5 py-0.5 rounded text-xs border '+getInspectionStyle(d.inspectionStatus)+'" onclick="openEditModal('+i+',\'inspectionStatus\')">'+(d.inspectionStatus&&d.inspectionStatus!=='(No value)'?d.inspectionStatus:'—')+'</span></td><td class="px-2 py-2"><span class="editable px-1.5 py-0.5 rounded text-xs border '+getPTOStyle(d.ptoDate)+'" onclick="openEditModal('+i+',\'ptoDate\')">'+(d.ptoDate&&d.ptoDate!=='(No value)'&&d.ptoDate!=='None'?d.ptoDate:'Pending')+'</span></td><td class="px-2 py-2 text-xs">'+(d.sgipStage||'—')+'</td><td class="px-2 py-2 text-xs text-slate-400">'+(d.sgipStatus||'—')+'</td><td class="px-2 py-2"><span class="px-1.5 py-0.5 rounded text-xs font-medium" style="background:'+info.color+'20;color:'+info.color+'">'+info.label+'</span></td><td class="px-2 py-2 text-xs mono">'+(d.nextDueDate||'—')+'</td><td class="px-2 py-2 text-right"><span class="'+(d.icfProgress==='Payment Completed'?'text-emerald-400':'text-slate-300')+'">'+(d.currentIncentive||'—')+'</span></td><td class="px-2 py-2 text-xs text-slate-400">'+(d.installer||'—')+'</td></tr>';
           }).join('')}</tbody>
         </table>
       </div>
