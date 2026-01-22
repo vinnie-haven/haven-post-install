@@ -569,10 +569,15 @@ function getPeriodicStats() {
   const icfResubmittedLifetime = SGIP_DATA.filter(d => hasDate(d.icfResubmittedDate) && postCutoffCodes.has(d.applicationCode)).length;
   const icfApprovedLifetime = SGIP_DATA.filter(d => hasDate(d.icfPendingPaymentDate) && postCutoffCodes.has(d.applicationCode)).length;
   
-  // Payment amounts - use finalIncentive for paid projects, grouped by paymentDate if available
-  const isPaidStatus = (d) => { const p = (d.fullyQualifiedState || '').toLowerCase(); return p.includes('payment') && p.includes('completed'); };
-  const paidSgip = SGIP_DATA.filter(d => isPaidStatus(d) && d.finalIncentive);
-  const sumPaidByDate = (filterFn) => paidSgip.filter(d => d.paymentDate && filterFn(d.paymentDate)).reduce((sum, d) => sum + parseNum(d.finalIncentive), 0);
+  // Payment amounts - use finalIncentive for projects with icfPendingPaymentDate (approved)
+  const hasIcfApproval = (d) => d.icfPendingPaymentDate && d.finalIncentive;
+  const approvedSgip = SGIP_DATA.filter(d => hasIcfApproval(d));
+  
+  const sumApprovedByDate = (filterFn) => approvedSgip.filter(d => filterFn(d.icfPendingPaymentDate)).reduce((sum, d) => sum + parseNum(d.finalIncentive), 0);
+  const sumApprovedLifetime = approvedSgip.filter(d => postCutoffCodes.has(d.applicationCode)).reduce((sum, d) => sum + parseNum(d.finalIncentive), 0);
+  const totalAllApproved = approvedSgip.reduce((sum, d) => sum + parseNum(d.finalIncentive), 0);
+  
+  const sumPaidByDate = (filterFn) => approvedSgip.filter(d => filterFn(d.icfPendingPaymentDate)).reduce((sum, d) => sum + parseNum(d.finalIncentive), 0);
   const sumPaidLifetime = paidSgip.filter(d => postCutoffCodes.has(d.applicationCode)).reduce((sum, d) => sum + parseNum(d.finalIncentive), 0);
   const totalAllPaid = paidSgip.reduce((sum, d) => sum + parseNum(d.finalIncentive), 0);
   
@@ -582,7 +587,7 @@ function getPeriodicStats() {
     icfSubmitted: { yesterday: SGIP_DATA.filter(d => isYesterday(d.icfSubmittedDate)).length, wtd: SGIP_DATA.filter(d => isWTD(d.icfSubmittedDate)).length, mtd: SGIP_DATA.filter(d => isMTD(d.icfSubmittedDate)).length, lastWeek: SGIP_DATA.filter(d => isLastWeek(d.icfSubmittedDate)).length, lastMonth: SGIP_DATA.filter(d => isLastMonth(d.icfSubmittedDate)).length, lifetime: icfSubmittedLifetime },
     icfResubmitted: { yesterday: SGIP_DATA.filter(d => isYesterday(d.icfResubmittedDate)).length, wtd: SGIP_DATA.filter(d => isWTD(d.icfResubmittedDate)).length, mtd: SGIP_DATA.filter(d => isMTD(d.icfResubmittedDate)).length, lastWeek: SGIP_DATA.filter(d => isLastWeek(d.icfResubmittedDate)).length, lastMonth: SGIP_DATA.filter(d => isLastMonth(d.icfResubmittedDate)).length, lifetime: icfResubmittedLifetime },
     icfApproved: { yesterday: SGIP_DATA.filter(d => isYesterday(d.icfPendingPaymentDate)).length, wtd: SGIP_DATA.filter(d => isWTD(d.icfPendingPaymentDate)).length, mtd: SGIP_DATA.filter(d => isMTD(d.icfPendingPaymentDate)).length, lastWeek: SGIP_DATA.filter(d => isLastWeek(d.icfPendingPaymentDate)).length, lastMonth: SGIP_DATA.filter(d => isLastMonth(d.icfPendingPaymentDate)).length, lifetime: icfApprovedLifetime },
-    paymentAmount: { yesterday: sumPaidByDate(isYesterday), wtd: sumPaidByDate(isWTD), mtd: sumPaidByDate(isMTD), lastWeek: sumPaidByDate(isLastWeek), lastMonth: sumPaidByDate(isLastMonth), lifetime: sumPaidLifetime, allTime: totalAllPaid },
+    paymentAmount: { yesterday: sumApprovedByDate(isYesterday), wtd: sumApprovedByDate(isWTD), mtd: sumApprovedByDate(isMTD), lastWeek: sumApprovedByDate(isLastWeek), lastMonth: sumApprovedByDate(isLastMonth), lifetime: sumApprovedLifetime, allTime: totalAllApproved },
     weekStart: weekStart.toLocaleDateString(), monthStart: monthStart.toLocaleDateString(),
     lastWeekStart: lastWeekStart.toLocaleDateString(), lastWeekEnd: new Date(lastWeekEnd.getTime() - 86400000).toLocaleDateString(),
     lastMonthStart: lastMonthStart.toLocaleDateString(), lastMonthEnd: new Date(lastMonthEnd.getTime() - 86400000).toLocaleDateString()
