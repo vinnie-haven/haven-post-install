@@ -390,8 +390,8 @@ async function handleSgipFile(file) {
         nextDueDate: row['Next Due Date'] || '', siteAddress: row['Site Address'] || '', utility: row['Electric Utility'] || '',
         icfSubmittedDate: row['ICF Submitted Date'] || '', icfResubmittedDate: row['Last ICF Resubmitted Date'] || '',
         icfPendingPaymentDate: row['ICF Pending Payment Date'] || '',
-        paymentAmount: row['Payment Amount ($)'] || '',
-        paymentDate: row['Payment Completed Date'] || ''
+        paymentAmount: row['Total Project Incentive Payment'] || '',
+        paymentDate: row['Most Recent Payment Date'] || ''
       })).filter(s => s.applicationCode);
       document.getElementById('sgipStatus').innerHTML = '<span class="text-blue-400">Saving to database...</span>';
       const saved = await saveSgipToSupabase(newSgipData);
