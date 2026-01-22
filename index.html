@@ -524,6 +524,7 @@ function getPeriodicStats() {
   const lastWeekStart = new Date(weekStart); lastWeekStart.setDate(lastWeekStart.getDate() - 7);
   const lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 1);
   const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  const cutoffDate = new Date('2025-04-01');
   
   const parseAnyDate = (dateStr) => { if (!dateStr) return null; let d; if (dateStr.includes('/')) { const parts = dateStr.split('/'); if (parts.length === 3) { let year = parseInt(parts[2]); if (year < 100) year += 2000; d = new Date(year, parseInt(parts[0]) - 1, parseInt(parts[1])); } } else d = new Date(dateStr); return (d && !isNaN(d.getTime())) ? d : null; };
   const isInRange = (dateStr, start, end) => { const d = parseAnyDate(dateStr); if (!d) return false; return d >= start && d < end; };
@@ -533,27 +534,37 @@ function getPeriodicStats() {
   const isLastWeek = (dateStr) => isInRange(dateStr, lastWeekStart, lastWeekEnd);
   const isLastMonth = (dateStr) => isInRange(dateStr, lastMonthStart, lastMonthEnd);
   const hasDate = (dateStr) => { const d = parseAnyDate(dateStr); return d !== null; };
+  const isAfterCutoff = (dateStr) => { const d = parseAnyDate(dateStr); return d && d >= cutoffDate; };
   
   const allDeals = [...DATA.matched, ...DATA.hubspotWithoutSgip];
   
-  // Installs
-  const installsLifetime = allDeals.filter(d => hasDate(d.installDate)).length;
+  // Filter deals installed after 4/1/2025 for lifetime counts
+  const postCutoffDeals = allDeals.filter(d => isAfterCutoff(d.installDate));
+  const postCutoffCodes = new Set(DATA.matched.filter(d => isAfterCutoff(d.installDate)).map(d => d.applicationCode).filter(c => c));
+  
+  // Installs lifetime (only after cutoff)
+  const installsLifetime = postCutoffDeals.length;
   
   // PTOs - check if ptoDate exists and is valid
   const hasPto = (d) => d.ptoDate && d.ptoDate !== '(No value)' && d.ptoDate !== 'None' && parseAnyDate(d.ptoDate);
-  const ptoLifetime = allDeals.filter(d => hasPto(d)).length;
+  const ptoLifetime = postCutoffDeals.filter(d => hasPto(d)).length;
   const ptoYesterday = allDeals.filter(d => isYesterday(d.ptoDate)).length;
   const ptoWTD = allDeals.filter(d => isWTD(d.ptoDate)).length;
   const ptoMTD = allDeals.filter(d => isMTD(d.ptoDate)).length;
   const ptoLastWeek = allDeals.filter(d => isLastWeek(d.ptoDate)).length;
   const ptoLastMonth = allDeals.filter(d => isLastMonth(d.ptoDate)).length;
   
+  // ICF lifetime counts - only for projects with install date after cutoff
+  const icfSubmittedLifetime = SGIP_DATA.filter(d => hasDate(d.icfSubmittedDate) && postCutoffCodes.has(d.applicationCode)).length;
+  const icfResubmittedLifetime = SGIP_DATA.filter(d => hasDate(d.icfResubmittedDate) && postCutoffCodes.has(d.applicationCode)).length;
+  const icfApprovedLifetime = SGIP_DATA.filter(d => hasDate(d.icfPendingPaymentDate) && postCutoffCodes.has(d.applicationCode)).length;
+  
   return {
     installs: { yesterday: allDeals.filter(d => isYesterday(d.installDate)).length, wtd: allDeals.filter(d => isWTD(d.installDate)).length, mtd: allDeals.filter(d => isMTD(d.installDate)).length, lastWeek: allDeals.filter(d => isLastWeek(d.installDate)).length, lastMonth: allDeals.filter(d => isLastMonth(d.installDate)).length, lifetime: installsLifetime },
     ptos: { yesterday: ptoYesterday, wtd: ptoWTD, mtd: ptoMTD, lastWeek: ptoLastWeek, lastMonth: ptoLastMonth, lifetime: ptoLifetime },
-    icfSubmitted: { yesterday: SGIP_DATA.filter(d => isYesterday(d.icfSubmittedDate)).length, wtd: SGIP_DATA.filter(d => isWTD(d.icfSubmittedDate)).length, mtd: SGIP_DATA.filter(d => isMTD(d.icfSubmittedDate)).length, lastWeek: SGIP_DATA.filter(d => isLastWeek(d.icfSubmittedDate)).length, lastMonth: SGIP_DATA.filter(d => isLastMonth(d.icfSubmittedDate)).length, lifetime: SGIP_DATA.filter(d => hasDate(d.icfSubmittedDate)).length },
-    icfResubmitted: { yesterday: SGIP_DATA.filter(d => isYesterday(d.icfResubmittedDate)).length, wtd: SGIP_DATA.filter(d => isWTD(d.icfResubmittedDate)).length, mtd: SGIP_DATA.filter(d => isMTD(d.icfResubmittedDate)).length, lastWeek: SGIP_DATA.filter(d => isLastWeek(d.icfResubmittedDate)).length, lastMonth: SGIP_DATA.filter(d => isLastMonth(d.icfResubmittedDate)).length, lifetime: SGIP_DATA.filter(d => hasDate(d.icfResubmittedDate)).length },
-    icfApproved: { yesterday: SGIP_DATA.filter(d => isYesterday(d.icfPendingPaymentDate)).length, wtd: SGIP_DATA.filter(d => isWTD(d.icfPendingPaymentDate)).length, mtd: SGIP_DATA.filter(d => isMTD(d.icfPendingPaymentDate)).length, lastWeek: SGIP_DATA.filter(d => isLastWeek(d.icfPendingPaymentDate)).length, lastMonth: SGIP_DATA.filter(d => isLastMonth(d.icfPendingPaymentDate)).length, lifetime: SGIP_DATA.filter(d => hasDate(d.icfPendingPaymentDate)).length },
+    icfSubmitted: { yesterday: SGIP_DATA.filter(d => isYesterday(d.icfSubmittedDate)).length, wtd: SGIP_DATA.filter(d => isWTD(d.icfSubmittedDate)).length, mtd: SGIP_DATA.filter(d => isMTD(d.icfSubmittedDate)).length, lastWeek: SGIP_DATA.filter(d => isLastWeek(d.icfSubmittedDate)).length, lastMonth: SGIP_DATA.filter(d => isLastMonth(d.icfSubmittedDate)).length, lifetime: icfSubmittedLifetime },
+    icfResubmitted: { yesterday: SGIP_DATA.filter(d => isYesterday(d.icfResubmittedDate)).length, wtd: SGIP_DATA.filter(d => isWTD(d.icfResubmittedDate)).length, mtd: SGIP_DATA.filter(d => isMTD(d.icfResubmittedDate)).length, lastWeek: SGIP_DATA.filter(d => isLastWeek(d.icfResubmittedDate)).length, lastMonth: SGIP_DATA.filter(d => isLastMonth(d.icfResubmittedDate)).length, lifetime: icfResubmittedLifetime },
+    icfApproved: { yesterday: SGIP_DATA.filter(d => isYesterday(d.icfPendingPaymentDate)).length, wtd: SGIP_DATA.filter(d => isWTD(d.icfPendingPaymentDate)).length, mtd: SGIP_DATA.filter(d => isMTD(d.icfPendingPaymentDate)).length, lastWeek: SGIP_DATA.filter(d => isLastWeek(d.icfPendingPaymentDate)).length, lastMonth: SGIP_DATA.filter(d => isLastMonth(d.icfPendingPaymentDate)).length, lifetime: icfApprovedLifetime },
     weekStart: weekStart.toLocaleDateString(), monthStart: monthStart.toLocaleDateString(),
     lastWeekStart: lastWeekStart.toLocaleDateString(), lastWeekEnd: new Date(lastWeekEnd.getTime() - 86400000).toLocaleDateString(),
     lastMonthStart: lastMonthStart.toLocaleDateString(), lastMonthEnd: new Date(lastMonthEnd.getTime() - 86400000).toLocaleDateString()
@@ -582,11 +593,15 @@ function getInstallsByMonth() {
   allDeals.forEach(d => {
     const month = getInstallMonth(d.installDate);
     if (!month) return;
-    if (!byMonth[month]) byMonth[month] = { total: 0, icfComplete: 0, icfPending: 0 };
+    if (!byMonth[month]) byMonth[month] = { total: 0, icfComplete: 0, icfPending: 0, inspectionComplete: 0, ptoComplete: 0 };
     byMonth[month].total++;
     const icfProgress = d.icfProgress || 'Not Started';
     if (icfProgress === 'Pending Payment' || icfProgress === 'Payment Completed') byMonth[month].icfComplete++;
     else byMonth[month].icfPending++;
+    // Inspection complete = Passed
+    if (d.inspectionStatus === 'Passed') byMonth[month].inspectionComplete++;
+    // PTO complete = has a valid PTO date
+    if (d.ptoDate && d.ptoDate !== '(No value)' && d.ptoDate !== 'None') byMonth[month].ptoComplete++;
   });
   return Object.entries(byMonth).sort((a, b) => b[0].localeCompare(a[0])).map(([month, data]) => ({ month, ...data }));
 }
@@ -816,7 +831,7 @@ function renderActivityStats() {
             <th class="px-3 py-4 text-center text-sm font-semibold text-slate-300">Month to Date</th>
             <th class="px-3 py-4 text-center text-sm font-semibold text-slate-400 border-l border-slate-700">Last Week<br><span class="text-[10px] font-normal">${ps.lastWeekStart} - ${ps.lastWeekEnd}</span></th>
             <th class="px-3 py-4 text-center text-sm font-semibold text-slate-400">Last Month<br><span class="text-[10px] font-normal">${ps.lastMonthStart}</span></th>
-            <th class="px-3 py-4 text-center text-sm font-semibold text-emerald-400 border-l border-slate-700">Lifetime</th>
+            <th class="px-3 py-4 text-center text-sm font-semibold text-emerald-400 border-l border-slate-700">Lifetime<br><span class="text-[10px] font-normal">Since 4/1/2025</span></th>
           </tr>
         </thead>
         <tbody class="divide-y divide-slate-700/30">
@@ -919,17 +934,19 @@ function renderMonthlyStats() {
   return `
     <div class="bg-cyan-500/10 border border-cyan-500/30 rounded-lg p-4 mb-4">
       <h3 class="font-semibold text-cyan-400">📅 Installs by Month</h3>
-      <p class="text-sm text-slate-400 mt-1">Total installs per month with ICF completion status (Pending Payment + Payment Complete vs all others)</p>
+      <p class="text-sm text-slate-400 mt-1">Total installs per month with completion status for each milestone</p>
     </div>
-    <div class="bg-slate-800/50 rounded-lg border border-slate-700/50 overflow-hidden">
+    <div class="bg-slate-800/50 rounded-lg border border-slate-700/50 overflow-hidden overflow-x-auto">
       <table class="w-full text-sm">
         <thead>
           <tr class="border-b border-slate-700">
             <th class="px-4 py-3 text-left text-sm font-semibold text-slate-300">Month</th>
             <th class="px-4 py-3 text-center text-sm font-semibold text-slate-300">Total Installs</th>
+            <th class="px-4 py-3 text-center text-sm font-semibold text-blue-400">Inspection Complete</th>
+            <th class="px-4 py-3 text-center text-sm font-semibold text-cyan-400">PTO Complete</th>
             <th class="px-4 py-3 text-center text-sm font-semibold text-green-400">ICF Complete</th>
             <th class="px-4 py-3 text-center text-sm font-semibold text-amber-400">ICF Pending</th>
-            <th class="px-4 py-3 text-left text-sm font-semibold text-slate-300">Progress</th>
+            <th class="px-4 py-3 text-left text-sm font-semibold text-slate-300">ICF Progress</th>
           </tr>
         </thead>
         <tbody class="divide-y divide-slate-700/30">
@@ -937,6 +954,8 @@ function renderMonthlyStats() {
             <tr class="hover:bg-slate-800/50">
               <td class="px-4 py-3 font-medium">${formatMonthLabel(m.month)}</td>
               <td class="px-4 py-3 text-center text-xl font-bold">${m.total}</td>
+              <td class="px-4 py-3 text-center text-xl font-bold text-blue-400">${m.inspectionComplete}</td>
+              <td class="px-4 py-3 text-center text-xl font-bold text-cyan-400">${m.ptoComplete}</td>
               <td class="px-4 py-3 text-center text-xl font-bold text-green-400">${m.icfComplete}</td>
               <td class="px-4 py-3 text-center text-xl font-bold text-amber-400">${m.icfPending}</td>
               <td class="px-4 py-3">
@@ -952,7 +971,7 @@ function renderMonthlyStats() {
         </tbody>
       </table>
     </div>
-    <p class="text-xs text-slate-500 mt-4">ICF Complete = Pending Payment or Payment Completed • ICF Pending = All other statuses</p>
+    <p class="text-xs text-slate-500 mt-4">Inspection Complete = Passed • PTO Complete = Has PTO date • ICF Complete = Pending Payment or Payment Completed</p>
   `;
 }
 
