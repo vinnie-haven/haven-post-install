@@ -108,7 +108,7 @@ let state = {
   tab: 'matched', 
   statsSubTab: 'activity',
   search: '', 
-  filters: { permitStatus: [], inspectionStatus: [], ptoStatus: [], sgipStage: [], sgipStatus: [], icfProgress: [], installer: [], installMonth: [] },
+  filters: { permitStatus: [], inspectionStatus: [], ptoStatus: [], sgipStage: [], sgipStatus: [], sgipProgress: [], installer: [], installMonth: [] },
   sortBy: 'daysSinceInstall', 
   sortDir: 'desc', 
   editingDeal: null, 
@@ -143,6 +143,7 @@ async function loadSgipFromSupabase() {
         applicationCode: a.application_code || '',
         sgipStage: a.stage || '',
         sgipStatus: a.status || '',
+        fullyQualifiedState: a.fully_qualified_state || '',
         currentIncentive: a.current_incentive || '',
         finalIncentive: a.final_incentive || '',
         nextDueDate: a.next_due_date || '',
@@ -165,6 +166,7 @@ async function saveSgipToSupabase(sgipData) {
   if (!sgipData || sgipData.length === 0) return false;
   const records = sgipData.map(s => ({
     application_code: s.applicationCode, email: s.email, stage: s.sgipStage, status: s.sgipStatus,
+    fully_qualified_state: s.fullyQualifiedState || null,
     current_incentive: s.currentIncentive, final_incentive: s.finalIncentive, next_due_date: s.nextDueDate,
     site_address: s.siteAddress, utility: s.utility, icf_submitted_date: s.icfSubmittedDate || null,
     icf_resubmitted_date: s.icfResubmittedDate || null, icf_pending_payment_date: s.icfPendingPaymentDate || null,
@@ -285,23 +287,6 @@ const inspectionMap = { 'Inspection passed': 'Passed', 'Inspection failed': 'Fai
 function mapPermit(s) { return permitMap[s] || s; }
 function mapInspection(s) { return inspectionMap[s] || s; }
 
-function getIcfProgress(stage, status) {
-  if (stage === "RRF") {
-    if (status === "Draft") return "RRF Draft";
-    if (["Submitted", "Review", "Technical Review", "Equipment Review"].includes(status)) return "RRF Under Review";
-    if (["Suspended", "Resubmitted"].includes(status)) return "RRF Suspended";
-    if (["Confirmed", "Reserved"].includes(status)) return "RRF Confirmed";
-  } else if (stage === "ICF") {
-    if (status === "Draft") return "ICF Draft";
-    if (["Submitted", "Review", "Technical Review"].includes(status)) return "ICF Under Review";
-    if (["Suspended", "Inspection Suspended", "Resubmitted"].includes(status)) return "ICF Suspended";
-    if (status === "Inspection") return "ICF Inspection";
-    if (status === "Pending Payment") return "Pending Payment";
-  } else if (stage === "Payment") return status === "Completed" ? "Payment Completed" : "Payment Processing";
-  else if (stage === "Cancelled") return "Cancelled";
-  return "Not Started";
-}
-
 function mergeData() {
   const sgipByEmail = {}, sgipByAddress = {}, sgipByCode = {};
   SGIP_DATA.forEach(s => {
@@ -322,7 +307,7 @@ function mergeData() {
     if (CORRECTIONS.manualMatches[email]) { sgip = sgipByCode[CORRECTIONS.manualMatches[email]]; if (sgip) matchType = 'manual'; }
     if (!sgip && !isNotInPortal) { sgip = sgipByEmail[email]; if (sgip) matchType = 'email'; }
     if (!sgip && !isNotInPortal && hubspotAddr) { sgip = sgipByAddress[hubspotAddr]; if (sgip) matchType = 'address'; }
-    const record = { ...h, applicationCode: sgip?.applicationCode || '', sgipStage: sgip?.sgipStage || '', sgipStatus: sgip?.sgipStatus || '', currentIncentive: sgip?.currentIncentive || '', finalIncentive: sgip?.finalIncentive || '', nextDueDate: sgip?.nextDueDate || '', siteAddress: sgip?.siteAddress || '', utility: sgip?.utility || '', icfProgress: getIcfProgress(sgip?.sgipStage || '', sgip?.sgipStatus || ''), matchType, notInPortal: isNotInPortal };
+    const record = { ...h, applicationCode: sgip?.applicationCode || '', sgipStage: sgip?.sgipStage || '', sgipStatus: sgip?.sgipStatus || '', currentIncentive: sgip?.currentIncentive || '', finalIncentive: sgip?.finalIncentive || '', nextDueDate: sgip?.nextDueDate || '', siteAddress: sgip?.siteAddress || '', utility: sgip?.utility || '', sgipProgress: sgip?.fullyQualifiedState || '', matchType, notInPortal: isNotInPortal };
     if (sgip?.applicationCode) { matched.push(record); if (matchType === 'email') MATCH_STATS.byEmail++; else if (matchType === 'address') MATCH_STATS.byAddress++; else if (matchType === 'manual') MATCH_STATS.byManual++; }
     else { hubspotWithoutSgip.push(record); MATCH_STATS.noMatch++; }
   });
@@ -397,6 +382,7 @@ async function handleSgipFile(file) {
       const newSgipData = results.data.map(row => ({
         email: (row['Host Customer Email'] || '').toLowerCase().trim(),
         applicationCode: row['Application Code'] || '', sgipStage: row['Stage'] || '', sgipStatus: row['Status'] || '',
+        fullyQualifiedState: row['Fully Qualified State'] || '',
         currentIncentive: row['Current Incentive ($)'] || '', finalIncentive: row['Final Incentive (ICF)'] || '',
         nextDueDate: row['Next Due Date'] || '', siteAddress: row['Site Address'] || '', utility: row['Electric Utility'] || '',
         icfSubmittedDate: row['ICF Submitted Date'] || '', icfResubmittedDate: row['Last ICF Resubmitted Date'] || '',
@@ -452,20 +438,39 @@ async function handleCorrectionFile(file) {
 }
 
 const STAGES = [
-  { key: 'Not Started', label: 'Not Started', color: '#64748b', stage: 0 },
-  { key: 'RRF Draft', label: 'RRF Draft', color: '#f59e0b', stage: 1 },
-  { key: 'RRF Under Review', label: 'RRF Review', color: '#3b82f6', stage: 1 },
-  { key: 'RRF Suspended', label: 'RRF Suspended', color: '#ef4444', stage: 1 },
-  { key: 'RRF Confirmed', label: 'RRF Confirmed', color: '#10b981', stage: 2 },
-  { key: 'ICF Draft', label: 'ICF Draft', color: '#f59e0b', stage: 3 },
-  { key: 'ICF Under Review', label: 'ICF Review', color: '#3b82f6', stage: 3 },
-  { key: 'ICF Suspended', label: 'ICF Suspended', color: '#ef4444', stage: 3 },
-  { key: 'ICF Inspection', label: 'ICF Inspection', color: '#8b5cf6', stage: 4 },
-  { key: 'Pending Payment', label: 'Pending Payment', color: '#06b6d4', stage: 4 },
-  { key: 'Payment Completed', label: 'Paid', color: '#22c55e', stage: 5 },
+  { key: '', label: 'Not Started', color: '#64748b', stage: 0 },
+  { key: 'RRF: Draft', label: 'RRF Draft', color: '#f59e0b', stage: 1 },
+  { key: 'RRF: Submitted', label: 'RRF Submitted', color: '#3b82f6', stage: 1 },
+  { key: 'RRF: Review', label: 'RRF Review', color: '#3b82f6', stage: 1 },
+  { key: 'RRF: Technical Review', label: 'RRF Tech Review', color: '#3b82f6', stage: 1 },
+  { key: 'RRF: Suspended', label: 'RRF Suspended', color: '#ef4444', stage: 1 },
+  { key: 'RRF: Resubmitted', label: 'RRF Resubmitted', color: '#f59e0b', stage: 1 },
+  { key: 'RRF: Confirmed', label: 'RRF Confirmed', color: '#10b981', stage: 2 },
+  { key: 'RRF: Reserved', label: 'RRF Reserved', color: '#10b981', stage: 2 },
+  { key: 'ICF: Draft', label: 'ICF Draft', color: '#f59e0b', stage: 3 },
+  { key: 'ICF: Submitted', label: 'ICF Submitted', color: '#3b82f6', stage: 3 },
+  { key: 'ICF: Review', label: 'ICF Review', color: '#3b82f6', stage: 3 },
+  { key: 'ICF: Technical Review', label: 'ICF Tech Review', color: '#3b82f6', stage: 3 },
+  { key: 'ICF: Suspended', label: 'ICF Suspended', color: '#ef4444', stage: 3 },
+  { key: 'ICF: Resubmitted', label: 'ICF Resubmitted', color: '#f59e0b', stage: 3 },
+  { key: 'ICF: Inspection', label: 'ICF Inspection', color: '#8b5cf6', stage: 4 },
+  { key: 'ICF: Inspection Suspended', label: 'Insp Suspended', color: '#ef4444', stage: 4 },
+  { key: 'ICF: Pending Payment', label: 'Pending Payment', color: '#06b6d4', stage: 5 },
+  { key: 'Payment: Completed', label: 'Paid', color: '#22c55e', stage: 6 },
+  { key: 'Payment: Processing', label: 'Processing', color: '#06b6d4', stage: 5 },
+  { key: 'Cancelled', label: 'Cancelled', color: '#ef4444', stage: -1 },
 ];
 
-const getStageInfo = k => STAGES.find(s => s.key === k) || STAGES[0];
+const getStageInfo = k => {
+  if (!k) return STAGES[0];
+  const found = STAGES.find(s => s.key === k);
+  if (found) return found;
+  // Handle unknown values with sensible defaults based on prefix
+  if (k.startsWith('RRF:')) return { key: k, label: k.replace('RRF: ', ''), color: '#3b82f6', stage: 1 };
+  if (k.startsWith('ICF:')) return { key: k, label: k.replace('ICF: ', ''), color: '#3b82f6', stage: 3 };
+  if (k.startsWith('Payment:')) return { key: k, label: k.replace('Payment: ', ''), color: '#06b6d4', stage: 5 };
+  return { key: k, label: k, color: '#64748b', stage: 0 };
+};
 const parseNum = v => v ? parseFloat(String(v).replace(/[$,]/g, '')) || 0 : 0;
 const fmtCurrency = v => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(v);
 const getDaysSince = d => { if (!d || d === 'None') return null; try { return Math.floor((new Date() - new Date(d)) / 86400000); } catch { return null; } };
@@ -495,7 +500,7 @@ function getFilteredData() {
   if (state.filters.ptoStatus.length > 0) r = r.filter(d => { const has = d.ptoDate && d.ptoDate !== '(No value)' && d.ptoDate !== 'None'; return state.filters.ptoStatus.includes(has ? 'Complete' : 'Pending'); });
   if (state.filters.sgipStage.length > 0) r = r.filter(d => state.filters.sgipStage.includes(d.sgipStage || '(empty)'));
   if (state.filters.sgipStatus.length > 0) r = r.filter(d => state.filters.sgipStatus.includes(d.sgipStatus || '(empty)'));
-  if (state.filters.icfProgress.length > 0) r = r.filter(d => state.filters.icfProgress.includes(d.icfProgress));
+  if (state.filters.sgipProgress.length > 0) r = r.filter(d => state.filters.sgipProgress.includes(d.sgipProgress));
   if (state.filters.installer.length > 0) r = r.filter(d => { let v = d.installer; if (!v || v === '(No value)') v = '(empty)'; return state.filters.installer.includes(v); });
   if (state.filters.installMonth.length > 0) r = r.filter(d => { const month = getInstallMonth(d.installDate) || '(No date)'; return state.filters.installMonth.includes(month); });
   r.sort((a, b) => {
@@ -504,7 +509,7 @@ function getFilteredData() {
     else if (state.sortBy === 'installDate') { const da = parseDate(a.installDate), db = parseDate(b.installDate); av = da ? da.getTime() : (state.sortDir === 'asc' ? Infinity : -Infinity); bv = db ? db.getTime() : (state.sortDir === 'asc' ? Infinity : -Infinity); }
     else if (state.sortBy === 'incentive') { av = parseNum(a.currentIncentive); bv = parseNum(b.currentIncentive); }
     else if (state.sortBy === 'name') { av = a.customerName || ''; bv = b.customerName || ''; }
-    else if (state.sortBy === 'stage') { av = getStageInfo(a.icfProgress).stage; bv = getStageInfo(b.icfProgress).stage; }
+    else if (state.sortBy === 'stage') { av = getStageInfo(a.sgipProgress).stage; bv = getStageInfo(b.sgipProgress).stage; }
     else if (state.sortBy === 'nextDue') { const da = parseDate(a.nextDueDate), db = parseDate(b.nextDueDate); av = da ? da.getTime() : (state.sortDir === 'asc' ? Infinity : -Infinity); bv = db ? db.getTime() : (state.sortDir === 'asc' ? Infinity : -Infinity); }
     if (typeof av === 'string') return state.sortDir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av);
     return state.sortDir === 'asc' ? av - bv : bv - av;
@@ -595,8 +600,8 @@ function getInstallsByMonth() {
     if (!month) return;
     if (!byMonth[month]) byMonth[month] = { total: 0, icfComplete: 0, icfPending: 0, inspectionComplete: 0, ptoComplete: 0 };
     byMonth[month].total++;
-    const icfProgress = d.icfProgress || 'Not Started';
-    if (icfProgress === 'Pending Payment' || icfProgress === 'Payment Completed') byMonth[month].icfComplete++;
+    const sgipProgress = d.sgipProgress || 'Not Started';
+    if (sgipProgress === 'ICF: Pending Payment' || sgipProgress === 'Payment: Completed') byMonth[month].icfComplete++;
     else byMonth[month].icfPending++;
     // Inspection complete = Passed
     if (d.inspectionStatus === 'Passed') byMonth[month].inspectionComplete++;
@@ -611,8 +616,8 @@ function getActionItems() {
   const notPermitted = allDeals.filter(d => d.permitStatus !== 'Approved');
   const meterCollar = allDeals.filter(d => d.inspectionStatus === 'Meter Collar Needed' || (d.inspectionStatus && d.inspectionStatus.toLowerCase().includes('meter collar')));
   const awaitingInspection = allDeals.filter(d => { const status = d.inspectionStatus; return status === 'Failed' || status === 'Scheduled' || status === 'Requested' || status === 'Pending HO Action' || !status || status === '(No value)'; });
-  const icfInProgress = ['ICF Under Review', 'ICF Inspection', 'Pending Payment', 'Payment Completed'];
-  const ptoButNoIcf = allDeals.filter(d => { const hasPto = d.ptoDate && d.ptoDate !== '(No value)' && d.ptoDate !== 'None'; return hasPto && !icfInProgress.includes(d.icfProgress || 'Not Started'); });
+  const icfInProgress = ['ICF: Review', 'ICF: Technical Review', 'ICF: Inspection', 'ICF: Pending Payment', 'Payment: Completed', 'Payment: Processing'];
+  const ptoButNoIcf = allDeals.filter(d => { const hasPto = d.ptoDate && d.ptoDate !== '(No value)' && d.ptoDate !== 'None'; return hasPto && !icfInProgress.includes(d.sgipProgress || 'Not Started'); });
   const inspectionPassedNoPto = allDeals.filter(d => { const hasPto = d.ptoDate && d.ptoDate !== '(No value)' && d.ptoDate !== 'None'; return d.inspectionStatus === 'Passed' && !hasPto; });
   return { notPermitted, meterCollar, awaitingInspection, ptoButNoIcf, inspectionPassedNoPto };
 }
@@ -624,7 +629,7 @@ function getStats() {
   const postCutoffCodes = new Set(m.filter(d => isAfterCutoff(d.installDate)).map(d => d.applicationCode).filter(c => c));
   const icfSubmittedTotal = SGIP_DATA.filter(d => d.icfSubmittedDate && postCutoffCodes.has(d.applicationCode)).length;
   const icfApprovedTotal = SGIP_DATA.filter(d => d.icfPendingPaymentDate && postCutoffCodes.has(d.applicationCode)).length;
-  return { total: m.length, paid: m.filter(d => d.icfProgress === 'Payment Completed').length, suspended: m.filter(d => (d.icfProgress || '').includes('Suspended')).length, totalIncentive: m.reduce((s, d) => s + parseNum(d.currentIncentive), 0), paidIncentive: m.filter(d => d.icfProgress === 'Payment Completed').reduce((s, d) => s + parseNum(d.finalIncentive), 0), ptoComplete: m.filter(d => d.ptoDate && d.ptoDate !== '(No value)' && d.ptoDate !== 'None').length, permitted: m.filter(d => d.permitStatus === 'Approved').length, icfSubmitted: icfSubmittedTotal, icfApproved: icfApprovedTotal };
+  return { total: m.length, paid: m.filter(d => d.sgipProgress === 'Payment: Completed').length, suspended: m.filter(d => (d.sgipProgress || '').includes('Suspended')).length, totalIncentive: m.reduce((s, d) => s + parseNum(d.currentIncentive), 0), paidIncentive: m.filter(d => d.sgipProgress === 'Payment: Completed').reduce((s, d) => s + parseNum(d.finalIncentive), 0), ptoComplete: m.filter(d => d.ptoDate && d.ptoDate !== '(No value)' && d.ptoDate !== 'None').length, permitted: m.filter(d => d.permitStatus === 'Approved').length, icfSubmitted: icfSubmittedTotal, icfApproved: icfApprovedTotal };
 }
 
 const getPermitStyle = s => { if (!s) return 'bg-slate-800 text-slate-500 border-slate-700'; if (s === 'Approved') return 'bg-green-900/50 text-green-400 border-green-800'; if (s === 'Rejected') return 'bg-red-900/50 text-red-400 border-red-800'; if (s === 'Submitted' || s === 'Resubmitted') return 'bg-blue-900/50 text-blue-400 border-blue-800'; return 'bg-amber-900/50 text-amber-400 border-amber-800'; };
@@ -705,7 +710,7 @@ function customerCell(d) {
 function render() {
   const stats = getStats();
   const filtered = state.tab === 'matched' ? getFilteredData() : DATA.hubspotWithoutSgip;
-  const stageCounts = {}; DATA.matched.forEach(d => stageCounts[d.icfProgress] = (stageCounts[d.icfProgress] || 0) + 1);
+  const stageCounts = {}; DATA.matched.forEach(d => stageCounts[d.sgipProgress] = (stageCounts[d.sgipProgress] || 0) + 1);
   const activeStages = STAGES.filter(s => stageCounts[s.key] > 0);
   const permitOpts = getFilterCounts('permitStatus');
   const inspectOpts = getFilterCounts('inspectionStatus', v => (!v || v === '(No value)') ? '(empty)' : v);
@@ -770,14 +775,14 @@ function renderMatchedTab(stats, filtered, activeStages, stageCounts, permitOpts
             ${filterHeader('PTO', 'ptoStatus', null, ptoOpts, true)}
             ${filterHeader('SGIP Stage', 'sgipStage', null, sgipStageOpts)}
             ${filterHeader('SGIP Status', 'sgipStatus', null, sgipStatusOpts)}
-            ${filterHeader('ICF Progress', 'icfProgress', 'stage', icfOpts)}
+            ${filterHeader('SGIP Progress', 'sgipProgress', 'stage', icfOpts)}
             <th class="px-2 py-3 text-left text-xs font-semibold text-slate-400 uppercase cursor-pointer" onclick="setSort('nextDue')">Next Due ${state.sortBy === 'nextDue' ? (state.sortDir === 'asc' ? '↑' : '↓') : ''}</th>
             <th class="px-2 py-3 text-left text-xs font-semibold text-slate-400 uppercase cursor-pointer" onclick="setSort('incentive')">Incentive ${state.sortBy === 'incentive' ? (state.sortDir === 'asc' ? '↑' : '↓') : ''}</th>
             ${filterHeader('Installer', 'installer', null, installerOpts)}
           </tr></thead>
           <tbody class="divide-y divide-slate-700/30">${filtered.length === 0 ? '<tr><td colspan="12" class="p-8 text-center text-slate-500">No deals found.</td></tr>' : filtered.map((d, i) => {
-            const info = getStageInfo(d.icfProgress);
-            return '<tr class="hover:bg-slate-800/50"><td class="px-2 py-2"><div class="min-w-[150px]">'+customerCell(d)+(d.applicationCode?'<br><span class="text-xs text-slate-500 mono">'+d.applicationCode+'</span>':'')+'</div></td><td class="px-2 py-2 text-xs mono">'+(d.installDate||'—')+'</td><td class="px-2 py-2"><span class="font-semibold '+getDaysColor(d.daysSinceInstall)+'">'+(d.daysSinceInstall!==null?d.daysSinceInstall+'d':'—')+'</span></td><td class="px-2 py-2"><span class="editable px-1.5 py-0.5 rounded text-xs border '+getPermitStyle(d.permitStatus)+'" onclick="openEditModal('+i+',\'permitStatus\')">'+(d.permitStatus||'—')+'</span></td><td class="px-2 py-2"><span class="editable px-1.5 py-0.5 rounded text-xs border '+getInspectionStyle(d.inspectionStatus)+'" onclick="openEditModal('+i+',\'inspectionStatus\')">'+(d.inspectionStatus&&d.inspectionStatus!=='(No value)'?d.inspectionStatus:'—')+'</span></td><td class="px-2 py-2"><span class="editable px-1.5 py-0.5 rounded text-xs border '+getPTOStyle(d.ptoDate)+'" onclick="openEditModal('+i+',\'ptoDate\')">'+(d.ptoDate&&d.ptoDate!=='(No value)'&&d.ptoDate!=='None'?d.ptoDate:'Pending')+'</span></td><td class="px-2 py-2 text-xs">'+(d.sgipStage||'—')+'</td><td class="px-2 py-2 text-xs text-slate-400">'+(d.sgipStatus||'—')+'</td><td class="px-2 py-2"><span class="px-1.5 py-0.5 rounded text-xs font-medium" style="background:'+info.color+'20;color:'+info.color+'">'+info.label+'</span></td><td class="px-2 py-2 text-xs mono">'+(d.nextDueDate||'—')+'</td><td class="px-2 py-2 text-right"><span class="'+(d.icfProgress==='Payment Completed'?'text-emerald-400':'text-slate-300')+'">'+(d.currentIncentive||'—')+'</span></td><td class="px-2 py-2 text-xs text-slate-400">'+(d.installer||'—')+'</td></tr>';
+            const info = getStageInfo(d.sgipProgress);
+            return '<tr class="hover:bg-slate-800/50"><td class="px-2 py-2"><div class="min-w-[150px]">'+customerCell(d)+(d.applicationCode?'<br><span class="text-xs text-slate-500 mono">'+d.applicationCode+'</span>':'')+'</div></td><td class="px-2 py-2 text-xs mono">'+(d.installDate||'—')+'</td><td class="px-2 py-2"><span class="font-semibold '+getDaysColor(d.daysSinceInstall)+'">'+(d.daysSinceInstall!==null?d.daysSinceInstall+'d':'—')+'</span></td><td class="px-2 py-2"><span class="editable px-1.5 py-0.5 rounded text-xs border '+getPermitStyle(d.permitStatus)+'" onclick="openEditModal('+i+',\'permitStatus\')">'+(d.permitStatus||'—')+'</span></td><td class="px-2 py-2"><span class="editable px-1.5 py-0.5 rounded text-xs border '+getInspectionStyle(d.inspectionStatus)+'" onclick="openEditModal('+i+',\'inspectionStatus\')">'+(d.inspectionStatus&&d.inspectionStatus!=='(No value)'?d.inspectionStatus:'—')+'</span></td><td class="px-2 py-2"><span class="editable px-1.5 py-0.5 rounded text-xs border '+getPTOStyle(d.ptoDate)+'" onclick="openEditModal('+i+',\'ptoDate\')">'+(d.ptoDate&&d.ptoDate!=='(No value)'&&d.ptoDate!=='None'?d.ptoDate:'Pending')+'</span></td><td class="px-2 py-2 text-xs">'+(d.sgipStage||'—')+'</td><td class="px-2 py-2 text-xs text-slate-400">'+(d.sgipStatus||'—')+'</td><td class="px-2 py-2"><span class="px-1.5 py-0.5 rounded text-xs font-medium" style="background:'+info.color+'20;color:'+info.color+'">'+info.label+'</span></td><td class="px-2 py-2 text-xs mono">'+(d.nextDueDate||'—')+'</td><td class="px-2 py-2 text-right"><span class="'+(d.sgipProgress==='Payment: Completed'?'text-emerald-400':'text-slate-300')+'">'+(d.currentIncentive||'—')+'</span></td><td class="px-2 py-2 text-xs text-slate-400">'+(d.installer||'—')+'</td></tr>';
           }).join('')}</tbody>
         </table>
       </div>
@@ -971,7 +976,7 @@ function renderMonthlyStats() {
         </tbody>
       </table>
     </div>
-    <p class="text-xs text-slate-500 mt-4">Inspection Complete = Passed • PTO Complete = Has PTO date • ICF Complete = Pending Payment or Payment Completed</p>
+    <p class="text-xs text-slate-500 mt-4">Inspection Complete = Passed • PTO Complete = Has PTO date • ICF Complete = ICF: Pending Payment or Payment: Completed</p>
   `;
 }
 
@@ -1039,7 +1044,7 @@ function renderActionItems() {
                   <td class="px-3 py-2">${customerCell(d)}</td>
                   <td class="px-3 py-2 text-xs mono">${d.installDate || '—'}</td>
                   <td class="px-3 py-2 text-xs mono text-green-400">${d.ptoDate}</td>
-                  <td class="px-3 py-2"><span class="px-1.5 py-0.5 rounded text-xs" style="background:${getStageInfo(d.icfProgress||'Not Started').color}20;color:${getStageInfo(d.icfProgress||'Not Started').color}">${d.icfProgress || 'Not Started'}</span></td>
+                  <td class="px-3 py-2"><span class="px-1.5 py-0.5 rounded text-xs" style="background:${getStageInfo(d.sgipProgress||'Not Started').color}20;color:${getStageInfo(d.sgipProgress||'Not Started').color}">${d.sgipProgress || 'Not Started'}</span></td>
                   <td class="px-3 py-2 text-xs text-slate-400">${d.installer || '—'}</td>
                 </tr>
               `).join('')}
