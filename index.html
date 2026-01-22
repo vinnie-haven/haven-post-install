@@ -733,7 +733,7 @@ function render() {
   const ptoOpts = [['Complete', DATA.matched.filter(d => d.ptoDate && d.ptoDate !== '(No value)' && d.ptoDate !== 'None').length], ['Pending', DATA.matched.filter(d => !d.ptoDate || d.ptoDate === '(No value)' || d.ptoDate === 'None').length]];
   const sgipStageOpts = getFilterCounts('sgipStage', v => v || '(empty)');
   const sgipStatusOpts = getFilterCounts('sgipStatus', v => v || '(empty)');
-  const icfOpts = STAGES.filter(s => stageCounts[s.key] > 0).map(s => [s.key, stageCounts[s.key]]);
+  const icfOpts = getFilterCounts('sgipProgress', v => v || '(empty)');
   const installerOpts = getFilterCounts('installer', v => (!v || v === '(No value)') ? '(empty)' : v);
 
   document.getElementById('app').innerHTML = `
