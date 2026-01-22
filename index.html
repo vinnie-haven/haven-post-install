@@ -532,13 +532,28 @@ function getPeriodicStats() {
   const isMTD = (dateStr) => isInRange(dateStr, monthStart, tomorrow);
   const isLastWeek = (dateStr) => isInRange(dateStr, lastWeekStart, lastWeekEnd);
   const isLastMonth = (dateStr) => isInRange(dateStr, lastMonthStart, lastMonthEnd);
+  const hasDate = (dateStr) => { const d = parseAnyDate(dateStr); return d !== null; };
   
   const allDeals = [...DATA.matched, ...DATA.hubspotWithoutSgip];
+  
+  // Installs
+  const installsLifetime = allDeals.filter(d => hasDate(d.installDate)).length;
+  
+  // PTOs - check if ptoDate exists and is valid
+  const hasPto = (d) => d.ptoDate && d.ptoDate !== '(No value)' && d.ptoDate !== 'None' && parseAnyDate(d.ptoDate);
+  const ptoLifetime = allDeals.filter(d => hasPto(d)).length;
+  const ptoYesterday = allDeals.filter(d => isYesterday(d.ptoDate)).length;
+  const ptoWTD = allDeals.filter(d => isWTD(d.ptoDate)).length;
+  const ptoMTD = allDeals.filter(d => isMTD(d.ptoDate)).length;
+  const ptoLastWeek = allDeals.filter(d => isLastWeek(d.ptoDate)).length;
+  const ptoLastMonth = allDeals.filter(d => isLastMonth(d.ptoDate)).length;
+  
   return {
-    installs: { yesterday: allDeals.filter(d => isYesterday(d.installDate)).length, wtd: allDeals.filter(d => isWTD(d.installDate)).length, mtd: allDeals.filter(d => isMTD(d.installDate)).length, lastWeek: allDeals.filter(d => isLastWeek(d.installDate)).length, lastMonth: allDeals.filter(d => isLastMonth(d.installDate)).length },
-    icfSubmitted: { yesterday: SGIP_DATA.filter(d => isYesterday(d.icfSubmittedDate)).length, wtd: SGIP_DATA.filter(d => isWTD(d.icfSubmittedDate)).length, mtd: SGIP_DATA.filter(d => isMTD(d.icfSubmittedDate)).length, lastWeek: SGIP_DATA.filter(d => isLastWeek(d.icfSubmittedDate)).length, lastMonth: SGIP_DATA.filter(d => isLastMonth(d.icfSubmittedDate)).length },
-    icfResubmitted: { yesterday: SGIP_DATA.filter(d => isYesterday(d.icfResubmittedDate)).length, wtd: SGIP_DATA.filter(d => isWTD(d.icfResubmittedDate)).length, mtd: SGIP_DATA.filter(d => isMTD(d.icfResubmittedDate)).length, lastWeek: SGIP_DATA.filter(d => isLastWeek(d.icfResubmittedDate)).length, lastMonth: SGIP_DATA.filter(d => isLastMonth(d.icfResubmittedDate)).length },
-    icfApproved: { yesterday: SGIP_DATA.filter(d => isYesterday(d.icfPendingPaymentDate)).length, wtd: SGIP_DATA.filter(d => isWTD(d.icfPendingPaymentDate)).length, mtd: SGIP_DATA.filter(d => isMTD(d.icfPendingPaymentDate)).length, lastWeek: SGIP_DATA.filter(d => isLastWeek(d.icfPendingPaymentDate)).length, lastMonth: SGIP_DATA.filter(d => isLastMonth(d.icfPendingPaymentDate)).length },
+    installs: { yesterday: allDeals.filter(d => isYesterday(d.installDate)).length, wtd: allDeals.filter(d => isWTD(d.installDate)).length, mtd: allDeals.filter(d => isMTD(d.installDate)).length, lastWeek: allDeals.filter(d => isLastWeek(d.installDate)).length, lastMonth: allDeals.filter(d => isLastMonth(d.installDate)).length, lifetime: installsLifetime },
+    ptos: { yesterday: ptoYesterday, wtd: ptoWTD, mtd: ptoMTD, lastWeek: ptoLastWeek, lastMonth: ptoLastMonth, lifetime: ptoLifetime },
+    icfSubmitted: { yesterday: SGIP_DATA.filter(d => isYesterday(d.icfSubmittedDate)).length, wtd: SGIP_DATA.filter(d => isWTD(d.icfSubmittedDate)).length, mtd: SGIP_DATA.filter(d => isMTD(d.icfSubmittedDate)).length, lastWeek: SGIP_DATA.filter(d => isLastWeek(d.icfSubmittedDate)).length, lastMonth: SGIP_DATA.filter(d => isLastMonth(d.icfSubmittedDate)).length, lifetime: SGIP_DATA.filter(d => hasDate(d.icfSubmittedDate)).length },
+    icfResubmitted: { yesterday: SGIP_DATA.filter(d => isYesterday(d.icfResubmittedDate)).length, wtd: SGIP_DATA.filter(d => isWTD(d.icfResubmittedDate)).length, mtd: SGIP_DATA.filter(d => isMTD(d.icfResubmittedDate)).length, lastWeek: SGIP_DATA.filter(d => isLastWeek(d.icfResubmittedDate)).length, lastMonth: SGIP_DATA.filter(d => isLastMonth(d.icfResubmittedDate)).length, lifetime: SGIP_DATA.filter(d => hasDate(d.icfResubmittedDate)).length },
+    icfApproved: { yesterday: SGIP_DATA.filter(d => isYesterday(d.icfPendingPaymentDate)).length, wtd: SGIP_DATA.filter(d => isWTD(d.icfPendingPaymentDate)).length, mtd: SGIP_DATA.filter(d => isMTD(d.icfPendingPaymentDate)).length, lastWeek: SGIP_DATA.filter(d => isLastWeek(d.icfPendingPaymentDate)).length, lastMonth: SGIP_DATA.filter(d => isLastMonth(d.icfPendingPaymentDate)).length, lifetime: SGIP_DATA.filter(d => hasDate(d.icfPendingPaymentDate)).length },
     weekStart: weekStart.toLocaleDateString(), monthStart: monthStart.toLocaleDateString(),
     lastWeekStart: lastWeekStart.toLocaleDateString(), lastWeekEnd: new Date(lastWeekEnd.getTime() - 86400000).toLocaleDateString(),
     lastMonthStart: lastMonthStart.toLocaleDateString(), lastMonthEnd: new Date(lastMonthEnd.getTime() - 86400000).toLocaleDateString()
@@ -801,6 +816,7 @@ function renderActivityStats() {
             <th class="px-3 py-4 text-center text-sm font-semibold text-slate-300">Month to Date</th>
             <th class="px-3 py-4 text-center text-sm font-semibold text-slate-400 border-l border-slate-700">Last Week<br><span class="text-[10px] font-normal">${ps.lastWeekStart} - ${ps.lastWeekEnd}</span></th>
             <th class="px-3 py-4 text-center text-sm font-semibold text-slate-400">Last Month<br><span class="text-[10px] font-normal">${ps.lastMonthStart}</span></th>
+            <th class="px-3 py-4 text-center text-sm font-semibold text-emerald-400 border-l border-slate-700">Lifetime</th>
           </tr>
         </thead>
         <tbody class="divide-y divide-slate-700/30">
@@ -811,6 +827,16 @@ function renderActivityStats() {
             <td class="px-3 py-4 text-center text-2xl font-bold">${ps.installs.mtd}</td>
             <td class="px-3 py-4 text-center text-xl font-bold text-slate-400 border-l border-slate-700">${ps.installs.lastWeek}</td>
             <td class="px-3 py-4 text-center text-xl font-bold text-slate-400">${ps.installs.lastMonth}</td>
+            <td class="px-3 py-4 text-center text-xl font-bold text-emerald-400 border-l border-slate-700">${ps.installs.lifetime}</td>
+          </tr>
+          <tr class="hover:bg-slate-800/50">
+            <td class="px-4 py-4 font-medium text-cyan-400">PTOs Completed</td>
+            <td class="px-3 py-4 text-center text-2xl font-bold">${ps.ptos.yesterday}</td>
+            <td class="px-3 py-4 text-center text-2xl font-bold">${ps.ptos.wtd}</td>
+            <td class="px-3 py-4 text-center text-2xl font-bold">${ps.ptos.mtd}</td>
+            <td class="px-3 py-4 text-center text-xl font-bold text-slate-400 border-l border-slate-700">${ps.ptos.lastWeek}</td>
+            <td class="px-3 py-4 text-center text-xl font-bold text-slate-400">${ps.ptos.lastMonth}</td>
+            <td class="px-3 py-4 text-center text-xl font-bold text-emerald-400 border-l border-slate-700">${ps.ptos.lifetime}</td>
           </tr>
           <tr class="hover:bg-slate-800/50">
             <td class="px-4 py-4 font-medium text-blue-400">ICFs Submitted</td>
@@ -819,6 +845,7 @@ function renderActivityStats() {
             <td class="px-3 py-4 text-center text-2xl font-bold">${ps.icfSubmitted.mtd}</td>
             <td class="px-3 py-4 text-center text-xl font-bold text-slate-400 border-l border-slate-700">${ps.icfSubmitted.lastWeek}</td>
             <td class="px-3 py-4 text-center text-xl font-bold text-slate-400">${ps.icfSubmitted.lastMonth}</td>
+            <td class="px-3 py-4 text-center text-xl font-bold text-emerald-400 border-l border-slate-700">${ps.icfSubmitted.lifetime}</td>
           </tr>
           <tr class="hover:bg-slate-800/50">
             <td class="px-4 py-4 font-medium text-amber-400">ICFs Resubmitted</td>
@@ -827,6 +854,7 @@ function renderActivityStats() {
             <td class="px-3 py-4 text-center text-2xl font-bold">${ps.icfResubmitted.mtd}</td>
             <td class="px-3 py-4 text-center text-xl font-bold text-slate-400 border-l border-slate-700">${ps.icfResubmitted.lastWeek}</td>
             <td class="px-3 py-4 text-center text-xl font-bold text-slate-400">${ps.icfResubmitted.lastMonth}</td>
+            <td class="px-3 py-4 text-center text-xl font-bold text-emerald-400 border-l border-slate-700">${ps.icfResubmitted.lifetime}</td>
           </tr>
           <tr class="hover:bg-slate-800/50">
             <td class="px-4 py-4 font-medium text-purple-400">ICFs Approved</td>
@@ -835,11 +863,12 @@ function renderActivityStats() {
             <td class="px-3 py-4 text-center text-2xl font-bold">${ps.icfApproved.mtd}</td>
             <td class="px-3 py-4 text-center text-xl font-bold text-slate-400 border-l border-slate-700">${ps.icfApproved.lastWeek}</td>
             <td class="px-3 py-4 text-center text-xl font-bold text-slate-400">${ps.icfApproved.lastMonth}</td>
+            <td class="px-3 py-4 text-center text-xl font-bold text-emerald-400 border-l border-slate-700">${ps.icfApproved.lifetime}</td>
           </tr>
         </tbody>
       </table>
     </div>
-    <p class="text-xs text-slate-500 mt-4">Data sources: Installs from HubSpot install date • ICF dates from SGIP export</p>
+    <p class="text-xs text-slate-500 mt-4">Data sources: Installs & PTOs from HubSpot • ICF dates from SGIP export</p>
   `;
 }
 
