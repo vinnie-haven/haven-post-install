@@ -1085,6 +1085,11 @@ function renderMonthlyStats() {
 
 function getInstallsByBudgetCategory() {
   const allDeals = getAllInstalled();
+  // Debug: log first few budget categories
+  const withBudget = allDeals.filter(d => d.budgetCategory);
+  console.log('Deals with budget category:', withBudget.length, 'of', allDeals.length);
+  if (withBudget.length > 0) console.log('Sample budget categories:', withBudget.slice(0, 5).map(d => d.budgetCategory));
+  
   const byMonth = {};
   allDeals.forEach(d => {
     const month = getInstallMonth(d.installDate);
