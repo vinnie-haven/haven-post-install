@@ -392,7 +392,7 @@ async function handleSgipFile(file) {
         applicationCode: row['Application Code'] || '', sgipStage: row['Stage'] || '', sgipStatus: row['Status'] || '',
         fullyQualifiedState: row['Fully Qualified State'] || '',
         currentIncentive: row['Current Incentive ($)'] || '', finalIncentive: row['Final Incentive (ICF)'] || '',
-        nextDueDate: row['Next Due Date'] || '', siteAddress: row['Site Address'] || '', utility: row['Electric Utility'] || '',
+        nextDueDate: row['Next Due Date'] || '', siteAddress: row['Site Address'] || '', utility: row['SGIP Administrator'] || '',
         icfSubmittedDate: row['ICF Submitted Date'] || '', icfResubmittedDate: row['Last ICF Resubmitted Date'] || '',
         icfPendingPaymentDate: row['ICF Pending Payment Date'] || '',
         paymentAmount: row['Total Project Incentive Payment'] || '',
@@ -729,16 +729,26 @@ function installMonthFilterHeader() {
 }
 
 function getUtility(d) {
-  // First check if utility is in the data from SGIP export
+  // First check if utility is in the data from SGIP export (SGIP Administrator column)
   let utility = (d.utility || '').trim();
   if (utility) {
     // Normalize long names to short codes
-    if (utility.includes('Pacific Gas')) return 'PG&E';
-    if (utility.includes('Southern California Edison')) return 'SCE';
-    if (utility.includes('San Diego')) return 'SDG&E';
-    if (utility.includes('Southern California Gas')) return 'SCG';
-    if (utility.toLowerCase().includes('sacramento') || utility.toLowerCase().includes('smud')) return 'SMUD';
-    return utility;
+    if (utility.includes('Pacific Gas') || utility === 'PG&E') return 'PG&E';
+    if (utility.includes('Southern California Edison') || utility === 'SCE') return 'SCE';
+    if (utility.includes('San Diego Gas') || utility === 'SDG&E' || utility === 'SDGE') return 'SDG&E';
+    if (utility.includes('SoCalGas') || utility.includes('Southern California Gas') || utility === 'SCG') return 'SoCalGas';
+    if (utility.toLowerCase().includes('sacramento') || utility === 'SMUD') return 'SMUD';
+    if (utility.includes('LA Dept') || utility.includes('Los Angeles Department') || utility === 'LADWP') return 'LADWP';
+    if (utility.includes('Peninsula Clean Energy') || utility === 'PCE') return 'PCE';
+    if (utility.includes('Clean Energy Alliance') || utility === 'CEA') return 'CEA';
+    if (utility.includes('Silicon Valley Clean Energy') || utility === 'SVCE') return 'SVCE';
+    if (utility.includes('East Bay Community Energy') || utility === 'EBCE') return 'EBCE';
+    if (utility.includes('Marin Clean Energy') || utility === 'MCE') return 'MCE';
+    if (utility.includes('San Jose Clean Energy') || utility === 'SJCE') return 'SJCE';
+    if (utility.includes('CleanPowerSF') || utility === 'CPSF') return 'CleanPowerSF';
+    if (utility.includes('Central Coast Community Energy') || utility === '3CE') return '3CE';
+    if (utility.includes('Sonoma Clean Power') || utility === 'SCP') return 'SCP';
+    return utility; // Return as-is if no match
   }
   // Otherwise derive from application code prefix
   const code = d.applicationCode || '';
@@ -755,8 +765,19 @@ function getUtilityStyle(utility) {
     'PG&E': 'bg-blue-900/50 text-blue-400 border-blue-800',
     'SCE': 'bg-amber-900/50 text-amber-400 border-amber-800',
     'SDG&E': 'bg-purple-900/50 text-purple-400 border-purple-800',
-    'SCG': 'bg-emerald-900/50 text-emerald-400 border-emerald-800',
-    'SMUD': 'bg-cyan-900/50 text-cyan-400 border-cyan-800'
+    'SoCalGas': 'bg-emerald-900/50 text-emerald-400 border-emerald-800',
+    'SMUD': 'bg-cyan-900/50 text-cyan-400 border-cyan-800',
+    'LADWP': 'bg-orange-900/50 text-orange-400 border-orange-800',
+    'PCE': 'bg-teal-900/50 text-teal-400 border-teal-800',
+    'CEA': 'bg-pink-900/50 text-pink-400 border-pink-800',
+    'SVCE': 'bg-lime-900/50 text-lime-400 border-lime-800',
+    'EBCE': 'bg-indigo-900/50 text-indigo-400 border-indigo-800',
+    'MCE': 'bg-rose-900/50 text-rose-400 border-rose-800',
+    'SJCE': 'bg-sky-900/50 text-sky-400 border-sky-800',
+    'CleanPowerSF': 'bg-fuchsia-900/50 text-fuchsia-400 border-fuchsia-800',
+    '3CE': 'bg-violet-900/50 text-violet-400 border-violet-800',
+    'SCP': 'bg-yellow-900/50 text-yellow-400 border-yellow-800'
+  };
   };
   return styles[utility] || 'bg-slate-800 text-slate-400 border-slate-700';
 }
