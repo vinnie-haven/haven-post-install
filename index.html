@@ -105,10 +105,10 @@ let CORRECTIONS = { manualMatches: {}, notInSgip: new Set(), notSgipProject: new
 let SEARCH_INDEX = [];
 let MATCH_STATS = { byEmail: 0, byAddress: 0, byManual: 0, noMatch: 0, excluded: 0 };
 let state = { 
-  tab: 'matched', 
+  tab: 'installed', 
   statsSubTab: 'activity',
   search: '', 
-  filters: { permitStatus: [], inspectionStatus: [], ptoStatus: [], sgipStage: [], sgipStatus: [], sgipProgress: [], installer: [], installMonth: [] },
+  filters: { permitStatus: [], inspectionStatus: [], ptoStatus: [], sgipStage: [], sgipStatus: [], sgipProgress: [], installer: [], installMonth: [], utility: [] },
   sortBy: 'daysSinceInstall', 
   sortDir: 'desc', 
   editingDeal: null, 
@@ -328,8 +328,13 @@ function updateMatchStatsDisplay() {
   }
 }
 
+function getAllInstalled() {
+  return [...DATA.matched, ...DATA.hubspotWithoutSgip];
+}
+
 function buildSearchIndex() {
-  SEARCH_INDEX = DATA.matched.map((d, i) => ({ idx: i, text: [d.dealName||'', d.customerName||'', d.applicationCode||'', d.email||'', d.installer||'', d.siteAddress||''].join(' ').toLowerCase() }));
+  const allInstalled = getAllInstalled();
+  SEARCH_INDEX = allInstalled.map((d, i) => ({ idx: i, text: [d.dealName||'', d.customerName||'', d.applicationCode||'', d.email||'', d.installer||'', d.siteAddress||''].join(' ').toLowerCase() }));
 }
 
 function showUploadModal() {
@@ -487,27 +492,31 @@ function formatMonthLabel(monthKey) { if (!monthKey) return '(No date)'; const [
 
 function getFilterCounts(field, transform = v => v) {
   const counts = {};
-  DATA.matched.forEach(d => { let val = transform(d[field]); if (!val || val === '(No value)' || val === 'None') val = '(empty)'; counts[val] = (counts[val] || 0) + 1; });
+  const allInstalled = getAllInstalled();
+  allInstalled.forEach(d => { let val = transform(d[field]); if (!val || val === '(No value)' || val === 'None') val = '(empty)'; counts[val] = (counts[val] || 0) + 1; });
   return Object.entries(counts).sort((a,b) => b[1] - a[1]);
 }
 
 function getInstallMonthCounts() {
   const counts = {};
-  DATA.matched.forEach(d => { const month = getInstallMonth(d.installDate); const key = month || '(No date)'; counts[key] = (counts[key] || 0) + 1; });
+  const allInstalled = getAllInstalled();
+  allInstalled.forEach(d => { const month = getInstallMonth(d.installDate); const key = month || '(No date)'; counts[key] = (counts[key] || 0) + 1; });
   return Object.entries(counts).sort((a, b) => { if (a[0] === '(No date)') return 1; if (b[0] === '(No date)') return -1; return b[0].localeCompare(a[0]); });
 }
 
 function getFilteredData() {
-  let indices = state.search ? SEARCH_INDEX.filter(s => s.text.includes(state.search.toLowerCase())).map(s => s.idx) : DATA.matched.map((_, i) => i);
-  let r = indices.map(i => ({ ...DATA.matched[i], _index: i, daysSinceInstall: getDaysSince(DATA.matched[i].installDate) }));
+  const allInstalled = getAllInstalled();
+  let indices = state.search ? SEARCH_INDEX.filter(s => s.text.includes(state.search.toLowerCase())).map(s => s.idx) : allInstalled.map((_, i) => i);
+  let r = indices.map(i => ({ ...allInstalled[i], _index: i, daysSinceInstall: getDaysSince(allInstalled[i].installDate) }));
   if (state.filters.permitStatus.length > 0) r = r.filter(d => state.filters.permitStatus.includes(d.permitStatus || '(empty)') || (!d.permitStatus && state.filters.permitStatus.includes('(empty)')));
   if (state.filters.inspectionStatus.length > 0) r = r.filter(d => { let v = d.inspectionStatus; if (!v || v === '(No value)') v = '(empty)'; return state.filters.inspectionStatus.includes(v); });
   if (state.filters.ptoStatus.length > 0) r = r.filter(d => { const has = d.ptoDate && d.ptoDate !== '(No value)' && d.ptoDate !== 'None'; return state.filters.ptoStatus.includes(has ? 'Complete' : 'Pending'); });
   if (state.filters.sgipStage.length > 0) r = r.filter(d => state.filters.sgipStage.includes(d.sgipStage || '(empty)'));
   if (state.filters.sgipStatus.length > 0) r = r.filter(d => state.filters.sgipStatus.includes(d.sgipStatus || '(empty)'));
-  if (state.filters.sgipProgress.length > 0) r = r.filter(d => state.filters.sgipProgress.includes(d.sgipProgress));
+  if (state.filters.sgipProgress.length > 0) r = r.filter(d => state.filters.sgipProgress.includes(d.sgipProgress || '(empty)'));
   if (state.filters.installer.length > 0) r = r.filter(d => { let v = d.installer; if (!v || v === '(No value)') v = '(empty)'; return state.filters.installer.includes(v); });
   if (state.filters.installMonth.length > 0) r = r.filter(d => { const month = getInstallMonth(d.installDate) || '(No date)'; return state.filters.installMonth.includes(month); });
+  if (state.filters.utility.length > 0) r = r.filter(d => { const u = getUtility(d) || '(empty)'; return state.filters.utility.includes(u); });
   r.sort((a, b) => {
     let av, bv;
     if (state.sortBy === 'daysSinceInstall') { av = a.daysSinceInstall ?? -1; bv = b.daysSinceInstall ?? -1; }
@@ -638,7 +647,7 @@ function getActionItems() {
 }
 
 function getStats() {
-  const m = DATA.matched;
+  const m = getAllInstalled();
   const cutoffDate = new Date('2025-04-01');
   const isAfterCutoff = (dateStr) => { if (!dateStr) return false; let d; if (dateStr.includes('/')) { const parts = dateStr.split('/'); if (parts.length === 3) { let year = parseInt(parts[2]); if (year < 100) year += 2000; d = new Date(year, parseInt(parts[0]) - 1, parseInt(parts[1])); } } else d = new Date(dateStr); return d && !isNaN(d.getTime()) && d >= cutoffDate; };
   const postCutoffCodes = new Set(m.filter(d => isAfterCutoff(d.installDate)).map(d => d.applicationCode).filter(c => c));
@@ -692,8 +701,13 @@ function closeEditModal() { document.getElementById('editModal').classList.add('
 function saveEdit() {
   const val = document.getElementById('editValue').value;
   const deal = getFilteredData()[state.editingDeal];
-  const idx = DATA.matched.findIndex(d => d.dealId === deal.dealId);
-  if (idx >= 0) DATA.matched[idx][state.editingField] = val;
+  // Try to find in matched first, then in hubspotWithoutSgip
+  let idx = DATA.matched.findIndex(d => d.dealId === deal.dealId);
+  if (idx >= 0) { DATA.matched[idx][state.editingField] = val; }
+  else {
+    idx = DATA.hubspotWithoutSgip.findIndex(d => d.dealId === deal.dealId);
+    if (idx >= 0) DATA.hubspotWithoutSgip[idx][state.editingField] = val;
+  }
   buildSearchIndex(); closeEditModal(); render();
 }
 
@@ -716,37 +730,35 @@ function installMonthFilterHeader() {
 
 function getUtility(d) {
   // First check if utility is in the data from SGIP export
-  if (d.utility && d.utility.trim()) return d.utility.trim();
+  let utility = (d.utility || '').trim();
+  if (utility) {
+    // Normalize long names to short codes
+    if (utility.includes('Pacific Gas')) return 'PG&E';
+    if (utility.includes('Southern California Edison')) return 'SCE';
+    if (utility.includes('San Diego')) return 'SDG&E';
+    if (utility.includes('Southern California Gas')) return 'SCG';
+    if (utility.toLowerCase().includes('sacramento') || utility.toLowerCase().includes('smud')) return 'SMUD';
+    return utility;
+  }
   // Otherwise derive from application code prefix
   const code = d.applicationCode || '';
   if (code.startsWith('PGE-SGIP')) return 'PG&E';
   if (code.startsWith('SCE-SGIP')) return 'SCE';
   if (code.startsWith('SD-SGIP') || code.startsWith('SDGE-SGIP')) return 'SDG&E';
   if (code.startsWith('SCG-SGIP')) return 'SCG';
+  if (code.startsWith('SMUD-SGIP')) return 'SMUD';
   return '';
 }
 
-function getUtilityBadge(d) {
-  const utility = getUtility(d);
-  if (!utility) return '';
-  const colors = {
-    'PG&E': 'bg-blue-900/50 text-blue-400 border-blue-700',
-    'Pacific Gas and Electric Company': 'bg-blue-900/50 text-blue-400 border-blue-700',
-    'SCE': 'bg-amber-900/50 text-amber-400 border-amber-700',
-    'Southern California Edison': 'bg-amber-900/50 text-amber-400 border-amber-700',
-    'SDG&E': 'bg-purple-900/50 text-purple-400 border-purple-700',
-    'San Diego Gas & Electric': 'bg-purple-900/50 text-purple-400 border-purple-700',
-    'SCG': 'bg-emerald-900/50 text-emerald-400 border-emerald-700',
-    'Southern California Gas': 'bg-emerald-900/50 text-emerald-400 border-emerald-700'
+function getUtilityStyle(utility) {
+  const styles = {
+    'PG&E': 'bg-blue-900/50 text-blue-400 border-blue-800',
+    'SCE': 'bg-amber-900/50 text-amber-400 border-amber-800',
+    'SDG&E': 'bg-purple-900/50 text-purple-400 border-purple-800',
+    'SCG': 'bg-emerald-900/50 text-emerald-400 border-emerald-800',
+    'SMUD': 'bg-cyan-900/50 text-cyan-400 border-cyan-800'
   };
-  // Shorten display name
-  let display = utility;
-  if (utility.includes('Pacific Gas')) display = 'PG&E';
-  else if (utility.includes('Southern California Edison')) display = 'SCE';
-  else if (utility.includes('San Diego')) display = 'SDG&E';
-  else if (utility.includes('Southern California Gas')) display = 'SCG';
-  const colorClass = colors[utility] || 'bg-slate-700 text-slate-400 border-slate-600';
-  return `<span class="ml-1 text-[9px] px-1 py-0.5 ${colorClass} border rounded">${display}</span>`;
+  return styles[utility] || 'bg-slate-800 text-slate-400 border-slate-700';
 }
 
 function customerCell(d) {
@@ -755,22 +767,26 @@ function customerCell(d) {
   let badge = '';
   if (d.matchType === 'address') badge = '<span class="ml-1 text-[9px] px-1 py-0.5 bg-cyan-900/50 text-cyan-400 rounded">addr</span>';
   else if (d.matchType === 'manual') badge = '<span class="ml-1 text-[9px] px-1 py-0.5 bg-purple-900/50 text-purple-400 rounded">manual</span>';
-  const utilityBadge = getUtilityBadge(d);
-  return url ? `<a href="${url}" target="_blank" class="font-medium text-cyan-400 hover:text-cyan-300 hover:underline">${name}</a>${badge}${utilityBadge}` : `<span class="font-medium">${name}</span>${badge}${utilityBadge}`;
+  return url ? `<a href="${url}" target="_blank" class="font-medium text-cyan-400 hover:text-cyan-300 hover:underline">${name}</a>${badge}` : `<span class="font-medium">${name}</span>${badge}`;
 }
 
 function render() {
   const stats = getStats();
-  const filtered = state.tab === 'matched' ? getFilteredData() : DATA.hubspotWithoutSgip;
-  const stageCounts = {}; DATA.matched.forEach(d => stageCounts[d.sgipProgress] = (stageCounts[d.sgipProgress] || 0) + 1);
+  const allInstalled = getAllInstalled();
+  const filtered = state.tab === 'installed' ? getFilteredData() : [];
+  const stageCounts = {}; allInstalled.forEach(d => stageCounts[d.sgipProgress || '(empty)'] = (stageCounts[d.sgipProgress || '(empty)'] || 0) + 1);
   const activeStages = STAGES.filter(s => stageCounts[s.key] > 0);
   const permitOpts = getFilterCounts('permitStatus');
   const inspectOpts = getFilterCounts('inspectionStatus', v => (!v || v === '(No value)') ? '(empty)' : v);
-  const ptoOpts = [['Complete', DATA.matched.filter(d => d.ptoDate && d.ptoDate !== '(No value)' && d.ptoDate !== 'None').length], ['Pending', DATA.matched.filter(d => !d.ptoDate || d.ptoDate === '(No value)' || d.ptoDate === 'None').length]];
+  const ptoOpts = [['Complete', allInstalled.filter(d => d.ptoDate && d.ptoDate !== '(No value)' && d.ptoDate !== 'None').length], ['Pending', allInstalled.filter(d => !d.ptoDate || d.ptoDate === '(No value)' || d.ptoDate === 'None').length]];
   const sgipStageOpts = getFilterCounts('sgipStage', v => v || '(empty)');
   const sgipStatusOpts = getFilterCounts('sgipStatus', v => v || '(empty)');
   const icfOpts = getFilterCounts('sgipProgress', v => v || '(empty)');
   const installerOpts = getFilterCounts('installer', v => (!v || v === '(No value)') ? '(empty)' : v);
+  // Build utility options using getUtility function
+  const utilityCounts = {};
+  allInstalled.forEach(d => { const u = getUtility(d) || '(empty)'; utilityCounts[u] = (utilityCounts[u] || 0) + 1; });
+  const utilityOpts = Object.entries(utilityCounts).sort((a, b) => b[1] - a[1]);
 
   document.getElementById('app').innerHTML = `
     <div class="bg-slate-800/80 border-b border-slate-700/50 sticky top-0 z-30">
@@ -788,16 +804,15 @@ function render() {
     </div>
     <div class="max-w-[1920px] mx-auto px-4 py-4">
       <div class="flex gap-2 mb-4 flex-wrap">
-        <button onclick="setTab('matched')" class="px-4 py-2 rounded-lg text-sm font-medium ${state.tab === 'matched' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40' : 'bg-slate-800/50 text-slate-400 border border-slate-700/50'}">Matched (${DATA.matched.length})</button>
-        <button onclick="setTab('noSgip')" class="px-4 py-2 rounded-lg text-sm font-medium ${state.tab === 'noSgip' ? 'bg-amber-500/20 text-amber-400 border border-amber-500/40' : 'bg-slate-800/50 text-slate-400 border border-slate-700/50'}">Not in SGIP Portal (${DATA.hubspotWithoutSgip.length})</button>
+        <button onclick="setTab('installed')" class="px-4 py-2 rounded-lg text-sm font-medium ${state.tab === 'installed' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40' : 'bg-slate-800/50 text-slate-400 border border-slate-700/50'}">Installed (${allInstalled.length})</button>
         <button onclick="setTab('stats')" class="px-4 py-2 rounded-lg text-sm font-medium ${state.tab === 'stats' ? 'bg-blue-500/20 text-blue-400 border border-blue-500/40' : 'bg-slate-800/50 text-slate-400 border border-slate-700/50'}">📊 Stats & Reports</button>
       </div>
-      ${state.tab === 'matched' ? renderMatchedTab(stats, filtered, activeStages, stageCounts, permitOpts, inspectOpts, ptoOpts, sgipStageOpts, sgipStatusOpts, icfOpts, installerOpts) : state.tab === 'noSgip' ? renderNoSgipTab() : renderStatsTab()}
+      ${state.tab === 'installed' ? renderInstalledTab(stats, filtered, activeStages, stageCounts, permitOpts, inspectOpts, ptoOpts, sgipStageOpts, sgipStatusOpts, icfOpts, installerOpts, utilityOpts) : renderStatsTab()}
     </div>
   `;
 }
 
-function renderMatchedTab(stats, filtered, activeStages, stageCounts, permitOpts, inspectOpts, ptoOpts, sgipStageOpts, sgipStatusOpts, icfOpts, installerOpts) {
+function renderInstalledTab(stats, filtered, activeStages, stageCounts, permitOpts, inspectOpts, ptoOpts, sgipStageOpts, sgipStatusOpts, icfOpts, installerOpts, utilityOpts) {
   return `
     <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-2 mb-4">
       <div class="bg-slate-800/50 rounded-lg p-3 border border-slate-700/50"><p class="text-slate-500 text-xs uppercase">Total</p><p class="text-lg font-bold">${stats.total}</p></div>
@@ -809,7 +824,7 @@ function renderMatchedTab(stats, filtered, activeStages, stageCounts, permitOpts
       <div class="bg-slate-800/50 rounded-lg p-3 border border-slate-700/50"><p class="text-slate-500 text-xs uppercase">Paid</p><p class="text-lg font-bold text-emerald-400">${fmtCurrency(stats.paidIncentive)}</p></div>
       <div class="bg-slate-800/50 rounded-lg p-3 border border-slate-700/50"><p class="text-slate-500 text-xs uppercase">Suspended</p><p class="text-lg font-bold text-red-400">${stats.suspended}</p></div>
     </div>
-    ${activeStages.length > 0 ? '<div class="bg-slate-800/50 rounded-lg p-3 border border-slate-700/50 mb-4"><div class="flex rounded overflow-hidden h-6 bg-slate-900">'+activeStages.map(s => { const cnt = stageCounts[s.key] || 0, pct = (cnt / DATA.matched.length) * 100; return pct < 0.5 ? '' : '<div style="width:'+pct+'%;background:'+s.color+';min-width:18px" class="flex items-center justify-center text-white text-xs font-bold">'+cnt+'</div>'; }).join('')+'</div><div class="flex flex-wrap gap-2 mt-2">'+activeStages.map(s => '<span class="flex items-center gap-1 text-xs"><span class="w-2 h-2 rounded-full" style="background:'+s.color+'"></span><span class="text-slate-500">'+s.label+'</span></span>').join('')+'</div></div>' : ''}
+    ${activeStages.length > 0 ? '<div class="bg-slate-800/50 rounded-lg p-3 border border-slate-700/50 mb-4"><div class="flex rounded overflow-hidden h-6 bg-slate-900">'+activeStages.map(s => { const cnt = stageCounts[s.key] || 0, pct = (cnt / stats.total) * 100; return pct < 0.5 ? '' : '<div style="width:'+pct+'%;background:'+s.color+';min-width:18px" class="flex items-center justify-center text-white text-xs font-bold">'+cnt+'</div>'; }).join('')+'</div><div class="flex flex-wrap gap-2 mt-2">'+activeStages.map(s => '<span class="flex items-center gap-1 text-xs"><span class="w-2 h-2 rounded-full" style="background:'+s.color+'"></span><span class="text-slate-500">'+s.label+'</span></span>').join('')+'</div></div>' : ''}
     <div class="flex flex-wrap gap-3 mb-4 items-center">
       <input type="text" placeholder="Search customer, code, email, installer..." class="flex-1 min-w-[250px] max-w-md px-4 py-2 rounded-lg bg-slate-800 border border-slate-700 text-sm" value="${state.search}" oninput="updateSearch(this.value)">
       ${hasActiveFilters() ? '<button onclick="clearFilters()" class="px-4 py-2 bg-red-600 hover:bg-red-500 rounded-lg text-sm font-medium">✕ Clear Filters</button>' : ''}
@@ -820,6 +835,7 @@ function renderMatchedTab(stats, filtered, activeStages, stageCounts, permitOpts
         <table class="w-full text-sm">
           <thead class="sticky-header"><tr>
             <th class="px-2 py-3 text-left text-xs font-semibold text-slate-400 uppercase cursor-pointer" onclick="setSort('name')">Customer ${state.sortBy === 'name' ? (state.sortDir === 'asc' ? '↑' : '↓') : ''}</th>
+            ${filterHeader('Utility', 'utility', null, utilityOpts)}
             ${installMonthFilterHeader()}
             <th class="px-2 py-3 text-left text-xs font-semibold text-slate-400 uppercase cursor-pointer" onclick="setSort('daysSinceInstall')">Days ${state.sortBy === 'daysSinceInstall' ? (state.sortDir === 'asc' ? '↑' : '↓') : ''}</th>
             ${filterHeader('Permit', 'permitStatus', null, permitOpts, true)}
@@ -832,9 +848,10 @@ function renderMatchedTab(stats, filtered, activeStages, stageCounts, permitOpts
             <th class="px-2 py-3 text-left text-xs font-semibold text-slate-400 uppercase cursor-pointer" onclick="setSort('incentive')">Incentive ${state.sortBy === 'incentive' ? (state.sortDir === 'asc' ? '↑' : '↓') : ''}</th>
             ${filterHeader('Installer', 'installer', null, installerOpts)}
           </tr></thead>
-          <tbody class="divide-y divide-slate-700/30">${filtered.length === 0 ? '<tr><td colspan="12" class="p-8 text-center text-slate-500">No deals found.</td></tr>' : filtered.map((d, i) => {
+          <tbody class="divide-y divide-slate-700/30">${filtered.length === 0 ? '<tr><td colspan="13" class="p-8 text-center text-slate-500">No deals found.</td></tr>' : filtered.map((d, i) => {
             const info = getStageInfo(d.sgipProgress);
-            return '<tr class="hover:bg-slate-800/50"><td class="px-2 py-2"><div class="min-w-[150px]">'+customerCell(d)+(d.applicationCode?'<br><span class="text-xs text-slate-500 mono">'+d.applicationCode+'</span>':'')+'</div></td><td class="px-2 py-2 text-xs mono">'+(d.installDate||'—')+'</td><td class="px-2 py-2"><span class="font-semibold '+getDaysColor(d.daysSinceInstall)+'">'+(d.daysSinceInstall!==null?d.daysSinceInstall+'d':'—')+'</span></td><td class="px-2 py-2"><span class="editable px-1.5 py-0.5 rounded text-xs border '+getPermitStyle(d.permitStatus)+'" onclick="openEditModal('+i+',\'permitStatus\')">'+(d.permitStatus||'—')+'</span></td><td class="px-2 py-2"><span class="editable px-1.5 py-0.5 rounded text-xs border '+getInspectionStyle(d.inspectionStatus)+'" onclick="openEditModal('+i+',\'inspectionStatus\')">'+(d.inspectionStatus&&d.inspectionStatus!=='(No value)'?d.inspectionStatus:'—')+'</span></td><td class="px-2 py-2"><span class="editable px-1.5 py-0.5 rounded text-xs border '+getPTOStyle(d.ptoDate)+'" onclick="openEditModal('+i+',\'ptoDate\')">'+(d.ptoDate&&d.ptoDate!=='(No value)'&&d.ptoDate!=='None'?d.ptoDate:'Pending')+'</span></td><td class="px-2 py-2 text-xs">'+(d.sgipStage||'—')+'</td><td class="px-2 py-2 text-xs text-slate-400">'+(d.sgipStatus||'—')+'</td><td class="px-2 py-2"><span class="px-1.5 py-0.5 rounded text-xs font-medium" style="background:'+info.color+'20;color:'+info.color+'">'+info.label+'</span></td><td class="px-2 py-2 text-xs mono">'+(d.nextDueDate||'—')+'</td><td class="px-2 py-2 text-right"><span class="'+((d.sgipProgress||'').toLowerCase().includes('payment')&&(d.sgipProgress||'').toLowerCase().includes('completed')?'text-emerald-400':'text-slate-300')+'">'+(d.currentIncentive||'—')+'</span></td><td class="px-2 py-2 text-xs text-slate-400">'+(d.installer||'—')+'</td></tr>';
+            const utility = getUtility(d);
+            return '<tr class="hover:bg-slate-800/50"><td class="px-2 py-2"><div class="min-w-[150px]">'+customerCell(d)+(d.applicationCode?'<br><span class="text-xs text-slate-500 mono">'+d.applicationCode+'</span>':'')+'</div></td><td class="px-2 py-2"><span class="px-1.5 py-0.5 rounded text-xs border '+getUtilityStyle(utility)+'">'+(utility||'—')+'</span></td><td class="px-2 py-2 text-xs mono">'+(d.installDate||'—')+'</td><td class="px-2 py-2"><span class="font-semibold '+getDaysColor(d.daysSinceInstall)+'">'+(d.daysSinceInstall!==null?d.daysSinceInstall+'d':'—')+'</span></td><td class="px-2 py-2"><span class="editable px-1.5 py-0.5 rounded text-xs border '+getPermitStyle(d.permitStatus)+'" onclick="openEditModal('+i+',\'permitStatus\')">'+(d.permitStatus||'—')+'</span></td><td class="px-2 py-2"><span class="editable px-1.5 py-0.5 rounded text-xs border '+getInspectionStyle(d.inspectionStatus)+'" onclick="openEditModal('+i+',\'inspectionStatus\')">'+(d.inspectionStatus&&d.inspectionStatus!=='(No value)'?d.inspectionStatus:'—')+'</span></td><td class="px-2 py-2"><span class="editable px-1.5 py-0.5 rounded text-xs border '+getPTOStyle(d.ptoDate)+'" onclick="openEditModal('+i+',\'ptoDate\')">'+(d.ptoDate&&d.ptoDate!=='(No value)'&&d.ptoDate!=='None'?d.ptoDate:'Pending')+'</span></td><td class="px-2 py-2 text-xs">'+(d.sgipStage||'—')+'</td><td class="px-2 py-2 text-xs text-slate-400">'+(d.sgipStatus||'—')+'</td><td class="px-2 py-2"><span class="px-1.5 py-0.5 rounded text-xs font-medium" style="background:'+info.color+'20;color:'+info.color+'">'+info.label+'</span></td><td class="px-2 py-2 text-xs mono">'+(d.nextDueDate||'—')+'</td><td class="px-2 py-2 text-right"><span class="'+((d.sgipProgress||'').toLowerCase().includes('payment')&&(d.sgipProgress||'').toLowerCase().includes('completed')?'text-emerald-400':'text-slate-300')+'">'+(d.currentIncentive||'—')+'</span></td><td class="px-2 py-2 text-xs text-slate-400">'+(d.installer||'—')+'</td></tr>';
           }).join('')}</tbody>
         </table>
       </div>
