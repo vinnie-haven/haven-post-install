@@ -108,6 +108,8 @@ let state = {
   tab: 'installed', 
   statsSubTab: 'activity',
   icfSubTab: 'ptoNoIcf',
+  icfSortBy: 'daysSincePto',
+  icfSortDir: 'desc',
   search: '', 
   filters: { permitStatus: [], inspectionStatus: [], ptoStatus: [], sgipStage: [], sgipStatus: [], sgipProgress: [], installer: [], installMonth: [], utility: [] },
   sortBy: 'daysSinceInstall', 
@@ -153,6 +155,9 @@ async function loadSgipFromSupabase() {
         icfSubmittedDate: a.icf_submitted_date || '',
         icfResubmittedDate: a.icf_resubmitted_date || '',
         icfPendingPaymentDate: a.icf_pending_payment_date || '',
+        icfSuspendedDate: a.icf_suspended_date || '',
+        icfInspectionDate: a.icf_inspection_date || '',
+        inspectionDate: a.inspection_date || '',
         paymentAmount: a.payment_amount || '',
         paymentDate: a.payment_date || '',
         budgetCategory: a.budget_category || ''
@@ -174,6 +179,9 @@ async function saveSgipToSupabase(sgipData) {
     current_incentive: s.currentIncentive, final_incentive: s.finalIncentive, next_due_date: s.nextDueDate,
     site_address: s.siteAddress, utility: s.utility, icf_submitted_date: s.icfSubmittedDate || null,
     icf_resubmitted_date: s.icfResubmittedDate || null, icf_pending_payment_date: s.icfPendingPaymentDate || null,
+    icf_suspended_date: s.icfSuspendedDate || null,
+    icf_inspection_date: s.icfInspectionDate || null,
+    inspection_date: s.inspectionDate || null,
     payment_amount: s.paymentAmount || null, payment_date: s.paymentDate || null,
     budget_category: s.budgetCategory || null,
     updated_at: new Date().toISOString()
@@ -313,7 +321,7 @@ function mergeData() {
     if (CORRECTIONS.manualMatches[email]) { sgip = sgipByCode[CORRECTIONS.manualMatches[email]]; if (sgip) matchType = 'manual'; }
     if (!sgip && !isNotInPortal) { sgip = sgipByEmail[email]; if (sgip) matchType = 'email'; }
     if (!sgip && !isNotInPortal && hubspotAddr) { sgip = sgipByAddress[hubspotAddr]; if (sgip) matchType = 'address'; }
-    const record = { ...h, applicationCode: sgip?.applicationCode || '', sgipStage: sgip?.sgipStage || '', sgipStatus: sgip?.sgipStatus || '', currentIncentive: sgip?.currentIncentive || '', finalIncentive: sgip?.finalIncentive || '', nextDueDate: sgip?.nextDueDate || '', siteAddress: sgip?.siteAddress || '', utility: sgip?.utility || '', sgipProgress: sgip?.fullyQualifiedState || '', budgetCategory: sgip?.budgetCategory || '', icfSubmittedDate: sgip?.icfSubmittedDate || '', icfResubmittedDate: sgip?.icfResubmittedDate || '', icfPendingPaymentDate: sgip?.icfPendingPaymentDate || '', paymentDate: sgip?.paymentDate || '', matchType, notInPortal: isNotInPortal };
+    const record = { ...h, applicationCode: sgip?.applicationCode || '', sgipStage: sgip?.sgipStage || '', sgipStatus: sgip?.sgipStatus || '', currentIncentive: sgip?.currentIncentive || '', finalIncentive: sgip?.finalIncentive || '', nextDueDate: sgip?.nextDueDate || '', siteAddress: sgip?.siteAddress || '', utility: sgip?.utility || '', sgipProgress: sgip?.fullyQualifiedState || '', budgetCategory: sgip?.budgetCategory || '', icfSubmittedDate: sgip?.icfSubmittedDate || '', icfResubmittedDate: sgip?.icfResubmittedDate || '', icfPendingPaymentDate: sgip?.icfPendingPaymentDate || '', icfSuspendedDate: sgip?.icfSuspendedDate || '', icfInspectionDate: sgip?.icfInspectionDate || '', inspectionDate: sgip?.inspectionDate || '', paymentDate: sgip?.paymentDate || '', matchType, notInPortal: isNotInPortal };
     if (sgip?.applicationCode) { matched.push(record); if (matchType === 'email') MATCH_STATS.byEmail++; else if (matchType === 'address') MATCH_STATS.byAddress++; else if (matchType === 'manual') MATCH_STATS.byManual++; }
     else { hubspotWithoutSgip.push(record); MATCH_STATS.noMatch++; }
   });
@@ -398,6 +406,9 @@ async function handleSgipFile(file) {
         nextDueDate: row['Next Due Date'] || '', siteAddress: row['Site Address'] || '', utility: row['SGIP Administrator'] || '',
         icfSubmittedDate: row['ICF Submitted Date'] || '', icfResubmittedDate: row['Last ICF Resubmitted Date'] || '',
         icfPendingPaymentDate: row['ICF Pending Payment Date'] || '',
+        icfSuspendedDate: row['ICF Suspended Date'] || '',
+        icfInspectionDate: row['ICF Inspection Date'] || '',
+        inspectionDate: row['Inspection Date'] || '',
         paymentAmount: row['Total Project Incentive Payment'] || '',
         paymentDate: row['Most Recent Payment Date'] || '',
         budgetCategory: row['Budget Category'] || ''
@@ -668,7 +679,8 @@ const getDaysColor = d => d === null ? 'text-slate-600' : d > 90 ? 'text-red-400
 
 function setTab(t) { state.tab = t; state.search = ''; render(); }
 function setStatsSubTab(t) { state.statsSubTab = t; render(); }
-function setIcfSubTab(t) { state.icfSubTab = t; render(); }
+function setIcfSubTab(t) { state.icfSubTab = t; state.icfSortBy = null; state.icfSortDir = 'desc'; render(); }
+function setIcfSort(col) { if (state.icfSortBy === col) state.icfSortDir = state.icfSortDir === 'asc' ? 'desc' : 'asc'; else { state.icfSortBy = col; state.icfSortDir = 'desc'; } render(); }
 function updateSearch(v) { state.search = v; if (searchTimeout) clearTimeout(searchTimeout); searchTimeout = setTimeout(() => render(), 150); }
 function setSort(col) { if (state.sortBy === col) state.sortDir = state.sortDir === 'asc' ? 'desc' : 'asc'; else { state.sortBy = col; state.sortDir = 'desc'; } closeAllDropdowns(); render(); }
 
@@ -1313,12 +1325,20 @@ function getIcfDeepDiveData() {
   // Helper to get status from fullyQualifiedState/sgipProgress
   const getStatus = (d) => (d.sgipProgress || '').toLowerCase();
   
+  // Helper to calculate days since a date
+  const daysSince = (dateStr) => {
+    if (!dateStr) return null;
+    const d = parseDate(dateStr);
+    if (!d) return null;
+    return Math.floor((now - d) / (1000 * 60 * 60 * 24));
+  };
+  
   // 1. PTO'd but ICF not yet submitted (still in RRF statuses or ICF Draft)
   const ptoNoIcf = allDeals.filter(d => {
     if (!hasPto(d)) return false;
     const status = getStatus(d);
     return status.includes('rrf') || status === 'icf: draft' || status.includes('icf draft');
-  });
+  }).map(d => ({ ...d, daysSincePto: daysSince(d.ptoDate) }));
   
   // 2. Revisions required (ICF Suspended or ICF Inspection Suspended)
   const revisions = allDeals.filter(d => {
@@ -1328,7 +1348,7 @@ function getIcfDeepDiveData() {
   }).map(d => {
     const status = getStatus(d);
     const suspendedType = status.includes('inspection suspended') ? 'ICF Inspection Suspended' : 'ICF Suspended';
-    return { ...d, suspendedType };
+    return { ...d, suspendedType, daysSinceSuspended: daysSince(d.icfSuspendedDate) };
   });
   
   // 3. ICF Submitted (ICF Submitted or ICF Resubmitted status)
@@ -1337,11 +1357,9 @@ function getIcfDeepDiveData() {
     return status === 'icf: submitted' || status === 'icf submitted' || 
            status === 'icf: resubmitted' || status === 'icf resubmitted';
   }).map(d => {
-    const submittedDate = d.icfSubmittedDate ? parseDate(d.icfSubmittedDate) : null;
-    const resubmittedDate = d.icfResubmittedDate ? parseDate(d.icfResubmittedDate) : null;
-    const daysSinceSubmitted = submittedDate ? Math.floor((now - submittedDate) / (1000 * 60 * 60 * 24)) : null;
-    const daysSinceResubmitted = resubmittedDate ? Math.floor((now - resubmittedDate) / (1000 * 60 * 60 * 24)) : null;
-    return { ...d, daysSinceSubmitted, daysSinceResubmitted };
+    // Days is from resubmitted date if exists, otherwise from submitted date
+    const effectiveDate = d.icfResubmittedDate || d.icfSubmittedDate;
+    return { ...d, daysPending: daysSince(effectiveDate) };
   });
   
   // 4. ICF Review (ICF Review or ICF Technical Review)
@@ -1349,6 +1367,9 @@ function getIcfDeepDiveData() {
     const status = getStatus(d);
     return status === 'icf: review' || status === 'icf review' || 
            status === 'icf: technical review' || status === 'icf technical review';
+  }).map(d => {
+    const effectiveDate = d.icfResubmittedDate || d.icfSubmittedDate;
+    return { ...d, daysSinceSubmitted: daysSince(effectiveDate) };
   });
   
   // 5. ICF Inspection
@@ -1365,6 +1386,35 @@ function getIcfDeepDiveData() {
   });
   
   return { ptoNoIcf, revisions, icfSubmitted, icfReview, icfInspection, pendingPayment };
+}
+
+function sortIcfData(deals, sortBy, sortDir) {
+  if (!sortBy) return deals;
+  return [...deals].sort((a, b) => {
+    let av, bv;
+    if (sortBy === 'customer') { av = a.customerName || ''; bv = b.customerName || ''; }
+    else if (sortBy === 'utility') { av = getUtility(a) || ''; bv = getUtility(b) || ''; }
+    else if (sortBy === 'installDate') { const da = parseDate(a.installDate), db = parseDate(b.installDate); av = da ? da.getTime() : 0; bv = db ? db.getTime() : 0; }
+    else if (sortBy === 'ptoDate') { const da = parseDate(a.ptoDate), db = parseDate(b.ptoDate); av = da ? da.getTime() : 0; bv = db ? db.getTime() : 0; }
+    else if (sortBy === 'daysSincePto') { av = a.daysSincePto ?? -1; bv = b.daysSincePto ?? -1; }
+    else if (sortBy === 'daysSinceSuspended') { av = a.daysSinceSuspended ?? -1; bv = b.daysSinceSuspended ?? -1; }
+    else if (sortBy === 'daysPending') { av = a.daysPending ?? -1; bv = b.daysPending ?? -1; }
+    else if (sortBy === 'daysSinceSubmitted') { av = a.daysSinceSubmitted ?? -1; bv = b.daysSinceSubmitted ?? -1; }
+    else if (sortBy === 'icfSubmittedDate') { const da = parseDate(a.icfSubmittedDate), db = parseDate(b.icfSubmittedDate); av = da ? da.getTime() : 0; bv = db ? db.getTime() : 0; }
+    else if (sortBy === 'icfSuspendedDate') { const da = parseDate(a.icfSuspendedDate), db = parseDate(b.icfSuspendedDate); av = da ? da.getTime() : 0; bv = db ? db.getTime() : 0; }
+    else if (sortBy === 'icfInspectionDate') { const da = parseDate(a.icfInspectionDate), db = parseDate(b.icfInspectionDate); av = da ? da.getTime() : 0; bv = db ? db.getTime() : 0; }
+    else if (sortBy === 'inspectionDate') { const da = parseDate(a.inspectionDate), db = parseDate(b.inspectionDate); av = da ? da.getTime() : 0; bv = db ? db.getTime() : 0; }
+    else if (sortBy === 'icfPendingPaymentDate') { const da = parseDate(a.icfPendingPaymentDate), db = parseDate(b.icfPendingPaymentDate); av = da ? da.getTime() : 0; bv = db ? db.getTime() : 0; }
+    else if (sortBy === 'incentive') { av = parseNum(a.finalIncentive || a.currentIncentive); bv = parseNum(b.finalIncentive || b.currentIncentive); }
+    else return 0;
+    if (typeof av === 'string') return sortDir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av);
+    return sortDir === 'asc' ? av - bv : bv - av;
+  });
+}
+
+function icfSortHeader(label, col) {
+  const active = state.icfSortBy === col;
+  return `<th class="px-3 py-2 text-left text-xs font-semibold uppercase cursor-pointer hover:text-slate-200 ${active ? 'text-cyan-400' : 'text-slate-400'}" onclick="setIcfSort('${col}')">${label} ${active ? (state.icfSortDir === 'asc' ? '↑' : '↓') : ''}</th>`;
 }
 
 function renderIcfDeepDiveTab() {
@@ -1396,6 +1446,7 @@ function renderIcfDeepDiveTab() {
 }
 
 function renderPtoNoIcf(deals) {
+  const sorted = sortIcfData(deals, state.icfSortBy || 'daysSincePto', state.icfSortDir);
   return `
     <div class="bg-amber-500/10 border border-amber-500/30 rounded-lg p-4 mb-4">
       <h3 class="font-semibold text-amber-400">📋 PTO'd but ICF Not Yet Submitted</h3>
@@ -1409,19 +1460,21 @@ function renderPtoNoIcf(deals) {
       <div class="table-container overflow-x-auto" style="max-height: 600px;">
         <table class="w-full text-sm">
           <thead class="sticky-header"><tr>
-            <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Customer</th>
-            <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Utility</th>
-            <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Install Date</th>
-            <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">PTO Date</th>
+            ${icfSortHeader('Customer', 'customer')}
+            ${icfSortHeader('Utility', 'utility')}
+            ${icfSortHeader('Install Date', 'installDate')}
+            ${icfSortHeader('PTO Date', 'ptoDate')}
+            ${icfSortHeader('Days Since PTO', 'daysSincePto')}
             <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Current Status</th>
           </tr></thead>
           <tbody class="divide-y divide-slate-700/30">
-            ${deals.length === 0 ? '<tr><td colspan="5" class="px-3 py-8 text-center text-slate-500">No projects in this category</td></tr>' : deals.map(d => `
+            ${sorted.length === 0 ? '<tr><td colspan="6" class="px-3 py-8 text-center text-slate-500">No projects in this category</td></tr>' : sorted.map(d => `
               <tr class="hover:bg-slate-800/50">
                 <td class="px-3 py-2">${customerCell(d)}${d.applicationCode ? '<br><span class="text-xs text-slate-500 mono">'+d.applicationCode+'</span>' : ''}</td>
                 <td class="px-3 py-2"><span class="px-1.5 py-0.5 rounded text-xs border ${getUtilityStyle(getUtility(d))}">${getUtility(d) || '—'}</span></td>
                 <td class="px-3 py-2 text-xs mono">${d.installDate || '—'}</td>
                 <td class="px-3 py-2 text-xs mono text-green-400">${d.ptoDate || '—'}</td>
+                <td class="px-3 py-2 font-bold ${d.daysSincePto > 30 ? 'text-red-400' : d.daysSincePto > 14 ? 'text-amber-400' : 'text-slate-300'}">${d.daysSincePto !== null ? d.daysSincePto + 'd' : '—'}</td>
                 <td class="px-3 py-2"><span class="px-1.5 py-0.5 rounded text-xs bg-amber-900/50 text-amber-400 border border-amber-800">${d.sgipProgress || '—'}</span></td>
               </tr>
             `).join('')}
@@ -1433,6 +1486,7 @@ function renderPtoNoIcf(deals) {
 }
 
 function renderRevisions(deals) {
+  const sorted = sortIcfData(deals, state.icfSortBy || 'daysSinceSuspended', state.icfSortDir);
   return `
     <div class="bg-red-500/10 border border-red-500/30 rounded-lg p-4 mb-4">
       <h3 class="font-semibold text-red-400">⚠️ Revisions Required</h3>
@@ -1446,20 +1500,22 @@ function renderRevisions(deals) {
       <div class="table-container overflow-x-auto" style="max-height: 600px;">
         <table class="w-full text-sm">
           <thead class="sticky-header"><tr>
-            <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Customer</th>
-            <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Utility</th>
-            <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Install Date</th>
+            ${icfSortHeader('Customer', 'customer')}
+            ${icfSortHeader('Utility', 'utility')}
+            ${icfSortHeader('Install Date', 'installDate')}
             <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Suspended Type</th>
-            <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Status</th>
+            ${icfSortHeader('Suspended Date', 'icfSuspendedDate')}
+            ${icfSortHeader('Days Suspended', 'daysSinceSuspended')}
           </tr></thead>
           <tbody class="divide-y divide-slate-700/30">
-            ${deals.length === 0 ? '<tr><td colspan="5" class="px-3 py-8 text-center text-slate-500">No projects in this category</td></tr>' : deals.map(d => `
+            ${sorted.length === 0 ? '<tr><td colspan="6" class="px-3 py-8 text-center text-slate-500">No projects in this category</td></tr>' : sorted.map(d => `
               <tr class="hover:bg-slate-800/50">
                 <td class="px-3 py-2">${customerCell(d)}${d.applicationCode ? '<br><span class="text-xs text-slate-500 mono">'+d.applicationCode+'</span>' : ''}</td>
                 <td class="px-3 py-2"><span class="px-1.5 py-0.5 rounded text-xs border ${getUtilityStyle(getUtility(d))}">${getUtility(d) || '—'}</span></td>
                 <td class="px-3 py-2 text-xs mono">${d.installDate || '—'}</td>
                 <td class="px-3 py-2"><span class="px-1.5 py-0.5 rounded text-xs ${d.suspendedType.includes('Inspection') ? 'bg-orange-900/50 text-orange-400 border border-orange-800' : 'bg-red-900/50 text-red-400 border border-red-800'}">${d.suspendedType}</span></td>
-                <td class="px-3 py-2 text-xs text-slate-400">${d.sgipProgress || '—'}</td>
+                <td class="px-3 py-2 text-xs mono">${d.icfSuspendedDate || '—'}</td>
+                <td class="px-3 py-2 font-bold ${d.daysSinceSuspended > 30 ? 'text-red-400' : d.daysSinceSuspended > 14 ? 'text-amber-400' : 'text-slate-300'}">${d.daysSinceSuspended !== null ? d.daysSinceSuspended + 'd' : '—'}</td>
               </tr>
             `).join('')}
           </tbody>
@@ -1470,6 +1526,7 @@ function renderRevisions(deals) {
 }
 
 function renderIcfSubmittedDeep(deals) {
+  const sorted = sortIcfData(deals, state.icfSortBy || 'daysPending', state.icfSortDir);
   return `
     <div class="bg-blue-500/10 border border-blue-500/30 rounded-lg p-4 mb-4">
       <h3 class="font-semibold text-blue-400">📤 ICF Submitted</h3>
@@ -1483,24 +1540,22 @@ function renderIcfSubmittedDeep(deals) {
       <div class="table-container overflow-x-auto" style="max-height: 600px;">
         <table class="w-full text-sm">
           <thead class="sticky-header"><tr>
-            <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Customer</th>
-            <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Utility</th>
-            <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Install Date</th>
-            <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">ICF Submitted</th>
-            <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Days</th>
+            ${icfSortHeader('Customer', 'customer')}
+            ${icfSortHeader('Utility', 'utility')}
+            ${icfSortHeader('Install Date', 'installDate')}
+            ${icfSortHeader('ICF Submitted', 'icfSubmittedDate')}
             <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Resubmitted</th>
-            <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Days</th>
+            ${icfSortHeader('Days Pending', 'daysPending')}
           </tr></thead>
           <tbody class="divide-y divide-slate-700/30">
-            ${deals.length === 0 ? '<tr><td colspan="7" class="px-3 py-8 text-center text-slate-500">No projects in this category</td></tr>' : deals.map(d => `
+            ${sorted.length === 0 ? '<tr><td colspan="6" class="px-3 py-8 text-center text-slate-500">No projects in this category</td></tr>' : sorted.map(d => `
               <tr class="hover:bg-slate-800/50">
                 <td class="px-3 py-2">${customerCell(d)}${d.applicationCode ? '<br><span class="text-xs text-slate-500 mono">'+d.applicationCode+'</span>' : ''}</td>
                 <td class="px-3 py-2"><span class="px-1.5 py-0.5 rounded text-xs border ${getUtilityStyle(getUtility(d))}">${getUtility(d) || '—'}</span></td>
                 <td class="px-3 py-2 text-xs mono">${d.installDate || '—'}</td>
                 <td class="px-3 py-2 text-xs mono">${d.icfSubmittedDate || '—'}</td>
-                <td class="px-3 py-2 text-xs font-bold ${d.daysSinceSubmitted > 30 ? 'text-amber-400' : 'text-slate-300'}">${d.daysSinceSubmitted !== null ? d.daysSinceSubmitted + 'd' : '—'}</td>
                 <td class="px-3 py-2 text-xs mono">${d.icfResubmittedDate || '—'}</td>
-                <td class="px-3 py-2 text-xs font-bold ${d.daysSinceResubmitted > 30 ? 'text-amber-400' : 'text-slate-300'}">${d.daysSinceResubmitted !== null ? d.daysSinceResubmitted + 'd' : '—'}</td>
+                <td class="px-3 py-2 font-bold ${d.daysPending > 45 ? 'text-red-400' : d.daysPending > 30 ? 'text-amber-400' : 'text-slate-300'}">${d.daysPending !== null ? d.daysPending + 'd' : '—'}</td>
               </tr>
             `).join('')}
           </tbody>
@@ -1511,6 +1566,7 @@ function renderIcfSubmittedDeep(deals) {
 }
 
 function renderIcfReview(deals) {
+  const sorted = sortIcfData(deals, state.icfSortBy || 'daysSinceSubmitted', state.icfSortDir);
   return `
     <div class="bg-purple-500/10 border border-purple-500/30 rounded-lg p-4 mb-4">
       <h3 class="font-semibold text-purple-400">🔍 ICF Review</h3>
@@ -1524,20 +1580,22 @@ function renderIcfReview(deals) {
       <div class="table-container overflow-x-auto" style="max-height: 600px;">
         <table class="w-full text-sm">
           <thead class="sticky-header"><tr>
-            <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Customer</th>
-            <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Utility</th>
-            <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Install Date</th>
+            ${icfSortHeader('Customer', 'customer')}
+            ${icfSortHeader('Utility', 'utility')}
+            ${icfSortHeader('Install Date', 'installDate')}
             <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Review Type</th>
-            <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">ICF Submitted</th>
+            ${icfSortHeader('ICF Submitted', 'icfSubmittedDate')}
+            ${icfSortHeader('Days Since Submitted', 'daysSinceSubmitted')}
           </tr></thead>
           <tbody class="divide-y divide-slate-700/30">
-            ${deals.length === 0 ? '<tr><td colspan="5" class="px-3 py-8 text-center text-slate-500">No projects in this category</td></tr>' : deals.map(d => `
+            ${sorted.length === 0 ? '<tr><td colspan="6" class="px-3 py-8 text-center text-slate-500">No projects in this category</td></tr>' : sorted.map(d => `
               <tr class="hover:bg-slate-800/50">
                 <td class="px-3 py-2">${customerCell(d)}${d.applicationCode ? '<br><span class="text-xs text-slate-500 mono">'+d.applicationCode+'</span>' : ''}</td>
                 <td class="px-3 py-2"><span class="px-1.5 py-0.5 rounded text-xs border ${getUtilityStyle(getUtility(d))}">${getUtility(d) || '—'}</span></td>
                 <td class="px-3 py-2 text-xs mono">${d.installDate || '—'}</td>
                 <td class="px-3 py-2"><span class="px-1.5 py-0.5 rounded text-xs ${(d.sgipProgress || '').toLowerCase().includes('technical') ? 'bg-violet-900/50 text-violet-400 border border-violet-800' : 'bg-purple-900/50 text-purple-400 border border-purple-800'}">${(d.sgipProgress || '').toLowerCase().includes('technical') ? 'Technical Review' : 'Review'}</span></td>
-                <td class="px-3 py-2 text-xs mono">${d.icfSubmittedDate || '—'}</td>
+                <td class="px-3 py-2 text-xs mono">${d.icfResubmittedDate || d.icfSubmittedDate || '—'}</td>
+                <td class="px-3 py-2 font-bold ${d.daysSinceSubmitted > 45 ? 'text-red-400' : d.daysSinceSubmitted > 30 ? 'text-amber-400' : 'text-slate-300'}">${d.daysSinceSubmitted !== null ? d.daysSinceSubmitted + 'd' : '—'}</td>
               </tr>
             `).join('')}
           </tbody>
@@ -1548,6 +1606,7 @@ function renderIcfReview(deals) {
 }
 
 function renderIcfInspection(deals) {
+  const sorted = sortIcfData(deals, state.icfSortBy || 'icfInspectionDate', state.icfSortDir);
   return `
     <div class="bg-cyan-500/10 border border-cyan-500/30 rounded-lg p-4 mb-4">
       <h3 class="font-semibold text-cyan-400">🔎 ICF Inspection</h3>
@@ -1561,20 +1620,20 @@ function renderIcfInspection(deals) {
       <div class="table-container overflow-x-auto" style="max-height: 600px;">
         <table class="w-full text-sm">
           <thead class="sticky-header"><tr>
-            <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Customer</th>
-            <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Utility</th>
-            <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Install Date</th>
-            <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">ICF Submitted</th>
-            <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Status</th>
+            ${icfSortHeader('Customer', 'customer')}
+            ${icfSortHeader('Utility', 'utility')}
+            ${icfSortHeader('Install Date', 'installDate')}
+            ${icfSortHeader('ICF Inspection Date', 'icfInspectionDate')}
+            ${icfSortHeader('Inspection Date', 'inspectionDate')}
           </tr></thead>
           <tbody class="divide-y divide-slate-700/30">
-            ${deals.length === 0 ? '<tr><td colspan="5" class="px-3 py-8 text-center text-slate-500">No projects in this category</td></tr>' : deals.map(d => `
+            ${sorted.length === 0 ? '<tr><td colspan="5" class="px-3 py-8 text-center text-slate-500">No projects in this category</td></tr>' : sorted.map(d => `
               <tr class="hover:bg-slate-800/50">
                 <td class="px-3 py-2">${customerCell(d)}${d.applicationCode ? '<br><span class="text-xs text-slate-500 mono">'+d.applicationCode+'</span>' : ''}</td>
                 <td class="px-3 py-2"><span class="px-1.5 py-0.5 rounded text-xs border ${getUtilityStyle(getUtility(d))}">${getUtility(d) || '—'}</span></td>
                 <td class="px-3 py-2 text-xs mono">${d.installDate || '—'}</td>
-                <td class="px-3 py-2 text-xs mono">${d.icfSubmittedDate || '—'}</td>
-                <td class="px-3 py-2"><span class="px-1.5 py-0.5 rounded text-xs bg-cyan-900/50 text-cyan-400 border border-cyan-800">ICF Inspection</span></td>
+                <td class="px-3 py-2 text-xs mono">${d.icfInspectionDate || '—'}</td>
+                <td class="px-3 py-2 text-xs mono text-cyan-400">${d.inspectionDate || '—'}</td>
               </tr>
             `).join('')}
           </tbody>
@@ -1585,6 +1644,7 @@ function renderIcfInspection(deals) {
 }
 
 function renderPendingPayment(deals) {
+  const sorted = sortIcfData(deals, state.icfSortBy || 'icfPendingPaymentDate', state.icfSortDir);
   return `
     <div class="bg-emerald-500/10 border border-emerald-500/30 rounded-lg p-4 mb-4">
       <h3 class="font-semibold text-emerald-400">💰 Pending Payment</h3>
@@ -1598,15 +1658,15 @@ function renderPendingPayment(deals) {
       <div class="table-container overflow-x-auto" style="max-height: 600px;">
         <table class="w-full text-sm">
           <thead class="sticky-header"><tr>
-            <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Customer</th>
-            <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Utility</th>
-            <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Install Date</th>
-            <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">ICF Approved Date</th>
+            ${icfSortHeader('Customer', 'customer')}
+            ${icfSortHeader('Utility', 'utility')}
+            ${icfSortHeader('Install Date', 'installDate')}
+            ${icfSortHeader('ICF Approved Date', 'icfPendingPaymentDate')}
             <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Payment Date</th>
-            <th class="px-3 py-2 text-right text-xs font-semibold text-slate-400 uppercase">Incentive</th>
+            ${icfSortHeader('Incentive', 'incentive')}
           </tr></thead>
           <tbody class="divide-y divide-slate-700/30">
-            ${deals.length === 0 ? '<tr><td colspan="6" class="px-3 py-8 text-center text-slate-500">No projects in this category</td></tr>' : deals.map(d => `
+            ${sorted.length === 0 ? '<tr><td colspan="6" class="px-3 py-8 text-center text-slate-500">No projects in this category</td></tr>' : sorted.map(d => `
               <tr class="hover:bg-slate-800/50">
                 <td class="px-3 py-2">${customerCell(d)}${d.applicationCode ? '<br><span class="text-xs text-slate-500 mono">'+d.applicationCode+'</span>' : ''}</td>
                 <td class="px-3 py-2"><span class="px-1.5 py-0.5 rounded text-xs border ${getUtilityStyle(getUtility(d))}">${getUtility(d) || '—'}</span></td>
