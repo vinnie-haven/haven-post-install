@@ -835,7 +835,7 @@ function render() {
   const allInstalled = getAllInstalled();
   const filtered = state.tab === 'installed' ? getFilteredData() : [];
   const stageCounts = {}; allInstalled.forEach(d => stageCounts[d.sgipProgress || '(empty)'] = (stageCounts[d.sgipProgress || '(empty)'] || 0) + 1);
-  const activeStages = STAGES.filter(s => stageCounts[s.key] > 0);
+  const activeStages = STAGES.filter(s => stageCounts[s.key] > 0 && s.stage >= 0);
   const permitOpts = getFilterCounts('permitStatus');
   const inspectOpts = getFilterCounts('inspectionStatus', v => (!v || v === '(No value)') ? '(empty)' : v);
   const ptoOpts = [['Complete', allInstalled.filter(d => d.ptoDate && d.ptoDate !== '(No value)' && d.ptoDate !== 'None').length], ['Pending', allInstalled.filter(d => !d.ptoDate || d.ptoDate === '(No value)' || d.ptoDate === 'None').length]];
