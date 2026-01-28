@@ -1545,17 +1545,17 @@ function renderIcfSummary(data) {
   const calcIncentive = (deals) => deals.reduce((sum, d) => sum + parseNum(d.currentIncentive || d.finalIncentive), 0);
   const calcPayment = (deals) => deals.reduce((sum, d) => sum + parseNum(d.paymentAmount), 0);
   
-  const categories = [
+  const pipelineCategories = [
     { label: "PTO'd, No ICF", count: data.ptoNoIcf.length, amount: calcIncentive(data.ptoNoIcf), color: 'amber', key: 'ptoNoIcf' },
     { label: 'Revisions Required', count: data.revisions.length, amount: calcIncentive(data.revisions), color: 'red', key: 'revisions' },
     { label: 'ICF Submitted', count: data.icfSubmitted.length, amount: calcIncentive(data.icfSubmitted), color: 'blue', key: 'icfSubmitted' },
     { label: 'ICF Review', count: data.icfReview.length, amount: calcIncentive(data.icfReview), color: 'purple', key: 'icfReview' },
     { label: 'ICF Inspection', count: data.icfInspection.length, amount: calcIncentive(data.icfInspection), color: 'cyan', key: 'icfInspection' },
-    { label: 'Pending Payment', count: data.pendingPayment.length, amount: calcIncentive(data.pendingPayment), color: 'emerald', key: 'pendingPayment' },
-    { label: 'Payment Complete', count: data.paymentComplete.length, amount: calcPayment(data.paymentComplete), color: 'green', key: 'paymentComplete' }
+    { label: 'Pending Payment', count: data.pendingPayment.length, amount: calcIncentive(data.pendingPayment), color: 'emerald', key: 'pendingPayment' }
   ];
   
-  const totalIncentive = categories.reduce((sum, c) => sum + c.amount, 0);
+  const totalIncentive = pipelineCategories.reduce((sum, c) => sum + c.amount, 0);
+  const paymentComplete = { label: 'Payment Complete', count: data.paymentComplete.length, amount: calcPayment(data.paymentComplete), color: 'green', key: 'paymentComplete' };
   
   // Check if we have today's snapshot
   const today = new Date().toISOString().split('T')[0];
@@ -1571,7 +1571,7 @@ function renderIcfSummary(data) {
     
     <!-- Current Counts -->
     <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3 mb-6">
-      ${categories.map(c => `
+      ${pipelineCategories.map(c => `
         <div class="bg-slate-800/50 rounded-lg p-4 border border-slate-700/50 cursor-pointer hover:border-${c.color}-500/50 transition-all" onclick="setIcfSubTab('${c.key}')">
           <p class="text-slate-400 text-xs uppercase mb-1">${c.label}</p>
           <p class="text-2xl font-bold text-${c.color}-400">${c.count}</p>
@@ -1582,6 +1582,11 @@ function renderIcfSummary(data) {
         <p class="text-slate-400 text-xs uppercase mb-1">Total Pipeline</p>
         <p class="text-2xl font-bold text-white">${total}</p>
         <p class="text-xs text-slate-300/70 mt-1">${fmtCurrency(totalIncentive)}</p>
+      </div>
+      <div class="bg-slate-800/50 rounded-lg p-4 border border-slate-700/50 cursor-pointer hover:border-green-500/50 transition-all" onclick="setIcfSubTab('paymentComplete')">
+        <p class="text-slate-400 text-xs uppercase mb-1">${paymentComplete.label}</p>
+        <p class="text-2xl font-bold text-green-400">${paymentComplete.count}</p>
+        <p class="text-xs text-green-400/70 mt-1">${fmtCurrency(paymentComplete.amount)}</p>
       </div>
     </div>
     
