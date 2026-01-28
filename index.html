@@ -183,6 +183,7 @@ async function loadSgipFromSupabase() {
         inspectionDate: a.inspection_date || '',
         paymentAmount: a.payment_amount || '',
         paymentDate: a.payment_date || '',
+        paymentCompletedDate: a.payment_completed_date || '',
         budgetCategory: a.budget_category || ''
       }));
       state.sgipLoaded = true;
@@ -206,6 +207,7 @@ async function saveSgipToSupabase(sgipData) {
     icf_inspection_date: s.icfInspectionDate || null,
     inspection_date: s.inspectionDate || null,
     payment_amount: s.paymentAmount || null, payment_date: s.paymentDate || null,
+    payment_completed_date: s.paymentCompletedDate || null,
     budget_category: s.budgetCategory || null,
     updated_at: new Date().toISOString()
   })).filter(r => r.application_code);
@@ -344,7 +346,7 @@ function mergeData() {
     if (CORRECTIONS.manualMatches[email]) { sgip = sgipByCode[CORRECTIONS.manualMatches[email]]; if (sgip) matchType = 'manual'; }
     if (!sgip && !isNotInPortal) { sgip = sgipByEmail[email]; if (sgip) matchType = 'email'; }
     if (!sgip && !isNotInPortal && hubspotAddr) { sgip = sgipByAddress[hubspotAddr]; if (sgip) matchType = 'address'; }
-    const record = { ...h, applicationCode: sgip?.applicationCode || '', sgipStage: sgip?.sgipStage || '', sgipStatus: sgip?.sgipStatus || '', currentIncentive: sgip?.currentIncentive || '', finalIncentive: sgip?.finalIncentive || '', nextDueDate: sgip?.nextDueDate || '', siteAddress: sgip?.siteAddress || '', utility: sgip?.utility || '', sgipProgress: sgip?.fullyQualifiedState || '', budgetCategory: sgip?.budgetCategory || '', icfSubmittedDate: sgip?.icfSubmittedDate || '', icfResubmittedDate: sgip?.icfResubmittedDate || '', icfPendingPaymentDate: sgip?.icfPendingPaymentDate || '', icfSuspendedDate: sgip?.icfSuspendedDate || '', icfInspectionDate: sgip?.icfInspectionDate || '', inspectionDate: sgip?.inspectionDate || '', paymentDate: sgip?.paymentDate || '', matchType, notInPortal: isNotInPortal };
+    const record = { ...h, applicationCode: sgip?.applicationCode || '', sgipStage: sgip?.sgipStage || '', sgipStatus: sgip?.sgipStatus || '', currentIncentive: sgip?.currentIncentive || '', finalIncentive: sgip?.finalIncentive || '', nextDueDate: sgip?.nextDueDate || '', siteAddress: sgip?.siteAddress || '', utility: sgip?.utility || '', sgipProgress: sgip?.fullyQualifiedState || '', budgetCategory: sgip?.budgetCategory || '', icfSubmittedDate: sgip?.icfSubmittedDate || '', icfResubmittedDate: sgip?.icfResubmittedDate || '', icfPendingPaymentDate: sgip?.icfPendingPaymentDate || '', icfSuspendedDate: sgip?.icfSuspendedDate || '', icfInspectionDate: sgip?.icfInspectionDate || '', inspectionDate: sgip?.inspectionDate || '', paymentDate: sgip?.paymentDate || '', paymentCompletedDate: sgip?.paymentCompletedDate || '', paymentAmount: sgip?.paymentAmount || '', matchType, notInPortal: isNotInPortal };
     if (sgip?.applicationCode) { matched.push(record); if (matchType === 'email') MATCH_STATS.byEmail++; else if (matchType === 'address') MATCH_STATS.byAddress++; else if (matchType === 'manual') MATCH_STATS.byManual++; }
     else { hubspotWithoutSgip.push(record); MATCH_STATS.noMatch++; }
   });
@@ -434,6 +436,7 @@ async function handleSgipFile(file) {
         inspectionDate: row['Inspection Date'] || '',
         paymentAmount: row['Total Project Incentive Payment'] || '',
         paymentDate: row['Most Recent Payment Date'] || '',
+        paymentCompletedDate: row['Payment Completed Date'] || '',
         budgetCategory: row['Budget Category'] || ''
       })).filter(s => s.applicationCode);
       document.getElementById('sgipStatus').innerHTML = '<span class="text-blue-400">Saving to database...</span>';
@@ -1408,7 +1411,13 @@ function getIcfDeepDiveData() {
     return status === 'icf: pending payment' || status === 'icf pending payment';
   });
   
-  return { ptoNoIcf, revisions, icfSubmitted, icfReview, icfInspection, pendingPayment };
+  // 7. Payment Complete
+  const paymentComplete = allDeals.filter(d => {
+    const status = getStatus(d);
+    return status === 'payment: completed' || status === 'payment completed';
+  });
+  
+  return { ptoNoIcf, revisions, icfSubmitted, icfReview, icfInspection, pendingPayment, paymentComplete };
 }
 
 function sortIcfData(deals, sortBy, sortDir) {
@@ -1428,6 +1437,8 @@ function sortIcfData(deals, sortBy, sortDir) {
     else if (sortBy === 'icfInspectionDate') { const da = parseDate(a.icfInspectionDate), db = parseDate(b.icfInspectionDate); av = da ? da.getTime() : 0; bv = db ? db.getTime() : 0; }
     else if (sortBy === 'inspectionDate') { const da = parseDate(a.inspectionDate), db = parseDate(b.inspectionDate); av = da ? da.getTime() : 0; bv = db ? db.getTime() : 0; }
     else if (sortBy === 'icfPendingPaymentDate') { const da = parseDate(a.icfPendingPaymentDate), db = parseDate(b.icfPendingPaymentDate); av = da ? da.getTime() : 0; bv = db ? db.getTime() : 0; }
+    else if (sortBy === 'paymentCompletedDate') { const da = parseDate(a.paymentCompletedDate), db = parseDate(b.paymentCompletedDate); av = da ? da.getTime() : 0; bv = db ? db.getTime() : 0; }
+    else if (sortBy === 'paymentAmount') { av = parseNum(a.paymentAmount); bv = parseNum(b.paymentAmount); }
     else if (sortBy === 'incentive') { av = parseNum(a.finalIncentive || a.currentIncentive); bv = parseNum(b.finalIncentive || b.currentIncentive); }
     else return 0;
     if (typeof av === 'string') return sortDir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av);
@@ -1450,7 +1461,8 @@ function renderIcfDeepDiveTab() {
     { key: 'icfSubmitted', label: 'ICF Submitted', count: data.icfSubmitted.length, color: 'blue' },
     { key: 'icfReview', label: 'ICF Review', count: data.icfReview.length, color: 'purple' },
     { key: 'icfInspection', label: 'ICF Inspection', count: data.icfInspection.length, color: 'cyan' },
-    { key: 'pendingPayment', label: 'Pending Payment', count: data.pendingPayment.length, color: 'emerald' }
+    { key: 'pendingPayment', label: 'Pending Payment', count: data.pendingPayment.length, color: 'emerald' },
+    { key: 'paymentComplete', label: 'Payment Complete', count: data.paymentComplete.length, color: 'green' }
   ];
   
   return `
@@ -1467,7 +1479,8 @@ function renderIcfDeepDiveTab() {
       state.icfSubTab === 'icfSubmitted' ? renderIcfSubmittedDeep(data.icfSubmitted) :
       state.icfSubTab === 'icfReview' ? renderIcfReview(data.icfReview) :
       state.icfSubTab === 'icfInspection' ? renderIcfInspection(data.icfInspection) :
-      renderPendingPayment(data.pendingPayment)}
+      state.icfSubTab === 'pendingPayment' ? renderPendingPayment(data.pendingPayment) :
+      renderPaymentComplete(data.paymentComplete)}
   `;
 }
 
@@ -1534,7 +1547,8 @@ function renderIcfSummary(data) {
     { label: 'ICF Submitted', count: data.icfSubmitted.length, color: 'blue', key: 'icfSubmitted' },
     { label: 'ICF Review', count: data.icfReview.length, color: 'purple', key: 'icfReview' },
     { label: 'ICF Inspection', count: data.icfInspection.length, color: 'cyan', key: 'icfInspection' },
-    { label: 'Pending Payment', count: data.pendingPayment.length, color: 'emerald', key: 'pendingPayment' }
+    { label: 'Pending Payment', count: data.pendingPayment.length, color: 'emerald', key: 'pendingPayment' },
+    { label: 'Payment Complete', count: data.paymentComplete.length, color: 'green', key: 'paymentComplete' }
   ];
   
   // Check if we have today's snapshot
@@ -1550,7 +1564,7 @@ function renderIcfSummary(data) {
     </div>
     
     <!-- Current Counts -->
-    <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3 mb-6">
+    <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3 mb-6">
       ${categories.map(c => `
         <div class="bg-slate-800/50 rounded-lg p-4 border border-slate-700/50 cursor-pointer hover:border-${c.color}-500/50 transition-all" onclick="setIcfSubTab('${c.key}')">
           <p class="text-slate-400 text-xs uppercase mb-1">${c.label}</p>
@@ -1842,6 +1856,51 @@ function renderPendingPayment(deals) {
                 <td class="px-3 py-2 text-xs mono">${d.icfPendingPaymentDate || '—'}</td>
                 <td class="px-3 py-2 text-xs mono text-emerald-400">${d.paymentDate || '—'}</td>
                 <td class="px-3 py-2 text-right font-bold text-emerald-400">${d.finalIncentive || d.currentIncentive || '—'}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
+
+function renderPaymentComplete(deals) {
+  const sorted = sortIcfData(deals, state.icfSortBy || 'paymentCompletedDate', state.icfSortDir);
+  const totalPayment = deals.reduce((sum, d) => sum + parseNum(d.paymentAmount), 0);
+  return `
+    <div class="bg-green-500/10 border border-green-500/30 rounded-lg p-4 mb-4">
+      <h3 class="font-semibold text-green-400">✅ Payment Complete</h3>
+      <p class="text-sm text-slate-400 mt-1">Projects with completed payments</p>
+      <div class="mt-3 flex gap-6">
+        <div>
+          <div class="text-2xl font-bold text-green-400">${deals.length}</div>
+          <div class="text-xs text-slate-400">projects paid</div>
+        </div>
+        <div>
+          <div class="text-2xl font-bold text-green-400">${fmtCurrency(totalPayment)}</div>
+          <div class="text-xs text-slate-400">total paid</div>
+        </div>
+      </div>
+    </div>
+    <div class="bg-slate-800/50 rounded-lg border border-slate-700/50 overflow-hidden">
+      <div class="table-container overflow-x-auto" style="max-height: 600px;">
+        <table class="w-full text-sm">
+          <thead class="sticky-header"><tr>
+            ${icfSortHeader('Customer', 'customer')}
+            ${icfSortHeader('Utility', 'utility')}
+            ${icfSortHeader('Install Date', 'installDate')}
+            ${icfSortHeader('Payment Completed Date', 'paymentCompletedDate')}
+            ${icfSortHeader('Payment Amount', 'paymentAmount')}
+          </tr></thead>
+          <tbody class="divide-y divide-slate-700/30">
+            ${sorted.length === 0 ? '<tr><td colspan="5" class="px-3 py-8 text-center text-slate-500">No projects in this category</td></tr>' : sorted.map(d => `
+              <tr class="hover:bg-slate-800/50">
+                <td class="px-3 py-2">${customerCell(d)}${d.applicationCode ? '<br><span class="text-xs text-slate-500 mono">'+d.applicationCode+'</span>' : ''}</td>
+                <td class="px-3 py-2"><span class="px-1.5 py-0.5 rounded text-xs border ${getUtilityStyle(getUtility(d))}">${getUtility(d) || '—'}</span></td>
+                <td class="px-3 py-2 text-xs mono">${d.installDate || '—'}</td>
+                <td class="px-3 py-2 text-xs mono text-green-400">${d.paymentCompletedDate || '—'}</td>
+                <td class="px-3 py-2 text-right font-bold text-green-400">${d.paymentAmount ? fmtCurrency(parseNum(d.paymentAmount)) : '—'}</td>
               </tr>
             `).join('')}
           </tbody>
