@@ -107,6 +107,7 @@ let MATCH_STATS = { byEmail: 0, byAddress: 0, byManual: 0, noMatch: 0, excluded:
 let state = { 
   tab: 'installed', 
   statsSubTab: 'activity',
+  icfSubTab: 'ptoNoIcf',
   search: '', 
   filters: { permitStatus: [], inspectionStatus: [], ptoStatus: [], sgipStage: [], sgipStatus: [], sgipProgress: [], installer: [], installMonth: [], utility: [] },
   sortBy: 'daysSinceInstall', 
@@ -312,7 +313,7 @@ function mergeData() {
     if (CORRECTIONS.manualMatches[email]) { sgip = sgipByCode[CORRECTIONS.manualMatches[email]]; if (sgip) matchType = 'manual'; }
     if (!sgip && !isNotInPortal) { sgip = sgipByEmail[email]; if (sgip) matchType = 'email'; }
     if (!sgip && !isNotInPortal && hubspotAddr) { sgip = sgipByAddress[hubspotAddr]; if (sgip) matchType = 'address'; }
-    const record = { ...h, applicationCode: sgip?.applicationCode || '', sgipStage: sgip?.sgipStage || '', sgipStatus: sgip?.sgipStatus || '', currentIncentive: sgip?.currentIncentive || '', finalIncentive: sgip?.finalIncentive || '', nextDueDate: sgip?.nextDueDate || '', siteAddress: sgip?.siteAddress || '', utility: sgip?.utility || '', sgipProgress: sgip?.fullyQualifiedState || '', budgetCategory: sgip?.budgetCategory || '', matchType, notInPortal: isNotInPortal };
+    const record = { ...h, applicationCode: sgip?.applicationCode || '', sgipStage: sgip?.sgipStage || '', sgipStatus: sgip?.sgipStatus || '', currentIncentive: sgip?.currentIncentive || '', finalIncentive: sgip?.finalIncentive || '', nextDueDate: sgip?.nextDueDate || '', siteAddress: sgip?.siteAddress || '', utility: sgip?.utility || '', sgipProgress: sgip?.fullyQualifiedState || '', budgetCategory: sgip?.budgetCategory || '', icfSubmittedDate: sgip?.icfSubmittedDate || '', icfResubmittedDate: sgip?.icfResubmittedDate || '', icfPendingPaymentDate: sgip?.icfPendingPaymentDate || '', paymentDate: sgip?.paymentDate || '', matchType, notInPortal: isNotInPortal };
     if (sgip?.applicationCode) { matched.push(record); if (matchType === 'email') MATCH_STATS.byEmail++; else if (matchType === 'address') MATCH_STATS.byAddress++; else if (matchType === 'manual') MATCH_STATS.byManual++; }
     else { hubspotWithoutSgip.push(record); MATCH_STATS.noMatch++; }
   });
@@ -667,6 +668,7 @@ const getDaysColor = d => d === null ? 'text-slate-600' : d > 90 ? 'text-red-400
 
 function setTab(t) { state.tab = t; state.search = ''; render(); }
 function setStatsSubTab(t) { state.statsSubTab = t; render(); }
+function setIcfSubTab(t) { state.icfSubTab = t; render(); }
 function updateSearch(v) { state.search = v; if (searchTimeout) clearTimeout(searchTimeout); searchTimeout = setTimeout(() => render(), 150); }
 function setSort(col) { if (state.sortBy === col) state.sortDir = state.sortDir === 'asc' ? 'desc' : 'asc'; else { state.sortBy = col; state.sortDir = 'desc'; } closeAllDropdowns(); render(); }
 
@@ -829,8 +831,9 @@ function render() {
       <div class="flex gap-2 mb-4 flex-wrap">
         <button onclick="setTab('installed')" class="px-4 py-2 rounded-lg text-sm font-medium ${state.tab === 'installed' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40' : 'bg-slate-800/50 text-slate-400 border border-slate-700/50'}">Installed (${allInstalled.length})</button>
         <button onclick="setTab('stats')" class="px-4 py-2 rounded-lg text-sm font-medium ${state.tab === 'stats' ? 'bg-blue-500/20 text-blue-400 border border-blue-500/40' : 'bg-slate-800/50 text-slate-400 border border-slate-700/50'}">📊 Stats & Reports</button>
+        <button onclick="setTab('icfDeepDive')" class="px-4 py-2 rounded-lg text-sm font-medium ${state.tab === 'icfDeepDive' ? 'bg-purple-500/20 text-purple-400 border border-purple-500/40' : 'bg-slate-800/50 text-slate-400 border border-slate-700/50'}">🔍 ICF Deep Dive</button>
       </div>
-      ${state.tab === 'installed' ? renderInstalledTab(stats, filtered, activeStages, stageCounts, permitOpts, inspectOpts, ptoOpts, sgipStageOpts, sgipStatusOpts, icfOpts, installerOpts, utilityOpts) : renderStatsTab()}
+      ${state.tab === 'installed' ? renderInstalledTab(stats, filtered, activeStages, stageCounts, permitOpts, inspectOpts, ptoOpts, sgipStageOpts, sgipStatusOpts, icfOpts, installerOpts, utilityOpts) : state.tab === 'icfDeepDive' ? renderIcfDeepDiveTab() : renderStatsTab()}
     </div>
   `;
 }
@@ -1296,6 +1299,327 @@ function renderActionItems() {
       </div>
     </div>
     ` : ''}
+  `;
+}
+
+// ICF Deep Dive Functions
+function getIcfDeepDiveData() {
+  const allDeals = getAllInstalled();
+  const now = new Date();
+  
+  // Helper to check if has PTO
+  const hasPto = (d) => d.ptoDate && d.ptoDate !== '(No value)' && d.ptoDate !== 'None';
+  
+  // Helper to get status from fullyQualifiedState/sgipProgress
+  const getStatus = (d) => (d.sgipProgress || '').toLowerCase();
+  
+  // 1. PTO'd but ICF not yet submitted (still in RRF statuses or ICF Draft)
+  const ptoNoIcf = allDeals.filter(d => {
+    if (!hasPto(d)) return false;
+    const status = getStatus(d);
+    return status.includes('rrf') || status === 'icf: draft' || status.includes('icf draft');
+  });
+  
+  // 2. Revisions required (ICF Suspended or ICF Inspection Suspended)
+  const revisions = allDeals.filter(d => {
+    const status = getStatus(d);
+    return status.includes('icf suspended') || status.includes('icf: suspended') || 
+           status.includes('inspection suspended');
+  }).map(d => {
+    const status = getStatus(d);
+    const suspendedType = status.includes('inspection suspended') ? 'ICF Inspection Suspended' : 'ICF Suspended';
+    return { ...d, suspendedType };
+  });
+  
+  // 3. ICF Submitted (ICF Submitted or ICF Resubmitted status)
+  const icfSubmitted = allDeals.filter(d => {
+    const status = getStatus(d);
+    return status === 'icf: submitted' || status === 'icf submitted' || 
+           status === 'icf: resubmitted' || status === 'icf resubmitted';
+  }).map(d => {
+    const submittedDate = d.icfSubmittedDate ? parseDate(d.icfSubmittedDate) : null;
+    const resubmittedDate = d.icfResubmittedDate ? parseDate(d.icfResubmittedDate) : null;
+    const daysSinceSubmitted = submittedDate ? Math.floor((now - submittedDate) / (1000 * 60 * 60 * 24)) : null;
+    const daysSinceResubmitted = resubmittedDate ? Math.floor((now - resubmittedDate) / (1000 * 60 * 60 * 24)) : null;
+    return { ...d, daysSinceSubmitted, daysSinceResubmitted };
+  });
+  
+  // 4. ICF Review (ICF Review or ICF Technical Review)
+  const icfReview = allDeals.filter(d => {
+    const status = getStatus(d);
+    return status === 'icf: review' || status === 'icf review' || 
+           status === 'icf: technical review' || status === 'icf technical review';
+  });
+  
+  // 5. ICF Inspection
+  const icfInspection = allDeals.filter(d => {
+    const status = getStatus(d);
+    return (status === 'icf: inspection' || status === 'icf inspection') && 
+           !status.includes('suspended');
+  });
+  
+  // 6. Pending Payment (ICF Pending Payment)
+  const pendingPayment = allDeals.filter(d => {
+    const status = getStatus(d);
+    return status === 'icf: pending payment' || status === 'icf pending payment';
+  });
+  
+  return { ptoNoIcf, revisions, icfSubmitted, icfReview, icfInspection, pendingPayment };
+}
+
+function renderIcfDeepDiveTab() {
+  const data = getIcfDeepDiveData();
+  const tabs = [
+    { key: 'ptoNoIcf', label: 'PTO\'d, No ICF', count: data.ptoNoIcf.length, color: 'amber' },
+    { key: 'revisions', label: 'Revisions Required', count: data.revisions.length, color: 'red' },
+    { key: 'icfSubmitted', label: 'ICF Submitted', count: data.icfSubmitted.length, color: 'blue' },
+    { key: 'icfReview', label: 'ICF Review', count: data.icfReview.length, color: 'purple' },
+    { key: 'icfInspection', label: 'ICF Inspection', count: data.icfInspection.length, color: 'cyan' },
+    { key: 'pendingPayment', label: 'Pending Payment', count: data.pendingPayment.length, color: 'emerald' }
+  ];
+  
+  return `
+    <div class="flex gap-2 mb-4 flex-wrap">
+      ${tabs.map(t => `
+        <button onclick="setIcfSubTab('${t.key}')" class="subtab px-3 py-1.5 rounded-lg text-sm font-medium border ${state.icfSubTab === t.key ? `active border-${t.color}-500/40 text-${t.color}-400` : 'border-slate-700/50 text-slate-400'}">
+          ${t.label} <span class="ml-1 px-1.5 py-0.5 rounded text-xs ${state.icfSubTab === t.key ? `bg-${t.color}-500/20` : 'bg-slate-700'}">${t.count}</span>
+        </button>
+      `).join('')}
+    </div>
+    ${state.icfSubTab === 'ptoNoIcf' ? renderPtoNoIcf(data.ptoNoIcf) : 
+      state.icfSubTab === 'revisions' ? renderRevisions(data.revisions) :
+      state.icfSubTab === 'icfSubmitted' ? renderIcfSubmittedDeep(data.icfSubmitted) :
+      state.icfSubTab === 'icfReview' ? renderIcfReview(data.icfReview) :
+      state.icfSubTab === 'icfInspection' ? renderIcfInspection(data.icfInspection) :
+      renderPendingPayment(data.pendingPayment)}
+  `;
+}
+
+function renderPtoNoIcf(deals) {
+  return `
+    <div class="bg-amber-500/10 border border-amber-500/30 rounded-lg p-4 mb-4">
+      <h3 class="font-semibold text-amber-400">📋 PTO'd but ICF Not Yet Submitted</h3>
+      <p class="text-sm text-slate-400 mt-1">Projects with PTO completed but still in RRF stages or ICF Draft status</p>
+      <div class="mt-3 flex gap-4">
+        <div class="text-2xl font-bold text-amber-400">${deals.length}</div>
+        <div class="text-sm text-slate-400 self-center">projects awaiting ICF submission</div>
+      </div>
+    </div>
+    <div class="bg-slate-800/50 rounded-lg border border-slate-700/50 overflow-hidden">
+      <div class="table-container overflow-x-auto" style="max-height: 600px;">
+        <table class="w-full text-sm">
+          <thead class="sticky-header"><tr>
+            <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Customer</th>
+            <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Utility</th>
+            <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Install Date</th>
+            <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">PTO Date</th>
+            <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Current Status</th>
+          </tr></thead>
+          <tbody class="divide-y divide-slate-700/30">
+            ${deals.length === 0 ? '<tr><td colspan="5" class="px-3 py-8 text-center text-slate-500">No projects in this category</td></tr>' : deals.map(d => `
+              <tr class="hover:bg-slate-800/50">
+                <td class="px-3 py-2">${customerCell(d)}${d.applicationCode ? '<br><span class="text-xs text-slate-500 mono">'+d.applicationCode+'</span>' : ''}</td>
+                <td class="px-3 py-2"><span class="px-1.5 py-0.5 rounded text-xs border ${getUtilityStyle(getUtility(d))}">${getUtility(d) || '—'}</span></td>
+                <td class="px-3 py-2 text-xs mono">${d.installDate || '—'}</td>
+                <td class="px-3 py-2 text-xs mono text-green-400">${d.ptoDate || '—'}</td>
+                <td class="px-3 py-2"><span class="px-1.5 py-0.5 rounded text-xs bg-amber-900/50 text-amber-400 border border-amber-800">${d.sgipProgress || '—'}</span></td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
+
+function renderRevisions(deals) {
+  return `
+    <div class="bg-red-500/10 border border-red-500/30 rounded-lg p-4 mb-4">
+      <h3 class="font-semibold text-red-400">⚠️ Revisions Required</h3>
+      <p class="text-sm text-slate-400 mt-1">Projects in ICF Suspended or ICF Inspection Suspended status</p>
+      <div class="mt-3 flex gap-4">
+        <div class="text-2xl font-bold text-red-400">${deals.length}</div>
+        <div class="text-sm text-slate-400 self-center">projects needing revisions</div>
+      </div>
+    </div>
+    <div class="bg-slate-800/50 rounded-lg border border-slate-700/50 overflow-hidden">
+      <div class="table-container overflow-x-auto" style="max-height: 600px;">
+        <table class="w-full text-sm">
+          <thead class="sticky-header"><tr>
+            <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Customer</th>
+            <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Utility</th>
+            <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Install Date</th>
+            <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Suspended Type</th>
+            <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Status</th>
+          </tr></thead>
+          <tbody class="divide-y divide-slate-700/30">
+            ${deals.length === 0 ? '<tr><td colspan="5" class="px-3 py-8 text-center text-slate-500">No projects in this category</td></tr>' : deals.map(d => `
+              <tr class="hover:bg-slate-800/50">
+                <td class="px-3 py-2">${customerCell(d)}${d.applicationCode ? '<br><span class="text-xs text-slate-500 mono">'+d.applicationCode+'</span>' : ''}</td>
+                <td class="px-3 py-2"><span class="px-1.5 py-0.5 rounded text-xs border ${getUtilityStyle(getUtility(d))}">${getUtility(d) || '—'}</span></td>
+                <td class="px-3 py-2 text-xs mono">${d.installDate || '—'}</td>
+                <td class="px-3 py-2"><span class="px-1.5 py-0.5 rounded text-xs ${d.suspendedType.includes('Inspection') ? 'bg-orange-900/50 text-orange-400 border border-orange-800' : 'bg-red-900/50 text-red-400 border border-red-800'}">${d.suspendedType}</span></td>
+                <td class="px-3 py-2 text-xs text-slate-400">${d.sgipProgress || '—'}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
+
+function renderIcfSubmittedDeep(deals) {
+  return `
+    <div class="bg-blue-500/10 border border-blue-500/30 rounded-lg p-4 mb-4">
+      <h3 class="font-semibold text-blue-400">📤 ICF Submitted</h3>
+      <p class="text-sm text-slate-400 mt-1">Projects with ICF Submitted or ICF Resubmitted status</p>
+      <div class="mt-3 flex gap-4">
+        <div class="text-2xl font-bold text-blue-400">${deals.length}</div>
+        <div class="text-sm text-slate-400 self-center">projects with ICF submitted</div>
+      </div>
+    </div>
+    <div class="bg-slate-800/50 rounded-lg border border-slate-700/50 overflow-hidden">
+      <div class="table-container overflow-x-auto" style="max-height: 600px;">
+        <table class="w-full text-sm">
+          <thead class="sticky-header"><tr>
+            <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Customer</th>
+            <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Utility</th>
+            <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Install Date</th>
+            <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">ICF Submitted</th>
+            <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Days</th>
+            <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Resubmitted</th>
+            <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Days</th>
+          </tr></thead>
+          <tbody class="divide-y divide-slate-700/30">
+            ${deals.length === 0 ? '<tr><td colspan="7" class="px-3 py-8 text-center text-slate-500">No projects in this category</td></tr>' : deals.map(d => `
+              <tr class="hover:bg-slate-800/50">
+                <td class="px-3 py-2">${customerCell(d)}${d.applicationCode ? '<br><span class="text-xs text-slate-500 mono">'+d.applicationCode+'</span>' : ''}</td>
+                <td class="px-3 py-2"><span class="px-1.5 py-0.5 rounded text-xs border ${getUtilityStyle(getUtility(d))}">${getUtility(d) || '—'}</span></td>
+                <td class="px-3 py-2 text-xs mono">${d.installDate || '—'}</td>
+                <td class="px-3 py-2 text-xs mono">${d.icfSubmittedDate || '—'}</td>
+                <td class="px-3 py-2 text-xs font-bold ${d.daysSinceSubmitted > 30 ? 'text-amber-400' : 'text-slate-300'}">${d.daysSinceSubmitted !== null ? d.daysSinceSubmitted + 'd' : '—'}</td>
+                <td class="px-3 py-2 text-xs mono">${d.icfResubmittedDate || '—'}</td>
+                <td class="px-3 py-2 text-xs font-bold ${d.daysSinceResubmitted > 30 ? 'text-amber-400' : 'text-slate-300'}">${d.daysSinceResubmitted !== null ? d.daysSinceResubmitted + 'd' : '—'}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
+
+function renderIcfReview(deals) {
+  return `
+    <div class="bg-purple-500/10 border border-purple-500/30 rounded-lg p-4 mb-4">
+      <h3 class="font-semibold text-purple-400">🔍 ICF Review</h3>
+      <p class="text-sm text-slate-400 mt-1">Projects in ICF Review or ICF Technical Review status</p>
+      <div class="mt-3 flex gap-4">
+        <div class="text-2xl font-bold text-purple-400">${deals.length}</div>
+        <div class="text-sm text-slate-400 self-center">projects under review</div>
+      </div>
+    </div>
+    <div class="bg-slate-800/50 rounded-lg border border-slate-700/50 overflow-hidden">
+      <div class="table-container overflow-x-auto" style="max-height: 600px;">
+        <table class="w-full text-sm">
+          <thead class="sticky-header"><tr>
+            <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Customer</th>
+            <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Utility</th>
+            <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Install Date</th>
+            <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Review Type</th>
+            <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">ICF Submitted</th>
+          </tr></thead>
+          <tbody class="divide-y divide-slate-700/30">
+            ${deals.length === 0 ? '<tr><td colspan="5" class="px-3 py-8 text-center text-slate-500">No projects in this category</td></tr>' : deals.map(d => `
+              <tr class="hover:bg-slate-800/50">
+                <td class="px-3 py-2">${customerCell(d)}${d.applicationCode ? '<br><span class="text-xs text-slate-500 mono">'+d.applicationCode+'</span>' : ''}</td>
+                <td class="px-3 py-2"><span class="px-1.5 py-0.5 rounded text-xs border ${getUtilityStyle(getUtility(d))}">${getUtility(d) || '—'}</span></td>
+                <td class="px-3 py-2 text-xs mono">${d.installDate || '—'}</td>
+                <td class="px-3 py-2"><span class="px-1.5 py-0.5 rounded text-xs ${(d.sgipProgress || '').toLowerCase().includes('technical') ? 'bg-violet-900/50 text-violet-400 border border-violet-800' : 'bg-purple-900/50 text-purple-400 border border-purple-800'}">${(d.sgipProgress || '').toLowerCase().includes('technical') ? 'Technical Review' : 'Review'}</span></td>
+                <td class="px-3 py-2 text-xs mono">${d.icfSubmittedDate || '—'}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
+
+function renderIcfInspection(deals) {
+  return `
+    <div class="bg-cyan-500/10 border border-cyan-500/30 rounded-lg p-4 mb-4">
+      <h3 class="font-semibold text-cyan-400">🔎 ICF Inspection</h3>
+      <p class="text-sm text-slate-400 mt-1">Projects in ICF Inspection status</p>
+      <div class="mt-3 flex gap-4">
+        <div class="text-2xl font-bold text-cyan-400">${deals.length}</div>
+        <div class="text-sm text-slate-400 self-center">projects awaiting inspection</div>
+      </div>
+    </div>
+    <div class="bg-slate-800/50 rounded-lg border border-slate-700/50 overflow-hidden">
+      <div class="table-container overflow-x-auto" style="max-height: 600px;">
+        <table class="w-full text-sm">
+          <thead class="sticky-header"><tr>
+            <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Customer</th>
+            <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Utility</th>
+            <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Install Date</th>
+            <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">ICF Submitted</th>
+            <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Status</th>
+          </tr></thead>
+          <tbody class="divide-y divide-slate-700/30">
+            ${deals.length === 0 ? '<tr><td colspan="5" class="px-3 py-8 text-center text-slate-500">No projects in this category</td></tr>' : deals.map(d => `
+              <tr class="hover:bg-slate-800/50">
+                <td class="px-3 py-2">${customerCell(d)}${d.applicationCode ? '<br><span class="text-xs text-slate-500 mono">'+d.applicationCode+'</span>' : ''}</td>
+                <td class="px-3 py-2"><span class="px-1.5 py-0.5 rounded text-xs border ${getUtilityStyle(getUtility(d))}">${getUtility(d) || '—'}</span></td>
+                <td class="px-3 py-2 text-xs mono">${d.installDate || '—'}</td>
+                <td class="px-3 py-2 text-xs mono">${d.icfSubmittedDate || '—'}</td>
+                <td class="px-3 py-2"><span class="px-1.5 py-0.5 rounded text-xs bg-cyan-900/50 text-cyan-400 border border-cyan-800">ICF Inspection</span></td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
+
+function renderPendingPayment(deals) {
+  return `
+    <div class="bg-emerald-500/10 border border-emerald-500/30 rounded-lg p-4 mb-4">
+      <h3 class="font-semibold text-emerald-400">💰 Pending Payment</h3>
+      <p class="text-sm text-slate-400 mt-1">Projects in ICF Pending Payment status</p>
+      <div class="mt-3 flex gap-4">
+        <div class="text-2xl font-bold text-emerald-400">${deals.length}</div>
+        <div class="text-sm text-slate-400 self-center">projects awaiting payment</div>
+      </div>
+    </div>
+    <div class="bg-slate-800/50 rounded-lg border border-slate-700/50 overflow-hidden">
+      <div class="table-container overflow-x-auto" style="max-height: 600px;">
+        <table class="w-full text-sm">
+          <thead class="sticky-header"><tr>
+            <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Customer</th>
+            <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Utility</th>
+            <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Install Date</th>
+            <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">ICF Approved Date</th>
+            <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Payment Date</th>
+            <th class="px-3 py-2 text-right text-xs font-semibold text-slate-400 uppercase">Incentive</th>
+          </tr></thead>
+          <tbody class="divide-y divide-slate-700/30">
+            ${deals.length === 0 ? '<tr><td colspan="6" class="px-3 py-8 text-center text-slate-500">No projects in this category</td></tr>' : deals.map(d => `
+              <tr class="hover:bg-slate-800/50">
+                <td class="px-3 py-2">${customerCell(d)}${d.applicationCode ? '<br><span class="text-xs text-slate-500 mono">'+d.applicationCode+'</span>' : ''}</td>
+                <td class="px-3 py-2"><span class="px-1.5 py-0.5 rounded text-xs border ${getUtilityStyle(getUtility(d))}">${getUtility(d) || '—'}</span></td>
+                <td class="px-3 py-2 text-xs mono">${d.installDate || '—'}</td>
+                <td class="px-3 py-2 text-xs mono">${d.icfPendingPaymentDate || '—'}</td>
+                <td class="px-3 py-2 text-xs mono text-emerald-400">${d.paymentDate || '—'}</td>
+                <td class="px-3 py-2 text-right font-bold text-emerald-400">${d.finalIncentive || d.currentIncentive || '—'}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
   `;
 }
 
