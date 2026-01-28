@@ -1543,14 +1543,9 @@ function renderIcfSummary(data) {
   
   return `
     <div class="bg-slate-500/10 border border-slate-500/30 rounded-lg p-4 mb-4">
-      <div class="flex justify-between items-start">
-        <div>
-          <h3 class="font-semibold text-slate-200">📊 ICF Pipeline Summary</h3>
-          <p class="text-sm text-slate-400 mt-1">Current snapshot of all ICF pipeline stages</p>
-        </div>
-        <button onclick="saveIcfSnapshot(getIcfDeepDiveData())" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-lg text-sm font-medium ${hasToday ? 'opacity-50' : ''}">
-          ${hasToday ? '✓ Saved Today' : '💾 Save Today\'s Snapshot'}
-        </button>
+      <div>
+        <h3 class="font-semibold text-slate-200">📊 ICF Pipeline Summary</h3>
+        <p class="text-sm text-slate-400 mt-1">Current snapshot of all ICF pipeline stages • Auto-saved daily at 11:59 PM PST</p>
       </div>
     </div>
     
@@ -1572,7 +1567,7 @@ function renderIcfSummary(data) {
     <div class="bg-slate-800/50 rounded-lg border border-slate-700/50 overflow-hidden">
       <div class="px-4 py-3 border-b border-slate-700/50">
         <h4 class="font-semibold text-slate-300">📅 Daily Snapshots</h4>
-        <p class="text-xs text-slate-500 mt-1">Historical tracking at 11:59 AM PST daily</p>
+        <p class="text-xs text-slate-500 mt-1">Historical tracking at 11:59 PM PST daily</p>
       </div>
       <div class="overflow-x-auto">
         <table class="w-full text-sm">
