@@ -1542,15 +1542,20 @@ function formatSnapshotDate(dateStr) {
 function renderIcfSummary(data) {
   const total = data.ptoNoIcf.length + data.revisions.length + data.icfSubmitted.length + data.icfReview.length + data.icfInspection.length + data.pendingPayment.length;
   
+  const calcIncentive = (deals) => deals.reduce((sum, d) => sum + parseNum(d.currentIncentive || d.finalIncentive), 0);
+  const calcPayment = (deals) => deals.reduce((sum, d) => sum + parseNum(d.paymentAmount), 0);
+  
   const categories = [
-    { label: "PTO'd, No ICF", count: data.ptoNoIcf.length, color: 'amber', key: 'ptoNoIcf' },
-    { label: 'Revisions Required', count: data.revisions.length, color: 'red', key: 'revisions' },
-    { label: 'ICF Submitted', count: data.icfSubmitted.length, color: 'blue', key: 'icfSubmitted' },
-    { label: 'ICF Review', count: data.icfReview.length, color: 'purple', key: 'icfReview' },
-    { label: 'ICF Inspection', count: data.icfInspection.length, color: 'cyan', key: 'icfInspection' },
-    { label: 'Pending Payment', count: data.pendingPayment.length, color: 'emerald', key: 'pendingPayment' },
-    { label: 'Payment Complete', count: data.paymentComplete.length, color: 'green', key: 'paymentComplete' }
+    { label: "PTO'd, No ICF", count: data.ptoNoIcf.length, amount: calcIncentive(data.ptoNoIcf), color: 'amber', key: 'ptoNoIcf' },
+    { label: 'Revisions Required', count: data.revisions.length, amount: calcIncentive(data.revisions), color: 'red', key: 'revisions' },
+    { label: 'ICF Submitted', count: data.icfSubmitted.length, amount: calcIncentive(data.icfSubmitted), color: 'blue', key: 'icfSubmitted' },
+    { label: 'ICF Review', count: data.icfReview.length, amount: calcIncentive(data.icfReview), color: 'purple', key: 'icfReview' },
+    { label: 'ICF Inspection', count: data.icfInspection.length, amount: calcIncentive(data.icfInspection), color: 'cyan', key: 'icfInspection' },
+    { label: 'Pending Payment', count: data.pendingPayment.length, amount: calcIncentive(data.pendingPayment), color: 'emerald', key: 'pendingPayment' },
+    { label: 'Payment Complete', count: data.paymentComplete.length, amount: calcPayment(data.paymentComplete), color: 'green', key: 'paymentComplete' }
   ];
+  
+  const totalIncentive = categories.reduce((sum, c) => sum + c.amount, 0);
   
   // Check if we have today's snapshot
   const today = new Date().toISOString().split('T')[0];
@@ -1570,11 +1575,13 @@ function renderIcfSummary(data) {
         <div class="bg-slate-800/50 rounded-lg p-4 border border-slate-700/50 cursor-pointer hover:border-${c.color}-500/50 transition-all" onclick="setIcfSubTab('${c.key}')">
           <p class="text-slate-400 text-xs uppercase mb-1">${c.label}</p>
           <p class="text-2xl font-bold text-${c.color}-400">${c.count}</p>
+          <p class="text-xs text-${c.color}-400/70 mt-1">${fmtCurrency(c.amount)}</p>
         </div>
       `).join('')}
       <div class="bg-slate-700/50 rounded-lg p-4 border border-slate-500/50">
         <p class="text-slate-400 text-xs uppercase mb-1">Total Pipeline</p>
         <p class="text-2xl font-bold text-white">${total}</p>
+        <p class="text-xs text-slate-300/70 mt-1">${fmtCurrency(totalIncentive)}</p>
       </div>
     </div>
     
@@ -1630,13 +1637,20 @@ function renderIcfSummary(data) {
 
 function renderPtoNoIcf(deals) {
   const sorted = sortIcfData(deals, state.icfSortBy || 'daysSincePto', state.icfSortDir);
+  const totalIncentive = deals.reduce((sum, d) => sum + parseNum(d.currentIncentive || d.finalIncentive), 0);
   return `
     <div class="bg-amber-500/10 border border-amber-500/30 rounded-lg p-4 mb-4">
       <h3 class="font-semibold text-amber-400">📋 PTO'd but ICF Not Yet Submitted</h3>
       <p class="text-sm text-slate-400 mt-1">Projects with PTO completed but still in RRF stages or ICF Draft status</p>
-      <div class="mt-3 flex gap-4">
-        <div class="text-2xl font-bold text-amber-400">${deals.length}</div>
-        <div class="text-sm text-slate-400 self-center">projects awaiting ICF submission</div>
+      <div class="mt-3 flex gap-6">
+        <div>
+          <div class="text-2xl font-bold text-amber-400">${deals.length}</div>
+          <div class="text-xs text-slate-400">projects awaiting ICF submission</div>
+        </div>
+        <div>
+          <div class="text-2xl font-bold text-amber-400">${fmtCurrency(totalIncentive)}</div>
+          <div class="text-xs text-slate-400">total incentive</div>
+        </div>
       </div>
     </div>
     <div class="bg-slate-800/50 rounded-lg border border-slate-700/50 overflow-hidden">
@@ -1670,13 +1684,20 @@ function renderPtoNoIcf(deals) {
 
 function renderRevisions(deals) {
   const sorted = sortIcfData(deals, state.icfSortBy || 'daysSinceSuspended', state.icfSortDir);
+  const totalIncentive = deals.reduce((sum, d) => sum + parseNum(d.currentIncentive || d.finalIncentive), 0);
   return `
     <div class="bg-red-500/10 border border-red-500/30 rounded-lg p-4 mb-4">
       <h3 class="font-semibold text-red-400">⚠️ Revisions Required</h3>
       <p class="text-sm text-slate-400 mt-1">Projects in ICF Suspended or ICF Inspection Suspended status</p>
-      <div class="mt-3 flex gap-4">
-        <div class="text-2xl font-bold text-red-400">${deals.length}</div>
-        <div class="text-sm text-slate-400 self-center">projects needing revisions</div>
+      <div class="mt-3 flex gap-6">
+        <div>
+          <div class="text-2xl font-bold text-red-400">${deals.length}</div>
+          <div class="text-xs text-slate-400">projects needing revisions</div>
+        </div>
+        <div>
+          <div class="text-2xl font-bold text-red-400">${fmtCurrency(totalIncentive)}</div>
+          <div class="text-xs text-slate-400">total incentive</div>
+        </div>
       </div>
     </div>
     <div class="bg-slate-800/50 rounded-lg border border-slate-700/50 overflow-hidden">
@@ -1710,13 +1731,20 @@ function renderRevisions(deals) {
 
 function renderIcfSubmittedDeep(deals) {
   const sorted = sortIcfData(deals, state.icfSortBy || 'daysPending', state.icfSortDir);
+  const totalIncentive = deals.reduce((sum, d) => sum + parseNum(d.currentIncentive || d.finalIncentive), 0);
   return `
     <div class="bg-blue-500/10 border border-blue-500/30 rounded-lg p-4 mb-4">
       <h3 class="font-semibold text-blue-400">📤 ICF Submitted</h3>
       <p class="text-sm text-slate-400 mt-1">Projects with ICF Submitted or ICF Resubmitted status</p>
-      <div class="mt-3 flex gap-4">
-        <div class="text-2xl font-bold text-blue-400">${deals.length}</div>
-        <div class="text-sm text-slate-400 self-center">projects with ICF submitted</div>
+      <div class="mt-3 flex gap-6">
+        <div>
+          <div class="text-2xl font-bold text-blue-400">${deals.length}</div>
+          <div class="text-xs text-slate-400">projects with ICF submitted</div>
+        </div>
+        <div>
+          <div class="text-2xl font-bold text-blue-400">${fmtCurrency(totalIncentive)}</div>
+          <div class="text-xs text-slate-400">total incentive</div>
+        </div>
       </div>
     </div>
     <div class="bg-slate-800/50 rounded-lg border border-slate-700/50 overflow-hidden">
@@ -1750,13 +1778,20 @@ function renderIcfSubmittedDeep(deals) {
 
 function renderIcfReview(deals) {
   const sorted = sortIcfData(deals, state.icfSortBy || 'daysSinceSubmitted', state.icfSortDir);
+  const totalIncentive = deals.reduce((sum, d) => sum + parseNum(d.currentIncentive || d.finalIncentive), 0);
   return `
     <div class="bg-purple-500/10 border border-purple-500/30 rounded-lg p-4 mb-4">
       <h3 class="font-semibold text-purple-400">🔍 ICF Review</h3>
       <p class="text-sm text-slate-400 mt-1">Projects in ICF Review or ICF Technical Review status</p>
-      <div class="mt-3 flex gap-4">
-        <div class="text-2xl font-bold text-purple-400">${deals.length}</div>
-        <div class="text-sm text-slate-400 self-center">projects under review</div>
+      <div class="mt-3 flex gap-6">
+        <div>
+          <div class="text-2xl font-bold text-purple-400">${deals.length}</div>
+          <div class="text-xs text-slate-400">projects under review</div>
+        </div>
+        <div>
+          <div class="text-2xl font-bold text-purple-400">${fmtCurrency(totalIncentive)}</div>
+          <div class="text-xs text-slate-400">total incentive</div>
+        </div>
       </div>
     </div>
     <div class="bg-slate-800/50 rounded-lg border border-slate-700/50 overflow-hidden">
@@ -1790,13 +1825,20 @@ function renderIcfReview(deals) {
 
 function renderIcfInspection(deals) {
   const sorted = sortIcfData(deals, state.icfSortBy || 'icfInspectionDate', state.icfSortDir);
+  const totalIncentive = deals.reduce((sum, d) => sum + parseNum(d.currentIncentive || d.finalIncentive), 0);
   return `
     <div class="bg-cyan-500/10 border border-cyan-500/30 rounded-lg p-4 mb-4">
       <h3 class="font-semibold text-cyan-400">🔎 ICF Inspection</h3>
       <p class="text-sm text-slate-400 mt-1">Projects in ICF Inspection status</p>
-      <div class="mt-3 flex gap-4">
-        <div class="text-2xl font-bold text-cyan-400">${deals.length}</div>
-        <div class="text-sm text-slate-400 self-center">projects awaiting inspection</div>
+      <div class="mt-3 flex gap-6">
+        <div>
+          <div class="text-2xl font-bold text-cyan-400">${deals.length}</div>
+          <div class="text-xs text-slate-400">projects awaiting inspection</div>
+        </div>
+        <div>
+          <div class="text-2xl font-bold text-cyan-400">${fmtCurrency(totalIncentive)}</div>
+          <div class="text-xs text-slate-400">total incentive</div>
+        </div>
       </div>
     </div>
     <div class="bg-slate-800/50 rounded-lg border border-slate-700/50 overflow-hidden">
@@ -1828,13 +1870,20 @@ function renderIcfInspection(deals) {
 
 function renderPendingPayment(deals) {
   const sorted = sortIcfData(deals, state.icfSortBy || 'daysSinceApproved', state.icfSortDir);
+  const totalIncentive = deals.reduce((sum, d) => sum + parseNum(d.finalIncentive || d.currentIncentive), 0);
   return `
     <div class="bg-emerald-500/10 border border-emerald-500/30 rounded-lg p-4 mb-4">
       <h3 class="font-semibold text-emerald-400">💰 Pending Payment</h3>
       <p class="text-sm text-slate-400 mt-1">Projects in ICF Pending Payment status</p>
-      <div class="mt-3 flex gap-4">
-        <div class="text-2xl font-bold text-emerald-400">${deals.length}</div>
-        <div class="text-sm text-slate-400 self-center">projects awaiting payment</div>
+      <div class="mt-3 flex gap-6">
+        <div>
+          <div class="text-2xl font-bold text-emerald-400">${deals.length}</div>
+          <div class="text-xs text-slate-400">projects awaiting payment</div>
+        </div>
+        <div>
+          <div class="text-2xl font-bold text-emerald-400">${fmtCurrency(totalIncentive)}</div>
+          <div class="text-xs text-slate-400">total incentive</div>
+        </div>
       </div>
     </div>
     <div class="bg-slate-800/50 rounded-lg border border-slate-700/50 overflow-hidden">
@@ -1891,15 +1940,17 @@ function renderPaymentComplete(deals) {
             ${icfSortHeader('Customer', 'customer')}
             ${icfSortHeader('Utility', 'utility')}
             ${icfSortHeader('Install Date', 'installDate')}
+            ${icfSortHeader('ICF Approved Date', 'icfPendingPaymentDate')}
             ${icfSortHeader('Payment Completed Date', 'paymentCompletedDate')}
             ${icfSortHeader('Payment Amount', 'paymentAmount')}
           </tr></thead>
           <tbody class="divide-y divide-slate-700/30">
-            ${sorted.length === 0 ? '<tr><td colspan="5" class="px-3 py-8 text-center text-slate-500">No projects in this category</td></tr>' : sorted.map(d => `
+            ${sorted.length === 0 ? '<tr><td colspan="6" class="px-3 py-8 text-center text-slate-500">No projects in this category</td></tr>' : sorted.map(d => `
               <tr class="hover:bg-slate-800/50">
                 <td class="px-3 py-2">${customerCell(d)}${d.applicationCode ? '<br><span class="text-xs text-slate-500 mono">'+d.applicationCode+'</span>' : ''}</td>
                 <td class="px-3 py-2"><span class="px-1.5 py-0.5 rounded text-xs border ${getUtilityStyle(getUtility(d))}">${getUtility(d) || '—'}</span></td>
                 <td class="px-3 py-2 text-xs mono">${d.installDate || '—'}</td>
+                <td class="px-3 py-2 text-xs mono">${d.icfPendingPaymentDate || '—'}</td>
                 <td class="px-3 py-2 text-xs mono text-green-400">${d.paymentCompletedDate || '—'}</td>
                 <td class="px-3 py-2 text-right font-bold text-green-400">${d.paymentAmount ? fmtCurrency(parseNum(d.paymentAmount)) : '—'}</td>
               </tr>
