@@ -648,10 +648,13 @@ function getStatusCounts() {
   const inspectionMeterCollar = allDeals.filter(d => d.inspectionStatus === 'Meter Collar Needed' || (d.inspectionStatus && d.inspectionStatus.toLowerCase().includes('meter collar'))).length;
   const inspectionNotComplete = allDeals.filter(d => !d.inspectionStatus || d.inspectionStatus === '(No value)' || d.inspectionStatus === 'Failed' || d.inspectionStatus === 'Pending HO Action').length;
   const ptoComplete = allDeals.filter(d => d.ptoDate && d.ptoDate !== '(No value)' && d.ptoDate !== 'None').length;
+  const ptoPending = allDeals.filter(d => !d.ptoDate || d.ptoDate === '(No value)' || d.ptoDate === 'None');
+  const ptoPendingSubmitted = ptoPending.filter(d => d.ptoSubmittedDate && d.ptoSubmittedDate !== '(No value)' && d.ptoSubmittedDate !== 'None').length;
+  const ptoPendingNotSubmitted = ptoPending.length - ptoPendingSubmitted;
   return {
     permit: { approved: permitApproved, notApproved: allDeals.length - permitApproved },
     inspection: { complete: inspectionComplete, scheduled: inspectionScheduled, meterCollar: inspectionMeterCollar, notComplete: inspectionNotComplete },
-    pto: { complete: ptoComplete, pending: allDeals.length - ptoComplete },
+    pto: { complete: ptoComplete, pendingSubmitted: ptoPendingSubmitted, pendingNotSubmitted: ptoPendingNotSubmitted },
     total: allDeals.length
   };
 }
@@ -1075,8 +1078,12 @@ function renderStatusCounts() {
         <h4 class="font-semibold text-slate-300 mb-4 flex items-center gap-2"><span class="w-3 h-3 rounded-full bg-cyan-500"></span>PTO Status</h4>
         <div class="space-y-3">
           <div class="flex justify-between items-center"><span class="text-slate-400">Complete</span><span class="text-2xl font-bold text-green-400">${sc.pto.complete}</span></div>
-          <div class="flex justify-between items-center"><span class="text-slate-400">Pending</span><span class="text-2xl font-bold text-amber-400">${sc.pto.pending}</span></div>
-          <div class="h-2 bg-slate-900 rounded-full overflow-hidden"><div class="h-full bg-green-500" style="width: ${(sc.pto.complete / sc.total * 100)}%"></div></div>
+          <div class="flex justify-between items-center"><span class="text-slate-400">Submitted</span><span class="text-2xl font-bold text-blue-400">${sc.pto.pendingSubmitted}</span></div>
+          <div class="flex justify-between items-center"><span class="text-slate-400">Not Submitted</span><span class="text-2xl font-bold text-amber-400">${sc.pto.pendingNotSubmitted}</span></div>
+          <div class="h-2 bg-slate-900 rounded-full overflow-hidden flex">
+            <div class="h-full bg-green-500" style="width: ${(sc.pto.complete / sc.total * 100)}%"></div>
+            <div class="h-full bg-blue-500" style="width: ${(sc.pto.pendingSubmitted / sc.total * 100)}%"></div>
+          </div>
         </div>
       </div>
     </div>
