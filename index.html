@@ -681,8 +681,13 @@ function getActionItems() {
   const notPermitted = allDeals.filter(d => d.permitStatus !== 'Approved');
   const meterCollar = allDeals.filter(d => d.inspectionStatus === 'Meter Collar Needed' || (d.inspectionStatus && d.inspectionStatus.toLowerCase().includes('meter collar')));
   const awaitingInspection = allDeals.filter(d => { const status = d.inspectionStatus; return status === 'Failed' || status === 'Scheduled' || status === 'Requested' || status === 'Pending HO Action' || !status || status === '(No value)'; });
-  const isIcfInProgress = (progress) => { const p = (progress || '').toLowerCase(); return p.includes('icf: review') || p.includes('technical review') || p.includes('inspection') || p.includes('pending payment') || (p.includes('payment') && (p.includes('completed') || p.includes('processing'))); };
-  const ptoButNoIcf = allDeals.filter(d => { const hasPto = d.ptoDate && d.ptoDate !== '(No value)' && d.ptoDate !== 'None'; return hasPto && !isIcfInProgress(d.sgipProgress); });
+  // Only show projects that have NOT been submitted for ICF (RRF stages or ICF Draft only)
+  const isNotYetSubmittedForIcf = (progress) => { 
+    const p = (progress || '').toLowerCase(); 
+    // Include if no progress, or in RRF stages, or ICF Draft
+    return !p || p.includes('rrf') || p === 'icf: draft' || p === 'icf draft';
+  };
+  const ptoButNoIcf = allDeals.filter(d => { const hasPto = d.ptoDate && d.ptoDate !== '(No value)' && d.ptoDate !== 'None'; return hasPto && isNotYetSubmittedForIcf(d.sgipProgress); });
   const inspectionPassedNoPto = allDeals.filter(d => { const hasPto = d.ptoDate && d.ptoDate !== '(No value)' && d.ptoDate !== 'None'; return d.inspectionStatus === 'Passed' && !hasPto; });
   return { notPermitted, meterCollar, awaitingInspection, ptoButNoIcf, inspectionPassedNoPto };
 }
