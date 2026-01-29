@@ -1378,29 +1378,35 @@ function getPtoFunnelData() {
   // Helper to check if PTO is submitted
   const hasPtoSubmitted = (d) => d.ptoSubmittedDate && d.ptoSubmittedDate !== '(No value)' && d.ptoSubmittedDate !== 'None';
   
-  // 1. Permit Not Approved
-  const permitNotApproved = allDeals.filter(d => d.permitStatus !== 'Approved')
+  // 1. Permit Pending (Submitted, Resubmitted, Revisions in progress)
+  const permitPendingStatuses = ['Submitted', 'Resubmitted', 'Revisions in progress'];
+  const permitPending = allDeals.filter(d => permitPendingStatuses.includes(d.permitStatus))
     .map(d => ({ ...d, daysSinceInstall: daysSince(d.installDate) }));
   
-  // 2. Inspection Scheduled/Requested
+  // 2. Need to Submit Permit (Rejected, or no status/empty)
+  const needToSubmitPermit = allDeals.filter(d => 
+    d.permitStatus !== 'Approved' && !permitPendingStatuses.includes(d.permitStatus)
+  ).map(d => ({ ...d, daysSinceInstall: daysSince(d.installDate) }));
+  
+  // 3. Inspection Scheduled/Requested
   const inspectionScheduled = allDeals.filter(d => 
     d.inspectionStatus === 'Scheduled' || d.inspectionStatus === 'Requested'
   ).map(d => ({ ...d, daysSinceInstall: daysSince(d.installDate) }));
   
-  // 3. Inspection Not Complete (Failed, Pending HO Action, or no status)
+  // 4. Inspection Not Complete (Failed, Pending HO Action, or no status)
   const inspectionNotComplete = allDeals.filter(d => {
     const status = d.inspectionStatus;
     return d.permitStatus === 'Approved' && 
            (status === 'Failed' || status === 'Pending HO Action' || !status || status === '(No value)');
   }).map(d => ({ ...d, daysSinceInstall: daysSince(d.installDate) }));
   
-  // 4. Meter Collar Needed
+  // 5. Meter Collar Needed
   const meterCollarNeeded = allDeals.filter(d => 
     d.inspectionStatus === 'Meter Collar Needed' || 
     (d.inspectionStatus && d.inspectionStatus.toLowerCase().includes('meter collar'))
   ).map(d => ({ ...d, daysSinceInstall: daysSince(d.installDate) }));
   
-  // 5. PTO Status - Not yet approved, but permit approved AND inspection passed
+  // 6. PTO Status - Not yet approved, but permit approved AND inspection passed
   const ptoNotApproved = allDeals.filter(d => 
     !hasPto(d) && 
     d.permitStatus === 'Approved' && 
@@ -1411,7 +1417,7 @@ function getPtoFunnelData() {
   const ptoNotSubmitted = ptoNotApproved.filter(d => !hasPtoSubmitted(d))
     .map(d => ({ ...d, daysSinceInstall: daysSince(d.installDate) }));
   
-  return { permitNotApproved, inspectionScheduled, inspectionNotComplete, meterCollarNeeded, ptoSubmitted, ptoNotSubmitted };
+  return { permitPending, needToSubmitPermit, inspectionScheduled, inspectionNotComplete, meterCollarNeeded, ptoSubmitted, ptoNotSubmitted };
 }
 
 function sortPtoData(deals, sortBy, sortDir) {
@@ -1440,11 +1446,12 @@ function ptoSortHeader(label, col) {
 
 function renderPtoFunnelTab() {
   const data = getPtoFunnelData();
-  const total = data.permitNotApproved.length + data.inspectionScheduled.length + data.inspectionNotComplete.length + data.meterCollarNeeded.length + data.ptoSubmitted.length + data.ptoNotSubmitted.length;
+  const total = data.permitPending.length + data.needToSubmitPermit.length + data.inspectionScheduled.length + data.inspectionNotComplete.length + data.meterCollarNeeded.length + data.ptoSubmitted.length + data.ptoNotSubmitted.length;
   const tabs = [
     { key: 'summary', label: '📊 Summary', count: total, color: 'slate' },
-    { key: 'permitNotApproved', label: 'Permit Not Approved', count: data.permitNotApproved.length, color: 'red' },
-    { key: 'inspectionScheduled', label: 'Inspection Scheduled', count: data.inspectionScheduled.length, color: 'blue' },
+    { key: 'permitPending', label: 'Permit Pending', count: data.permitPending.length, color: 'blue' },
+    { key: 'needToSubmitPermit', label: 'Need to Submit Permit', count: data.needToSubmitPermit.length, color: 'red' },
+    { key: 'inspectionScheduled', label: 'Inspection Scheduled', count: data.inspectionScheduled.length, color: 'purple' },
     { key: 'inspectionNotComplete', label: 'Inspection Not Complete', count: data.inspectionNotComplete.length, color: 'amber' },
     { key: 'meterCollar', label: 'Meter Collar Needed', count: data.meterCollarNeeded.length, color: 'orange' },
     { key: 'ptoStatus', label: 'PTO Status', count: data.ptoSubmitted.length + data.ptoNotSubmitted.length, color: 'cyan' }
@@ -1459,7 +1466,8 @@ function renderPtoFunnelTab() {
       `).join('')}
     </div>
     ${state.ptoSubTab === 'summary' ? renderPtoFunnelSummary(data) :
-      state.ptoSubTab === 'permitNotApproved' ? renderPermitNotApproved(data.permitNotApproved) : 
+      state.ptoSubTab === 'permitPending' ? renderPermitPending(data.permitPending) :
+      state.ptoSubTab === 'needToSubmitPermit' ? renderNeedToSubmitPermit(data.needToSubmitPermit) : 
       state.ptoSubTab === 'inspectionScheduled' ? renderInspectionScheduled(data.inspectionScheduled) :
       state.ptoSubTab === 'inspectionNotComplete' ? renderInspectionNotComplete(data.inspectionNotComplete) :
       state.ptoSubTab === 'meterCollar' ? renderMeterCollarNeeded(data.meterCollarNeeded) :
@@ -1471,8 +1479,9 @@ function renderPtoFunnelSummary(data) {
   const calcIncentive = (deals) => deals.reduce((sum, d) => sum + parseNum(d.currentIncentive || d.finalIncentive), 0);
   
   const categories = [
-    { label: 'Permit Not Approved', count: data.permitNotApproved.length, amount: calcIncentive(data.permitNotApproved), color: 'red', key: 'permitNotApproved' },
-    { label: 'Inspection Scheduled', count: data.inspectionScheduled.length, amount: calcIncentive(data.inspectionScheduled), color: 'blue', key: 'inspectionScheduled' },
+    { label: 'Permit Pending', count: data.permitPending.length, amount: calcIncentive(data.permitPending), color: 'blue', key: 'permitPending' },
+    { label: 'Need to Submit Permit', count: data.needToSubmitPermit.length, amount: calcIncentive(data.needToSubmitPermit), color: 'red', key: 'needToSubmitPermit' },
+    { label: 'Inspection Scheduled', count: data.inspectionScheduled.length, amount: calcIncentive(data.inspectionScheduled), color: 'purple', key: 'inspectionScheduled' },
     { label: 'Inspection Not Complete', count: data.inspectionNotComplete.length, amount: calcIncentive(data.inspectionNotComplete), color: 'amber', key: 'inspectionNotComplete' },
     { label: 'Meter Collar Needed', count: data.meterCollarNeeded.length, amount: calcIncentive(data.meterCollarNeeded), color: 'orange', key: 'meterCollar' },
     { label: 'PTO Submitted', count: data.ptoSubmitted.length, amount: calcIncentive(data.ptoSubmitted), color: 'blue', key: 'ptoStatus' },
@@ -1491,7 +1500,7 @@ function renderPtoFunnelSummary(data) {
     </div>
     
     <!-- Current Counts -->
-    <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3 mb-6">
+    <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3 mb-6">
       ${categories.map(c => `
         <div class="bg-slate-800/50 rounded-lg p-4 border border-slate-700/50 cursor-pointer hover:border-${c.color}-500/50 transition-all" onclick="setPtoSubTab('${c.key}')">
           <p class="text-slate-400 text-xs uppercase mb-1">${c.label}</p>
@@ -1517,8 +1526,9 @@ function renderPtoFunnelSummary(data) {
           <thead>
             <tr class="border-b border-slate-700 bg-slate-900/50">
               <th class="px-4 py-3 text-left text-xs font-semibold text-slate-400 uppercase">Date</th>
-              <th class="px-4 py-3 text-center text-xs font-semibold text-red-400 uppercase">Permit</th>
-              <th class="px-4 py-3 text-center text-xs font-semibold text-blue-400 uppercase">Insp Sched</th>
+              <th class="px-4 py-3 text-center text-xs font-semibold text-blue-400 uppercase">Permit Pending</th>
+              <th class="px-4 py-3 text-center text-xs font-semibold text-red-400 uppercase">Need Permit</th>
+              <th class="px-4 py-3 text-center text-xs font-semibold text-purple-400 uppercase">Insp Sched</th>
               <th class="px-4 py-3 text-center text-xs font-semibold text-amber-400 uppercase">Insp Not Complete</th>
               <th class="px-4 py-3 text-center text-xs font-semibold text-orange-400 uppercase">Meter Collar</th>
               <th class="px-4 py-3 text-center text-xs font-semibold text-blue-400 uppercase">PTO Submitted</th>
@@ -1529,15 +1539,16 @@ function renderPtoFunnelSummary(data) {
           </thead>
           <tbody class="divide-y divide-slate-700/30">
             ${PTO_SNAPSHOTS.length === 0 ? `
-              <tr><td colspan="9" class="px-4 py-8 text-center text-slate-500">No snapshots yet. Snapshots are saved automatically at 11:59 PM PST daily.</td></tr>
+              <tr><td colspan="10" class="px-4 py-8 text-center text-slate-500">No snapshots yet. Snapshots are saved automatically at 11:59 PM PST daily.</td></tr>
             ` : PTO_SNAPSHOTS.map((s, i) => {
               const prev = PTO_SNAPSHOTS[i + 1];
               const change = prev ? s.total - prev.total : null;
               return `
                 <tr class="hover:bg-slate-800/30">
                   <td class="px-4 py-3 text-slate-300 font-medium">${formatSnapshotDate(s.snapshot_date)}</td>
-                  <td class="px-4 py-3 text-center text-red-400">${s.permit_not_approved}</td>
-                  <td class="px-4 py-3 text-center text-blue-400">${s.inspection_scheduled}</td>
+                  <td class="px-4 py-3 text-center text-blue-400">${s.permit_pending ?? '—'}</td>
+                  <td class="px-4 py-3 text-center text-red-400">${s.need_to_submit_permit ?? '—'}</td>
+                  <td class="px-4 py-3 text-center text-purple-400">${s.inspection_scheduled}</td>
                   <td class="px-4 py-3 text-center text-amber-400">${s.inspection_not_complete}</td>
                   <td class="px-4 py-3 text-center text-orange-400">${s.meter_collar}</td>
                   <td class="px-4 py-3 text-center text-blue-400">${s.pto_submitted}</td>
@@ -1556,13 +1567,60 @@ function renderPtoFunnelSummary(data) {
   `;
 }
 
-function renderPermitNotApproved(deals) {
+function renderPermitPending(deals) {
+  const sorted = sortPtoData(deals, state.ptoSortBy || 'daysSinceInstall', state.ptoSortDir);
+  const totalIncentive = deals.reduce((sum, d) => sum + parseNum(d.currentIncentive || d.finalIncentive), 0);
+  return `
+    <div class="bg-blue-500/10 border border-blue-500/30 rounded-lg p-4 mb-4">
+      <h3 class="font-semibold text-blue-400">📋 Permit Pending</h3>
+      <p class="text-sm text-slate-400 mt-1">Permits that have been submitted or resubmitted, awaiting approval</p>
+      <div class="mt-3 flex gap-6">
+        <div>
+          <div class="text-2xl font-bold text-blue-400">${deals.length}</div>
+          <div class="text-xs text-slate-400">projects</div>
+        </div>
+        <div>
+          <div class="text-2xl font-bold text-blue-400">${fmtCurrency(totalIncentive)}</div>
+          <div class="text-xs text-slate-400">total incentive</div>
+        </div>
+      </div>
+    </div>
+    <div class="bg-slate-800/50 rounded-lg border border-slate-700/50 overflow-hidden">
+      <div class="table-container overflow-x-auto" style="max-height: 600px;">
+        <table class="w-full text-sm">
+          <thead class="sticky-header"><tr>
+            ${ptoSortHeader('Customer', 'customer')}
+            ${ptoSortHeader('Utility', 'utility')}
+            ${ptoSortHeader('Install Date', 'installDate')}
+            ${ptoSortHeader('Days Since Install', 'daysSinceInstall')}
+            ${ptoSortHeader('Permit Status', 'permitStatus')}
+            ${ptoSortHeader('Installer', 'installer')}
+          </tr></thead>
+          <tbody class="divide-y divide-slate-700/30">
+            ${sorted.length === 0 ? '<tr><td colspan="6" class="px-3 py-8 text-center text-slate-500">No projects in this category</td></tr>' : sorted.map(d => `
+              <tr class="hover:bg-slate-800/50">
+                <td class="px-3 py-2">${customerCell(d)}${d.applicationCode ? '<br><span class="text-xs text-slate-500 mono">'+d.applicationCode+'</span>' : ''}</td>
+                <td class="px-3 py-2"><span class="px-1.5 py-0.5 rounded text-xs border ${getUtilityStyle(getUtility(d))}">${getUtility(d) || '—'}</span></td>
+                <td class="px-3 py-2 text-xs mono">${d.installDate || '—'}</td>
+                <td class="px-3 py-2 font-bold ${d.daysSinceInstall > 30 ? 'text-red-400' : d.daysSinceInstall > 14 ? 'text-amber-400' : 'text-slate-300'}">${d.daysSinceInstall !== null ? d.daysSinceInstall + 'd' : '—'}</td>
+                <td class="px-3 py-2"><span class="px-1.5 py-0.5 rounded text-xs ${d.permitStatus === 'Resubmitted' ? 'bg-purple-900/50 text-purple-400 border border-purple-800' : d.permitStatus === 'Revisions in progress' ? 'bg-amber-900/50 text-amber-400 border border-amber-800' : 'bg-blue-900/50 text-blue-400 border border-blue-800'}">${d.permitStatus || 'Not Set'}</span></td>
+                <td class="px-3 py-2 text-xs">${d.installer || '—'}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
+
+function renderNeedToSubmitPermit(deals) {
   const sorted = sortPtoData(deals, state.ptoSortBy || 'daysSinceInstall', state.ptoSortDir);
   const totalIncentive = deals.reduce((sum, d) => sum + parseNum(d.currentIncentive || d.finalIncentive), 0);
   return `
     <div class="bg-red-500/10 border border-red-500/30 rounded-lg p-4 mb-4">
-      <h3 class="font-semibold text-red-400">🚫 Permit Not Approved</h3>
-      <p class="text-sm text-slate-400 mt-1">Projects where permit has not been approved</p>
+      <h3 class="font-semibold text-red-400">🚫 Need to Submit Permit</h3>
+      <p class="text-sm text-slate-400 mt-1">Projects where permit has not been submitted yet (rejected or no status)</p>
       <div class="mt-3 flex gap-6">
         <div>
           <div class="text-2xl font-bold text-red-400">${deals.length}</div>
