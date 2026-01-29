@@ -1486,7 +1486,7 @@ function renderPtoFunnelSummary(data) {
     <div class="bg-slate-500/10 border border-slate-500/30 rounded-lg p-4 mb-4">
       <div>
         <h3 class="font-semibold text-slate-200">🎯 PTO Funnel Summary</h3>
-        <p class="text-sm text-slate-400 mt-1">Projects not yet PTO approved, grouped by current status</p>
+        <p class="text-sm text-slate-400 mt-1">Projects not yet PTO approved, grouped by current status • Auto-saved daily at 11:59 PM PST</p>
       </div>
     </div>
     
@@ -1503,6 +1503,54 @@ function renderPtoFunnelSummary(data) {
         <p class="text-slate-400 text-xs uppercase mb-1">Total in Funnel</p>
         <p class="text-2xl font-bold text-white">${total}</p>
         <p class="text-xs text-slate-300/70 mt-1">${fmtCurrency(totalIncentive)}</p>
+      </div>
+    </div>
+    
+    <!-- Historical Data -->
+    <div class="bg-slate-800/50 rounded-lg border border-slate-700/50 overflow-hidden">
+      <div class="px-4 py-3 border-b border-slate-700/50">
+        <h4 class="font-semibold text-slate-300">📅 Daily Snapshots</h4>
+        <p class="text-xs text-slate-500 mt-1">Historical tracking at 11:59 PM PST daily</p>
+      </div>
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="border-b border-slate-700 bg-slate-900/50">
+              <th class="px-4 py-3 text-left text-xs font-semibold text-slate-400 uppercase">Date</th>
+              <th class="px-4 py-3 text-center text-xs font-semibold text-red-400 uppercase">Permit</th>
+              <th class="px-4 py-3 text-center text-xs font-semibold text-blue-400 uppercase">Insp Sched</th>
+              <th class="px-4 py-3 text-center text-xs font-semibold text-amber-400 uppercase">Insp Not Complete</th>
+              <th class="px-4 py-3 text-center text-xs font-semibold text-orange-400 uppercase">Meter Collar</th>
+              <th class="px-4 py-3 text-center text-xs font-semibold text-blue-400 uppercase">PTO Submitted</th>
+              <th class="px-4 py-3 text-center text-xs font-semibold text-amber-400 uppercase">PTO Not Sub</th>
+              <th class="px-4 py-3 text-center text-xs font-semibold text-slate-300 uppercase">Total</th>
+              <th class="px-4 py-3 text-center text-xs font-semibold text-slate-400 uppercase">Change</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-700/30">
+            ${PTO_SNAPSHOTS.length === 0 ? `
+              <tr><td colspan="9" class="px-4 py-8 text-center text-slate-500">No snapshots yet. Snapshots are saved automatically at 11:59 PM PST daily.</td></tr>
+            ` : PTO_SNAPSHOTS.map((s, i) => {
+              const prev = PTO_SNAPSHOTS[i + 1];
+              const change = prev ? s.total - prev.total : null;
+              return `
+                <tr class="hover:bg-slate-800/30">
+                  <td class="px-4 py-3 text-slate-300 font-medium">${formatSnapshotDate(s.snapshot_date)}</td>
+                  <td class="px-4 py-3 text-center text-red-400">${s.permit_not_approved}</td>
+                  <td class="px-4 py-3 text-center text-blue-400">${s.inspection_scheduled}</td>
+                  <td class="px-4 py-3 text-center text-amber-400">${s.inspection_not_complete}</td>
+                  <td class="px-4 py-3 text-center text-orange-400">${s.meter_collar}</td>
+                  <td class="px-4 py-3 text-center text-blue-400">${s.pto_submitted}</td>
+                  <td class="px-4 py-3 text-center text-amber-400">${s.pto_not_submitted}</td>
+                  <td class="px-4 py-3 text-center font-bold text-white">${s.total}</td>
+                  <td class="px-4 py-3 text-center font-medium ${change === null ? 'text-slate-500' : change < 0 ? 'text-green-400' : change > 0 ? 'text-red-400' : 'text-slate-400'}">
+                    ${change === null ? '—' : (change > 0 ? '+' : '') + change}
+                  </td>
+                </tr>
+              `;
+            }).join('')}
+          </tbody>
+        </table>
       </div>
     </div>
   `;
@@ -1980,6 +2028,20 @@ function formatSnapshotDate(dateStr) {
   return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
 }
 
+// PTO Funnel Daily Snapshots
+let PTO_SNAPSHOTS = [];
+
+async function loadPtoSnapshots() {
+  try {
+    const response = await fetch(`${SUPABASE_URL}/rest/v1/pto_daily_snapshots?select=*&order=snapshot_date.desc&limit=30`, {
+      headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` }
+    });
+    if (response.ok) {
+      PTO_SNAPSHOTS = await response.json();
+    }
+  } catch (e) { console.error('Failed to load PTO snapshots:', e); }
+}
+
 function renderIcfSummary(data) {
   const total = data.ptoNoIcf.length + data.revisions.length + data.icfSubmitted.length + data.icfReview.length + data.icfInspection.length + data.pendingPayment.length;
   
@@ -2431,7 +2493,7 @@ function checkPassword(event) {
 
 async function init() {
   document.getElementById('app').innerHTML = '<div class="flex items-center justify-center h-64"><div class="text-center"><div class="text-2xl mb-2">⟳</div><p class="text-slate-400">Loading...</p></div></div>';
-  await Promise.all([loadCorrectionsFromSupabase(), loadSgipFromSupabase(), loadFromSupabase(), loadIcfSnapshots()]);
+  await Promise.all([loadCorrectionsFromSupabase(), loadSgipFromSupabase(), loadFromSupabase(), loadIcfSnapshots(), loadPtoSnapshots()]);
   mergeData();
 }
 
