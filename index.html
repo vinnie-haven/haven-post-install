@@ -137,7 +137,7 @@ let state = {
   ptoSortBy: null,
   ptoSortDir: 'desc',
   search: '', 
-  filters: { permitStatus: [], inspectionStatus: [], ptoStatus: [], sgipStage: [], sgipStatus: [], sgipProgress: [], installer: [], installMonth: [], utility: [] },
+  filters: { permitStatus: [], inspectionStatus: [], ptoStatus: [], sgipStage: [], sgipStatus: [], sgipProgress: [], installer: [], installMonth: [], utility: [], cca: [] },
   sortBy: 'daysSinceInstall', 
   sortDir: 'desc', 
   editingDeal: null, 
@@ -280,7 +280,8 @@ async function loadFromSupabase() {
         dealId: String(d.id), dealName: d.deal_name, customerName: parseCustomerName(d.deal_name),
         email: (d.email || '').toLowerCase().trim(), installDate: d.install_date,
         permitStatus: mapPermit(d.permit_status), ptoDate: d.pto_date,
-        inspectionStatus: mapInspection(d.inspection_status), sgipStatusHubspot: d.sgip_status_hubspot, installer: d.installer
+        inspectionStatus: mapInspection(d.inspection_status), sgipStatusHubspot: d.sgip_status_hubspot, installer: d.installer,
+        attributedSource: d.attributed_source || ''
       }));
       const syncResponse = await fetch(`${SUPABASE_URL}/rest/v1/sync_log?select=completed_at&order=completed_at.desc&limit=1`, {
         headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` }
@@ -328,6 +329,28 @@ const permitMap = { 'DONE: Permit approved': 'Approved', 'Permit Rejected': 'Rej
 const inspectionMap = { 'Inspection passed': 'Passed', 'Inspection failed': 'Failed', 'Inspection Scheduled': 'Scheduled', 'Inspection requested': 'Requested', 'Inspection Pending HO Action': 'Pending HO Action', 'Meter collar needed': 'Meter Collar Needed' };
 function mapPermit(s) { return permitMap[s] || s; }
 function mapInspection(s) { return inspectionMap[s] || s; }
+
+// Map attributed source to CCA
+const ccaList = ['PCE', 'CPA', 'CEA', 'SJCE', 'QCS'];
+function getCCA(d) {
+  const source = (d.attributedSource || '').toUpperCase().trim();
+  if (ccaList.some(cca => source.includes(cca))) {
+    return ccaList.find(cca => source.includes(cca));
+  }
+  return source ? 'Other' : '';
+}
+
+function getCCAStyle(cca) {
+  const styles = {
+    'PCE': 'bg-emerald-900/50 text-emerald-400 border-emerald-800',
+    'CPA': 'bg-blue-900/50 text-blue-400 border-blue-800',
+    'CEA': 'bg-purple-900/50 text-purple-400 border-purple-800',
+    'SJCE': 'bg-amber-900/50 text-amber-400 border-amber-800',
+    'QCS': 'bg-cyan-900/50 text-cyan-400 border-cyan-800',
+    'Other': 'bg-slate-700/50 text-slate-400 border-slate-600'
+  };
+  return styles[cca] || 'bg-slate-800/50 text-slate-500 border-slate-700';
+}
 
 function mergeData() {
   const sgipByEmail = {}, sgipByAddress = {}, sgipByCode = {};
@@ -573,6 +596,7 @@ function getFilteredData() {
   if (state.filters.installer.length > 0) r = r.filter(d => { let v = d.installer; if (!v || v === '(No value)') v = '(empty)'; return state.filters.installer.includes(v); });
   if (state.filters.installMonth.length > 0) r = r.filter(d => { const month = getInstallMonth(d.installDate) || '(No date)'; return state.filters.installMonth.includes(month); });
   if (state.filters.utility.length > 0) r = r.filter(d => { const u = getUtility(d) || '(empty)'; return state.filters.utility.includes(u); });
+  if (state.filters.cca.length > 0) r = r.filter(d => { const c = getCCA(d) || '(empty)'; return state.filters.cca.includes(c); });
   r.sort((a, b) => {
     let av, bv;
     if (state.sortBy === 'daysSinceInstall') { av = a.daysSinceInstall ?? -1; bv = b.daysSinceInstall ?? -1; }
@@ -873,6 +897,10 @@ function render() {
   const utilityCounts = {};
   allInstalled.forEach(d => { const u = getUtility(d) || '(empty)'; utilityCounts[u] = (utilityCounts[u] || 0) + 1; });
   const utilityOpts = Object.entries(utilityCounts).sort((a, b) => b[1] - a[1]);
+  // Build CCA options using getCCA function
+  const ccaCounts = {};
+  allInstalled.forEach(d => { const c = getCCA(d) || '(empty)'; ccaCounts[c] = (ccaCounts[c] || 0) + 1; });
+  const ccaOpts = Object.entries(ccaCounts).sort((a, b) => b[1] - a[1]);
 
   document.getElementById('app').innerHTML = `
     <div class="bg-slate-800/80 border-b border-slate-700/50 sticky top-0 z-30">
@@ -895,12 +923,12 @@ function render() {
         <button onclick="setTab('ptoFunnel')" class="px-4 py-2 rounded-lg text-sm font-medium ${state.tab === 'ptoFunnel' ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/40' : 'bg-slate-800/50 text-slate-400 border border-slate-700/50'}">🎯 PTO Funnel</button>
         <button onclick="setTab('icfDeepDive')" class="px-4 py-2 rounded-lg text-sm font-medium ${state.tab === 'icfDeepDive' ? 'bg-purple-500/20 text-purple-400 border border-purple-500/40' : 'bg-slate-800/50 text-slate-400 border border-slate-700/50'}">🔍 ICF Deep Dive</button>
       </div>
-      ${state.tab === 'installed' ? renderInstalledTab(stats, filtered, activeStages, stageCounts, permitOpts, inspectOpts, ptoOpts, sgipStageOpts, sgipStatusOpts, icfOpts, installerOpts, utilityOpts) : state.tab === 'ptoFunnel' ? renderPtoFunnelTab() : state.tab === 'icfDeepDive' ? renderIcfDeepDiveTab() : renderStatsTab()}
+      ${state.tab === 'installed' ? renderInstalledTab(stats, filtered, activeStages, stageCounts, permitOpts, inspectOpts, ptoOpts, sgipStageOpts, sgipStatusOpts, icfOpts, installerOpts, utilityOpts, ccaOpts) : state.tab === 'ptoFunnel' ? renderPtoFunnelTab() : state.tab === 'icfDeepDive' ? renderIcfDeepDiveTab() : renderStatsTab()}
     </div>
   `;
 }
 
-function renderInstalledTab(stats, filtered, activeStages, stageCounts, permitOpts, inspectOpts, ptoOpts, sgipStageOpts, sgipStatusOpts, icfOpts, installerOpts, utilityOpts) {
+function renderInstalledTab(stats, filtered, activeStages, stageCounts, permitOpts, inspectOpts, ptoOpts, sgipStageOpts, sgipStatusOpts, icfOpts, installerOpts, utilityOpts, ccaOpts) {
   return `
     <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-2 mb-4">
       <div class="bg-slate-800/50 rounded-lg p-3 border border-slate-700/50"><p class="text-slate-500 text-xs uppercase">Total</p><p class="text-lg font-bold">${stats.total}</p></div>
@@ -924,6 +952,7 @@ function renderInstalledTab(stats, filtered, activeStages, stageCounts, permitOp
           <thead class="sticky-header"><tr>
             <th class="px-2 py-3 text-left text-xs font-semibold text-slate-400 uppercase cursor-pointer" onclick="setSort('name')">Customer ${state.sortBy === 'name' ? (state.sortDir === 'asc' ? '↑' : '↓') : ''}</th>
             ${filterHeader('Utility', 'utility', null, utilityOpts)}
+            ${filterHeader('CCA', 'cca', null, ccaOpts)}
             ${installMonthFilterHeader()}
             <th class="px-2 py-3 text-left text-xs font-semibold text-slate-400 uppercase cursor-pointer" onclick="setSort('daysSinceInstall')">Days ${state.sortBy === 'daysSinceInstall' ? (state.sortDir === 'asc' ? '↑' : '↓') : ''}</th>
             ${filterHeader('Permit', 'permitStatus', null, permitOpts, true)}
@@ -936,10 +965,11 @@ function renderInstalledTab(stats, filtered, activeStages, stageCounts, permitOp
             <th class="px-2 py-3 text-left text-xs font-semibold text-slate-400 uppercase cursor-pointer" onclick="setSort('incentive')">Incentive ${state.sortBy === 'incentive' ? (state.sortDir === 'asc' ? '↑' : '↓') : ''}</th>
             ${filterHeader('Installer', 'installer', null, installerOpts)}
           </tr></thead>
-          <tbody class="divide-y divide-slate-700/30">${filtered.length === 0 ? '<tr><td colspan="13" class="p-8 text-center text-slate-500">No deals found.</td></tr>' : filtered.map((d, i) => {
+          <tbody class="divide-y divide-slate-700/30">${filtered.length === 0 ? '<tr><td colspan="14" class="p-8 text-center text-slate-500">No deals found.</td></tr>' : filtered.map((d, i) => {
             const info = getStageInfo(d.sgipProgress);
             const utility = getUtility(d);
-            return '<tr class="hover:bg-slate-800/50"><td class="px-2 py-2"><div class="min-w-[150px]">'+customerCell(d)+(d.applicationCode?'<br><span class="text-xs text-slate-500 mono">'+d.applicationCode+'</span>':'')+'</div></td><td class="px-2 py-2"><span class="px-1.5 py-0.5 rounded text-xs border '+getUtilityStyle(utility)+'">'+(utility||'—')+'</span></td><td class="px-2 py-2 text-xs mono">'+(d.installDate||'—')+'</td><td class="px-2 py-2"><span class="font-semibold '+getDaysColor(d.daysSinceInstall)+'">'+(d.daysSinceInstall!==null?d.daysSinceInstall+'d':'—')+'</span></td><td class="px-2 py-2"><span class="editable px-1.5 py-0.5 rounded text-xs border '+getPermitStyle(d.permitStatus)+'" onclick="openEditModal('+i+',\'permitStatus\')">'+(d.permitStatus||'—')+'</span></td><td class="px-2 py-2"><span class="editable px-1.5 py-0.5 rounded text-xs border '+getInspectionStyle(d.inspectionStatus)+'" onclick="openEditModal('+i+',\'inspectionStatus\')">'+(d.inspectionStatus&&d.inspectionStatus!=='(No value)'?d.inspectionStatus:'—')+'</span></td><td class="px-2 py-2"><span class="editable px-1.5 py-0.5 rounded text-xs border '+getPTOStyle(d.ptoDate)+'" onclick="openEditModal('+i+',\'ptoDate\')">'+(d.ptoDate&&d.ptoDate!=='(No value)'&&d.ptoDate!=='None'?d.ptoDate:'Pending')+'</span></td><td class="px-2 py-2 text-xs">'+(d.sgipStage||'—')+'</td><td class="px-2 py-2 text-xs text-slate-400">'+(d.sgipStatus||'—')+'</td><td class="px-2 py-2"><span class="px-1.5 py-0.5 rounded text-xs font-medium" style="background:'+info.color+'20;color:'+info.color+'">'+info.label+'</span></td><td class="px-2 py-2 text-xs mono">'+(d.nextDueDate||'—')+'</td><td class="px-2 py-2 text-right"><span class="'+((d.sgipProgress||'').toLowerCase().includes('payment')&&(d.sgipProgress||'').toLowerCase().includes('completed')?'text-emerald-400':'text-slate-300')+'">'+(d.currentIncentive||'—')+'</span></td><td class="px-2 py-2 text-xs text-slate-400">'+(d.installer||'—')+'</td></tr>';
+            const cca = getCCA(d);
+            return '<tr class="hover:bg-slate-800/50"><td class="px-2 py-2"><div class="min-w-[150px]">'+customerCell(d)+(d.applicationCode?'<br><span class="text-xs text-slate-500 mono">'+d.applicationCode+'</span>':'')+'</div></td><td class="px-2 py-2"><span class="px-1.5 py-0.5 rounded text-xs border '+getUtilityStyle(utility)+'">'+(utility||'—')+'</span></td><td class="px-2 py-2"><span class="px-1.5 py-0.5 rounded text-xs border '+(cca ? getCCAStyle(cca) : 'bg-slate-800/50 text-slate-500 border-slate-700')+'">'+(cca||'—')+'</span></td><td class="px-2 py-2 text-xs mono">'+(d.installDate||'—')+'</td><td class="px-2 py-2"><span class="font-semibold '+getDaysColor(d.daysSinceInstall)+'">'+(d.daysSinceInstall!==null?d.daysSinceInstall+'d':'—')+'</span></td><td class="px-2 py-2"><span class="editable px-1.5 py-0.5 rounded text-xs border '+getPermitStyle(d.permitStatus)+'" onclick="openEditModal('+i+',\'permitStatus\')">'+(d.permitStatus||'—')+'</span></td><td class="px-2 py-2"><span class="editable px-1.5 py-0.5 rounded text-xs border '+getInspectionStyle(d.inspectionStatus)+'" onclick="openEditModal('+i+',\'inspectionStatus\')">'+(d.inspectionStatus&&d.inspectionStatus!=='(No value)'?d.inspectionStatus:'—')+'</span></td><td class="px-2 py-2"><span class="editable px-1.5 py-0.5 rounded text-xs border '+getPTOStyle(d.ptoDate)+'" onclick="openEditModal('+i+',\'ptoDate\')">'+(d.ptoDate&&d.ptoDate!=='(No value)'&&d.ptoDate!=='None'?d.ptoDate:'Pending')+'</span></td><td class="px-2 py-2 text-xs">'+(d.sgipStage||'—')+'</td><td class="px-2 py-2 text-xs text-slate-400">'+(d.sgipStatus||'—')+'</td><td class="px-2 py-2"><span class="px-1.5 py-0.5 rounded text-xs font-medium" style="background:'+info.color+'20;color:'+info.color+'">'+info.label+'</span></td><td class="px-2 py-2 text-xs mono">'+(d.nextDueDate||'—')+'</td><td class="px-2 py-2 text-right"><span class="'+((d.sgipProgress||'').toLowerCase().includes('payment')&&(d.sgipProgress||'').toLowerCase().includes('completed')?'text-emerald-400':'text-slate-300')+'">'+(d.currentIncentive||'—')+'</span></td><td class="px-2 py-2 text-xs text-slate-400">'+(d.installer||'—')+'</td></tr>';
           }).join('')}</tbody>
         </table>
       </div>
