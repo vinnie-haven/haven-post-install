@@ -1435,11 +1435,11 @@ function getPtoFunnelData() {
     d.inspectionStatus === 'Scheduled' || d.inspectionStatus === 'Requested'
   ).map(d => ({ ...d, daysSinceInstall: daysSince(d.installDate) }));
   
-  // 4. Inspection Not Complete (Failed, Pending HO Action, or no status)
+  // 4. Inspection Not Complete (Failed, Pending HO Action, Need to Request Inspection, or no status)
   const inspectionNotComplete = allDeals.filter(d => {
     const status = d.inspectionStatus;
     return d.permitStatus === 'Approved' && 
-           (status === 'Failed' || status === 'Pending HO Action' || !status || status === '(No value)');
+           (status === 'Failed' || status === 'Pending HO Action' || status === 'Need to Request Inspection' || !status || status === '(No value)');
   }).map(d => ({ ...d, daysSinceInstall: daysSince(d.installDate) }));
   
   // 5. Meter Collar Needed
