@@ -444,7 +444,19 @@ async function handleSgipFile(file) {
       })).filter(s => s.applicationCode);
       document.getElementById('sgipStatus').innerHTML = '<span class="text-blue-400">Saving to database...</span>';
       const saved = await saveSgipToSupabase(newSgipData);
-      if (saved) { SGIP_DATA = newSgipData; state.sgipLoaded = true; document.getElementById('sgipStatus').innerHTML = `<span class="text-emerald-400">✓ Saved ${SGIP_DATA.length} records!</span>`; mergeData(); }
+      if (saved) { 
+        SGIP_DATA = newSgipData; 
+        state.sgipLoaded = true; 
+        document.getElementById('sgipStatus').innerHTML = `<span class="text-emerald-400">✓ Saved ${SGIP_DATA.length} records!</span>`; 
+        mergeData(); 
+        // Auto-save ICF snapshot after SGIP upload
+        setTimeout(async () => {
+          const icfData = getIcfDeepDiveData();
+          await saveIcfSnapshot(icfData);
+          const ptoData = getPtoFunnelData();
+          await savePtoSnapshot(ptoData);
+        }, 500);
+      }
       else document.getElementById('sgipStatus').innerHTML = `<span class="text-red-400">Failed to save. Check console.</span>`;
     },
     error: function(err) { document.getElementById('sgipStatus').innerHTML = `<span class="text-red-400">Error: ${err.message}</span>`; }
@@ -1491,11 +1503,20 @@ function renderPtoFunnelSummary(data) {
   const total = categories.reduce((sum, c) => sum + c.count, 0);
   const totalIncentive = categories.reduce((sum, c) => sum + c.amount, 0);
   
+  // Check if we have today's snapshot
+  const today = new Date().toISOString().split('T')[0];
+  const hasTodayPto = PTO_SNAPSHOTS.some(s => s.snapshot_date === today);
+  
   return `
     <div class="bg-slate-500/10 border border-slate-500/30 rounded-lg p-4 mb-4">
-      <div>
-        <h3 class="font-semibold text-slate-200">🎯 PTO Funnel Summary</h3>
-        <p class="text-sm text-slate-400 mt-1">Projects not yet PTO approved, grouped by current status • Auto-saved daily at 11:59 PM PST</p>
+      <div class="flex justify-between items-start">
+        <div>
+          <h3 class="font-semibold text-slate-200">🎯 PTO Funnel Summary</h3>
+          <p class="text-sm text-slate-400 mt-1">Projects not yet PTO approved, grouped by current status</p>
+        </div>
+        <button onclick="saveCurrentPtoSnapshot()" class="px-3 py-1.5 text-xs rounded-lg font-medium ${hasTodayPto ? 'bg-slate-700 text-slate-400' : 'bg-emerald-600 hover:bg-emerald-500 text-white'}">
+          ${hasTodayPto ? '✓ Today Saved' : '💾 Save Today\'s Snapshot'}
+        </button>
       </div>
     </div>
     
@@ -2082,6 +2103,16 @@ async function saveIcfSnapshot(data) {
   return false;
 }
 
+async function saveCurrentIcfSnapshot() {
+  const data = getIcfDeepDiveData();
+  const success = await saveIcfSnapshot(data);
+  if (success) {
+    alert('ICF snapshot saved successfully!');
+  } else {
+    alert('Failed to save ICF snapshot');
+  }
+}
+
 function formatSnapshotDate(dateStr) {
   const d = new Date(dateStr + 'T00:00:00');
   return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
@@ -2099,6 +2130,52 @@ async function loadPtoSnapshots() {
       PTO_SNAPSHOTS = await response.json();
     }
   } catch (e) { console.error('Failed to load PTO snapshots:', e); }
+}
+
+async function savePtoSnapshot(data) {
+  const today = new Date().toISOString().split('T')[0];
+  const total = data.permitPending.length + data.needToSubmitPermit.length + data.inspectionScheduled.length + data.inspectionNotComplete.length + data.meterCollarNeeded.length + data.ptoSubmitted.length + data.ptoNotSubmitted.length;
+  
+  const snapshot = {
+    snapshot_date: today,
+    permit_pending: data.permitPending.length,
+    need_to_submit_permit: data.needToSubmitPermit.length,
+    inspection_scheduled: data.inspectionScheduled.length,
+    inspection_not_complete: data.inspectionNotComplete.length,
+    meter_collar: data.meterCollarNeeded.length,
+    pto_submitted: data.ptoSubmitted.length,
+    pto_not_submitted: data.ptoNotSubmitted.length,
+    total: total
+  };
+  
+  try {
+    const response = await fetch(`${SUPABASE_URL}/rest/v1/pto_daily_snapshots`, {
+      method: 'POST',
+      headers: { 
+        'apikey': SUPABASE_ANON_KEY, 
+        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+        'Content-Type': 'application/json',
+        'Prefer': 'resolution=merge-duplicates'
+      },
+      body: JSON.stringify(snapshot)
+    });
+    if (response.ok) {
+      await loadPtoSnapshots();
+      return true;
+    }
+  } catch (e) { console.error('Failed to save PTO snapshot:', e); }
+  return false;
+}
+
+async function saveCurrentPtoSnapshot() {
+  const data = getPtoFunnelData();
+  const success = await savePtoSnapshot(data);
+  if (success) {
+    alert('PTO Funnel snapshot saved successfully!');
+    render();
+  } else {
+    alert('Failed to save PTO snapshot');
+  }
 }
 
 function renderIcfSummary(data) {
@@ -2125,9 +2202,16 @@ function renderIcfSummary(data) {
   
   return `
     <div class="bg-slate-500/10 border border-slate-500/30 rounded-lg p-4 mb-4">
-      <div>
-        <h3 class="font-semibold text-slate-200">📊 ICF Pipeline Summary</h3>
-        <p class="text-sm text-slate-400 mt-1">Current snapshot of all ICF pipeline stages • Auto-saved daily at 11:59 PM PST</p>
+      <div class="flex justify-between items-start">
+        <div>
+          <h3 class="font-semibold text-slate-200">📊 ICF Pipeline Summary</h3>
+          <p class="text-sm text-slate-400 mt-1">Current snapshot of all ICF pipeline stages</p>
+        </div>
+        <button onclick="saveCurrentIcfSnapshot()" class="px-3 py-1.5 text-xs rounded-lg font-medium ${hasToday ? 'bg-slate-700 text-slate-400' : 'bg-emerald-600 hover:bg-emerald-500 text-white'}">
+          ${hasToday ? '✓ Today Saved' : '💾 Save Today\'s Snapshot'}
+        </button>
+      </div>
+    </div>
       </div>
     </div>
     
