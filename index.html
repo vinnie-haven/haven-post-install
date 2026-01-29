@@ -1930,6 +1930,7 @@ function sortIcfData(deals, sortBy, sortDir) {
     else if (sortBy === 'paymentCompletedDate') { const da = parseDate(a.paymentCompletedDate), db = parseDate(b.paymentCompletedDate); av = da ? da.getTime() : 0; bv = db ? db.getTime() : 0; }
     else if (sortBy === 'paymentAmount') { av = parseNum(a.paymentAmount); bv = parseNum(b.paymentAmount); }
     else if (sortBy === 'incentive') { av = parseNum(a.finalIncentive || a.currentIncentive); bv = parseNum(b.finalIncentive || b.currentIncentive); }
+    else if (sortBy === 'nextDueDate') { const da = parseDate(a.nextDueDate), db = parseDate(b.nextDueDate); av = da ? da.getTime() : 0; bv = db ? db.getTime() : 0; }
     else return 0;
     if (typeof av === 'string') return sortDir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av);
     return sortDir === 'asc' ? av - bv : bv - av;
@@ -2218,9 +2219,10 @@ function renderRevisions(deals) {
             <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Suspended Type</th>
             ${icfSortHeader('Suspended Date', 'icfSuspendedDate')}
             ${icfSortHeader('Days Suspended', 'daysSinceSuspended')}
+            ${icfSortHeader('Next Due Date', 'nextDueDate')}
           </tr></thead>
           <tbody class="divide-y divide-slate-700/30">
-            ${sorted.length === 0 ? '<tr><td colspan="6" class="px-3 py-8 text-center text-slate-500">No projects in this category</td></tr>' : sorted.map(d => `
+            ${sorted.length === 0 ? '<tr><td colspan="7" class="px-3 py-8 text-center text-slate-500">No projects in this category</td></tr>' : sorted.map(d => `
               <tr class="hover:bg-slate-800/50">
                 <td class="px-3 py-2">${customerCell(d)}${d.applicationCode ? '<br><span class="text-xs text-slate-500 mono">'+d.applicationCode+'</span>' : ''}</td>
                 <td class="px-3 py-2"><span class="px-1.5 py-0.5 rounded text-xs border ${getUtilityStyle(getUtility(d))}">${getUtility(d) || '—'}</span></td>
@@ -2228,6 +2230,7 @@ function renderRevisions(deals) {
                 <td class="px-3 py-2"><span class="px-1.5 py-0.5 rounded text-xs ${d.suspendedType.includes('Inspection') ? 'bg-orange-900/50 text-orange-400 border border-orange-800' : 'bg-red-900/50 text-red-400 border border-red-800'}">${d.suspendedType}</span></td>
                 <td class="px-3 py-2 text-xs mono">${d.icfSuspendedDate || '—'}</td>
                 <td class="px-3 py-2 font-bold ${d.daysSinceSuspended > 30 ? 'text-red-400' : d.daysSinceSuspended > 14 ? 'text-amber-400' : 'text-slate-300'}">${d.daysSinceSuspended !== null ? d.daysSinceSuspended + 'd' : '—'}</td>
+                <td class="px-3 py-2 text-xs mono text-amber-400">${d.nextDueDate || '—'}</td>
               </tr>
             `).join('')}
           </tbody>
