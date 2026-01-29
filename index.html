@@ -1400,8 +1400,12 @@ function getPtoFunnelData() {
     (d.inspectionStatus && d.inspectionStatus.toLowerCase().includes('meter collar'))
   ).map(d => ({ ...d, daysSinceInstall: daysSince(d.installDate) }));
   
-  // 5. PTO Status - Not yet approved, split by submitted/not submitted
-  const ptoNotApproved = allDeals.filter(d => !hasPto(d));
+  // 5. PTO Status - Not yet approved, but permit approved AND inspection passed
+  const ptoNotApproved = allDeals.filter(d => 
+    !hasPto(d) && 
+    d.permitStatus === 'Approved' && 
+    d.inspectionStatus === 'Passed'
+  );
   const ptoSubmitted = ptoNotApproved.filter(d => hasPtoSubmitted(d))
     .map(d => ({ ...d, daysSinceSubmitted: daysSince(d.ptoSubmittedDate), daysSinceInstall: daysSince(d.installDate) }));
   const ptoNotSubmitted = ptoNotApproved.filter(d => !hasPtoSubmitted(d))
@@ -1529,7 +1533,7 @@ function renderPermitNotApproved(deals) {
             ${ptoSortHeader('Customer', 'customer')}
             ${ptoSortHeader('Utility', 'utility')}
             ${ptoSortHeader('Install Date', 'installDate')}
-            ${ptoSortHeader('Days', 'daysSinceInstall')}
+            ${ptoSortHeader('Days Since Install', 'daysSinceInstall')}
             ${ptoSortHeader('Permit Status', 'permitStatus')}
             ${ptoSortHeader('Installer', 'installer')}
           </tr></thead>
@@ -1558,6 +1562,7 @@ function renderInspectionScheduled(deals) {
     <div class="bg-blue-500/10 border border-blue-500/30 rounded-lg p-4 mb-4">
       <h3 class="font-semibold text-blue-400">📅 Inspection Scheduled/Requested</h3>
       <p class="text-sm text-slate-400 mt-1">Projects with inspection scheduled or requested</p>
+      <p class="text-xs text-slate-500 mt-1">Note: Inspection scheduled date not currently available from HubSpot</p>
       <div class="mt-3 flex gap-6">
         <div>
           <div class="text-2xl font-bold text-blue-400">${deals.length}</div>
@@ -1576,7 +1581,7 @@ function renderInspectionScheduled(deals) {
             ${ptoSortHeader('Customer', 'customer')}
             ${ptoSortHeader('Utility', 'utility')}
             ${ptoSortHeader('Install Date', 'installDate')}
-            ${ptoSortHeader('Days', 'daysSinceInstall')}
+            ${ptoSortHeader('Days Since Install', 'daysSinceInstall')}
             ${ptoSortHeader('Inspection Status', 'inspectionStatus')}
             ${ptoSortHeader('Installer', 'installer')}
           </tr></thead>
@@ -1623,7 +1628,7 @@ function renderInspectionNotComplete(deals) {
             ${ptoSortHeader('Customer', 'customer')}
             ${ptoSortHeader('Utility', 'utility')}
             ${ptoSortHeader('Install Date', 'installDate')}
-            ${ptoSortHeader('Days', 'daysSinceInstall')}
+            ${ptoSortHeader('Days Since Install', 'daysSinceInstall')}
             ${ptoSortHeader('Inspection Status', 'inspectionStatus')}
             ${ptoSortHeader('Installer', 'installer')}
           </tr></thead>
@@ -1670,7 +1675,7 @@ function renderMeterCollarNeeded(deals) {
             ${ptoSortHeader('Customer', 'customer')}
             ${ptoSortHeader('Utility', 'utility')}
             ${ptoSortHeader('Install Date', 'installDate')}
-            ${ptoSortHeader('Days', 'daysSinceInstall')}
+            ${ptoSortHeader('Days Since Install', 'daysSinceInstall')}
             ${ptoSortHeader('Installer', 'installer')}
           </tr></thead>
           <tbody class="divide-y divide-slate-700/30">
@@ -1699,7 +1704,7 @@ function renderPtoStatus(ptoSubmitted, ptoNotSubmitted) {
   return `
     <div class="bg-cyan-500/10 border border-cyan-500/30 rounded-lg p-4 mb-4">
       <h3 class="font-semibold text-cyan-400">📋 PTO Status</h3>
-      <p class="text-sm text-slate-400 mt-1">Projects awaiting PTO approval</p>
+      <p class="text-sm text-slate-400 mt-1">Projects with permit approved & inspection passed, awaiting PTO approval</p>
       <div class="mt-3 flex gap-6">
         <div>
           <div class="text-2xl font-bold text-blue-400">${ptoSubmitted.length}</div>
