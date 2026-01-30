@@ -632,6 +632,7 @@ function getPeriodicStats() {
   
   const parseAnyDate = (dateStr) => { if (!dateStr) return null; let d; if (dateStr.includes('/')) { const parts = dateStr.split('/'); if (parts.length === 3) { let year = parseInt(parts[2]); if (year < 100) year += 2000; d = new Date(year, parseInt(parts[0]) - 1, parseInt(parts[1])); } } else d = new Date(dateStr); return (d && !isNaN(d.getTime())) ? d : null; };
   const isInRange = (dateStr, start, end) => { const d = parseAnyDate(dateStr); if (!d) return false; return d >= start && d < end; };
+  const isToday = (dateStr) => isInRange(dateStr, today, tomorrow);
   const isYesterday = (dateStr) => isInRange(dateStr, yesterday, today);
   const isWTD = (dateStr) => isInRange(dateStr, weekStart, tomorrow);
   const isMTD = (dateStr) => isInRange(dateStr, monthStart, tomorrow);
@@ -652,6 +653,7 @@ function getPeriodicStats() {
   // PTOs - check if ptoDate exists and is valid
   const hasPto = (d) => d.ptoDate && d.ptoDate !== '(No value)' && d.ptoDate !== 'None' && parseAnyDate(d.ptoDate);
   const ptoLifetime = postCutoffDeals.filter(d => hasPto(d)).length;
+  const ptoToday = allDeals.filter(d => isToday(d.ptoDate)).length;
   const ptoYesterday = allDeals.filter(d => isYesterday(d.ptoDate)).length;
   const ptoWTD = allDeals.filter(d => isWTD(d.ptoDate)).length;
   const ptoMTD = allDeals.filter(d => isMTD(d.ptoDate)).length;
@@ -672,12 +674,12 @@ function getPeriodicStats() {
   const totalAllApproved = approvedSgip.reduce((sum, d) => sum + parseNum(d.finalIncentive), 0);
   
   return {
-    installs: { yesterday: allDeals.filter(d => isYesterday(d.installDate)).length, wtd: allDeals.filter(d => isWTD(d.installDate)).length, mtd: allDeals.filter(d => isMTD(d.installDate)).length, lastWeek: allDeals.filter(d => isLastWeek(d.installDate)).length, lastMonth: allDeals.filter(d => isLastMonth(d.installDate)).length, lifetime: installsLifetime },
-    ptos: { yesterday: ptoYesterday, wtd: ptoWTD, mtd: ptoMTD, lastWeek: ptoLastWeek, lastMonth: ptoLastMonth, lifetime: ptoLifetime },
-    icfSubmitted: { yesterday: SGIP_DATA.filter(d => isYesterday(d.icfSubmittedDate)).length, wtd: SGIP_DATA.filter(d => isWTD(d.icfSubmittedDate)).length, mtd: SGIP_DATA.filter(d => isMTD(d.icfSubmittedDate)).length, lastWeek: SGIP_DATA.filter(d => isLastWeek(d.icfSubmittedDate)).length, lastMonth: SGIP_DATA.filter(d => isLastMonth(d.icfSubmittedDate)).length, lifetime: icfSubmittedLifetime },
-    icfResubmitted: { yesterday: SGIP_DATA.filter(d => isYesterday(d.icfResubmittedDate)).length, wtd: SGIP_DATA.filter(d => isWTD(d.icfResubmittedDate)).length, mtd: SGIP_DATA.filter(d => isMTD(d.icfResubmittedDate)).length, lastWeek: SGIP_DATA.filter(d => isLastWeek(d.icfResubmittedDate)).length, lastMonth: SGIP_DATA.filter(d => isLastMonth(d.icfResubmittedDate)).length, lifetime: icfResubmittedLifetime },
-    icfApproved: { yesterday: SGIP_DATA.filter(d => isYesterday(d.icfPendingPaymentDate)).length, wtd: SGIP_DATA.filter(d => isWTD(d.icfPendingPaymentDate)).length, mtd: SGIP_DATA.filter(d => isMTD(d.icfPendingPaymentDate)).length, lastWeek: SGIP_DATA.filter(d => isLastWeek(d.icfPendingPaymentDate)).length, lastMonth: SGIP_DATA.filter(d => isLastMonth(d.icfPendingPaymentDate)).length, lifetime: icfApprovedLifetime },
-    paymentAmount: { yesterday: sumApprovedByDate(isYesterday), wtd: sumApprovedByDate(isWTD), mtd: sumApprovedByDate(isMTD), lastWeek: sumApprovedByDate(isLastWeek), lastMonth: sumApprovedByDate(isLastMonth), lifetime: sumApprovedLifetime, allTime: totalAllApproved },
+    installs: { today: allDeals.filter(d => isToday(d.installDate)).length, yesterday: allDeals.filter(d => isYesterday(d.installDate)).length, wtd: allDeals.filter(d => isWTD(d.installDate)).length, mtd: allDeals.filter(d => isMTD(d.installDate)).length, lastWeek: allDeals.filter(d => isLastWeek(d.installDate)).length, lastMonth: allDeals.filter(d => isLastMonth(d.installDate)).length, lifetime: installsLifetime },
+    ptos: { today: ptoToday, yesterday: ptoYesterday, wtd: ptoWTD, mtd: ptoMTD, lastWeek: ptoLastWeek, lastMonth: ptoLastMonth, lifetime: ptoLifetime },
+    icfSubmitted: { today: SGIP_DATA.filter(d => isToday(d.icfSubmittedDate)).length, yesterday: SGIP_DATA.filter(d => isYesterday(d.icfSubmittedDate)).length, wtd: SGIP_DATA.filter(d => isWTD(d.icfSubmittedDate)).length, mtd: SGIP_DATA.filter(d => isMTD(d.icfSubmittedDate)).length, lastWeek: SGIP_DATA.filter(d => isLastWeek(d.icfSubmittedDate)).length, lastMonth: SGIP_DATA.filter(d => isLastMonth(d.icfSubmittedDate)).length, lifetime: icfSubmittedLifetime },
+    icfResubmitted: { today: SGIP_DATA.filter(d => isToday(d.icfResubmittedDate)).length, yesterday: SGIP_DATA.filter(d => isYesterday(d.icfResubmittedDate)).length, wtd: SGIP_DATA.filter(d => isWTD(d.icfResubmittedDate)).length, mtd: SGIP_DATA.filter(d => isMTD(d.icfResubmittedDate)).length, lastWeek: SGIP_DATA.filter(d => isLastWeek(d.icfResubmittedDate)).length, lastMonth: SGIP_DATA.filter(d => isLastMonth(d.icfResubmittedDate)).length, lifetime: icfResubmittedLifetime },
+    icfApproved: { today: SGIP_DATA.filter(d => isToday(d.icfPendingPaymentDate)).length, yesterday: SGIP_DATA.filter(d => isYesterday(d.icfPendingPaymentDate)).length, wtd: SGIP_DATA.filter(d => isWTD(d.icfPendingPaymentDate)).length, mtd: SGIP_DATA.filter(d => isMTD(d.icfPendingPaymentDate)).length, lastWeek: SGIP_DATA.filter(d => isLastWeek(d.icfPendingPaymentDate)).length, lastMonth: SGIP_DATA.filter(d => isLastMonth(d.icfPendingPaymentDate)).length, lifetime: icfApprovedLifetime },
+    paymentAmount: { today: sumApprovedByDate(isToday), yesterday: sumApprovedByDate(isYesterday), wtd: sumApprovedByDate(isWTD), mtd: sumApprovedByDate(isMTD), lastWeek: sumApprovedByDate(isLastWeek), lastMonth: sumApprovedByDate(isLastMonth), lifetime: sumApprovedLifetime, allTime: totalAllApproved },
     weekStart: weekStart.toLocaleDateString(), monthStart: monthStart.toLocaleDateString(),
     lastWeekStart: lastWeekStart.toLocaleDateString(), lastWeekEnd: new Date(lastWeekEnd.getTime() - 86400000).toLocaleDateString(),
     lastMonthStart: lastMonthStart.toLocaleDateString(), lastMonthEnd: new Date(lastMonthEnd.getTime() - 86400000).toLocaleDateString()
@@ -1025,68 +1027,75 @@ function renderActivityStats() {
         <thead>
           <tr class="border-b border-slate-700">
             <th class="px-4 py-4 text-left text-sm font-semibold text-slate-300">Metric</th>
-            <th class="px-3 py-4 text-center text-sm font-semibold text-slate-300">Yesterday</th>
+            <th class="px-3 py-4 text-center text-sm font-semibold text-slate-300">Today</th>
+            <th class="px-3 py-4 text-center text-sm font-semibold text-slate-300 border-r border-slate-600">Yesterday</th>
             <th class="px-3 py-4 text-center text-sm font-semibold text-slate-300">Week to Date</th>
-            <th class="px-3 py-4 text-center text-sm font-semibold text-slate-300">Month to Date</th>
-            <th class="px-3 py-4 text-center text-sm font-semibold text-slate-400 border-l border-slate-700">Last Week<br><span class="text-[10px] font-normal">${ps.lastWeekStart} - ${ps.lastWeekEnd}</span></th>
+            <th class="px-3 py-4 text-center text-sm font-semibold text-slate-400">Last Week<br><span class="text-[10px] font-normal">${ps.lastWeekStart} - ${ps.lastWeekEnd}</span></th>
+            <th class="px-3 py-4 text-center text-sm font-semibold text-slate-300 border-r border-slate-600">Month to Date</th>
             <th class="px-3 py-4 text-center text-sm font-semibold text-slate-400">Last Month<br><span class="text-[10px] font-normal">${ps.lastMonthStart}</span></th>
-            <th class="px-3 py-4 text-center text-sm font-semibold text-emerald-400 border-l border-slate-700">Lifetime<br><span class="text-[10px] font-normal">Since 4/1/2025</span></th>
+            <th class="px-3 py-4 text-center text-sm font-semibold text-emerald-400 border-l border-slate-600">Lifetime<br><span class="text-[10px] font-normal">Since 4/1/2025</span></th>
           </tr>
         </thead>
         <tbody class="divide-y divide-slate-700/30">
           <tr class="hover:bg-slate-800/50">
             <td class="px-4 py-4 font-medium text-emerald-400">Installs Completed</td>
-            <td class="px-3 py-4 text-center text-2xl font-bold">${ps.installs.yesterday}</td>
+            <td class="px-3 py-4 text-center text-2xl font-bold">${ps.installs.today}</td>
+            <td class="px-3 py-4 text-center text-2xl font-bold border-r border-slate-600">${ps.installs.yesterday}</td>
             <td class="px-3 py-4 text-center text-2xl font-bold">${ps.installs.wtd}</td>
-            <td class="px-3 py-4 text-center text-2xl font-bold">${ps.installs.mtd}</td>
-            <td class="px-3 py-4 text-center text-xl font-bold text-slate-400 border-l border-slate-700">${ps.installs.lastWeek}</td>
+            <td class="px-3 py-4 text-center text-xl font-bold text-slate-400">${ps.installs.lastWeek}</td>
+            <td class="px-3 py-4 text-center text-2xl font-bold border-r border-slate-600">${ps.installs.mtd}</td>
             <td class="px-3 py-4 text-center text-xl font-bold text-slate-400">${ps.installs.lastMonth}</td>
-            <td class="px-3 py-4 text-center text-xl font-bold text-emerald-400 border-l border-slate-700">${ps.installs.lifetime}</td>
+            <td class="px-3 py-4 text-center text-xl font-bold text-emerald-400 border-l border-slate-600">${ps.installs.lifetime}</td>
           </tr>
           <tr class="hover:bg-slate-800/50">
             <td class="px-4 py-4 font-medium text-cyan-400">PTOs Completed</td>
-            <td class="px-3 py-4 text-center text-2xl font-bold">${ps.ptos.yesterday}</td>
+            <td class="px-3 py-4 text-center text-2xl font-bold">${ps.ptos.today}</td>
+            <td class="px-3 py-4 text-center text-2xl font-bold border-r border-slate-600">${ps.ptos.yesterday}</td>
             <td class="px-3 py-4 text-center text-2xl font-bold">${ps.ptos.wtd}</td>
-            <td class="px-3 py-4 text-center text-2xl font-bold">${ps.ptos.mtd}</td>
-            <td class="px-3 py-4 text-center text-xl font-bold text-slate-400 border-l border-slate-700">${ps.ptos.lastWeek}</td>
+            <td class="px-3 py-4 text-center text-xl font-bold text-slate-400">${ps.ptos.lastWeek}</td>
+            <td class="px-3 py-4 text-center text-2xl font-bold border-r border-slate-600">${ps.ptos.mtd}</td>
             <td class="px-3 py-4 text-center text-xl font-bold text-slate-400">${ps.ptos.lastMonth}</td>
-            <td class="px-3 py-4 text-center text-xl font-bold text-emerald-400 border-l border-slate-700">${ps.ptos.lifetime}</td>
+            <td class="px-3 py-4 text-center text-xl font-bold text-emerald-400 border-l border-slate-600">${ps.ptos.lifetime}</td>
           </tr>
           <tr class="hover:bg-slate-800/50">
             <td class="px-4 py-4 font-medium text-blue-400">ICFs Submitted</td>
-            <td class="px-3 py-4 text-center text-2xl font-bold">${ps.icfSubmitted.yesterday}</td>
+            <td class="px-3 py-4 text-center text-2xl font-bold">${ps.icfSubmitted.today}</td>
+            <td class="px-3 py-4 text-center text-2xl font-bold border-r border-slate-600">${ps.icfSubmitted.yesterday}</td>
             <td class="px-3 py-4 text-center text-2xl font-bold">${ps.icfSubmitted.wtd}</td>
-            <td class="px-3 py-4 text-center text-2xl font-bold">${ps.icfSubmitted.mtd}</td>
-            <td class="px-3 py-4 text-center text-xl font-bold text-slate-400 border-l border-slate-700">${ps.icfSubmitted.lastWeek}</td>
+            <td class="px-3 py-4 text-center text-xl font-bold text-slate-400">${ps.icfSubmitted.lastWeek}</td>
+            <td class="px-3 py-4 text-center text-2xl font-bold border-r border-slate-600">${ps.icfSubmitted.mtd}</td>
             <td class="px-3 py-4 text-center text-xl font-bold text-slate-400">${ps.icfSubmitted.lastMonth}</td>
-            <td class="px-3 py-4 text-center text-xl font-bold text-emerald-400 border-l border-slate-700">${ps.icfSubmitted.lifetime}</td>
+            <td class="px-3 py-4 text-center text-xl font-bold text-emerald-400 border-l border-slate-600">${ps.icfSubmitted.lifetime}</td>
           </tr>
           <tr class="hover:bg-slate-800/50">
             <td class="px-4 py-4 font-medium text-amber-400">ICFs Resubmitted</td>
-            <td class="px-3 py-4 text-center text-2xl font-bold">${ps.icfResubmitted.yesterday}</td>
+            <td class="px-3 py-4 text-center text-2xl font-bold">${ps.icfResubmitted.today}</td>
+            <td class="px-3 py-4 text-center text-2xl font-bold border-r border-slate-600">${ps.icfResubmitted.yesterday}</td>
             <td class="px-3 py-4 text-center text-2xl font-bold">${ps.icfResubmitted.wtd}</td>
-            <td class="px-3 py-4 text-center text-2xl font-bold">${ps.icfResubmitted.mtd}</td>
-            <td class="px-3 py-4 text-center text-xl font-bold text-slate-400 border-l border-slate-700">${ps.icfResubmitted.lastWeek}</td>
+            <td class="px-3 py-4 text-center text-xl font-bold text-slate-400">${ps.icfResubmitted.lastWeek}</td>
+            <td class="px-3 py-4 text-center text-2xl font-bold border-r border-slate-600">${ps.icfResubmitted.mtd}</td>
             <td class="px-3 py-4 text-center text-xl font-bold text-slate-400">${ps.icfResubmitted.lastMonth}</td>
-            <td class="px-3 py-4 text-center text-xl font-bold text-emerald-400 border-l border-slate-700">${ps.icfResubmitted.lifetime}</td>
+            <td class="px-3 py-4 text-center text-xl font-bold text-emerald-400 border-l border-slate-600">${ps.icfResubmitted.lifetime}</td>
           </tr>
           <tr class="hover:bg-slate-800/50">
             <td class="px-4 py-4 font-medium text-purple-400">ICFs Approved</td>
-            <td class="px-3 py-4 text-center text-2xl font-bold">${ps.icfApproved.yesterday}</td>
+            <td class="px-3 py-4 text-center text-2xl font-bold">${ps.icfApproved.today}</td>
+            <td class="px-3 py-4 text-center text-2xl font-bold border-r border-slate-600">${ps.icfApproved.yesterday}</td>
             <td class="px-3 py-4 text-center text-2xl font-bold">${ps.icfApproved.wtd}</td>
-            <td class="px-3 py-4 text-center text-2xl font-bold">${ps.icfApproved.mtd}</td>
-            <td class="px-3 py-4 text-center text-xl font-bold text-slate-400 border-l border-slate-700">${ps.icfApproved.lastWeek}</td>
+            <td class="px-3 py-4 text-center text-xl font-bold text-slate-400">${ps.icfApproved.lastWeek}</td>
+            <td class="px-3 py-4 text-center text-2xl font-bold border-r border-slate-600">${ps.icfApproved.mtd}</td>
             <td class="px-3 py-4 text-center text-xl font-bold text-slate-400">${ps.icfApproved.lastMonth}</td>
-            <td class="px-3 py-4 text-center text-xl font-bold text-emerald-400 border-l border-slate-700">${ps.icfApproved.lifetime}</td>
+            <td class="px-3 py-4 text-center text-xl font-bold text-emerald-400 border-l border-slate-600">${ps.icfApproved.lifetime}</td>
           </tr>
           <tr class="hover:bg-slate-800/50 bg-slate-800/30">
             <td class="px-4 py-4 font-medium text-green-400">💰 Payment Amount</td>
-            <td class="px-3 py-4 text-center text-lg font-bold text-green-400">${fmtCurrency(ps.paymentAmount.yesterday)}</td>
+            <td class="px-3 py-4 text-center text-lg font-bold text-green-400">${fmtCurrency(ps.paymentAmount.today)}</td>
+            <td class="px-3 py-4 text-center text-lg font-bold text-green-400 border-r border-slate-600">${fmtCurrency(ps.paymentAmount.yesterday)}</td>
             <td class="px-3 py-4 text-center text-lg font-bold text-green-400">${fmtCurrency(ps.paymentAmount.wtd)}</td>
-            <td class="px-3 py-4 text-center text-lg font-bold text-green-400">${fmtCurrency(ps.paymentAmount.mtd)}</td>
-            <td class="px-3 py-4 text-center text-base font-bold text-slate-400 border-l border-slate-700">${fmtCurrency(ps.paymentAmount.lastWeek)}</td>
+            <td class="px-3 py-4 text-center text-base font-bold text-slate-400">${fmtCurrency(ps.paymentAmount.lastWeek)}</td>
+            <td class="px-3 py-4 text-center text-lg font-bold text-green-400 border-r border-slate-600">${fmtCurrency(ps.paymentAmount.mtd)}</td>
             <td class="px-3 py-4 text-center text-base font-bold text-slate-400">${fmtCurrency(ps.paymentAmount.lastMonth)}</td>
-            <td class="px-3 py-4 text-center text-base font-bold text-emerald-400 border-l border-slate-700">${fmtCurrency(ps.paymentAmount.lifetime)}<br><span class="text-[10px] text-slate-500">All: ${fmtCurrency(ps.paymentAmount.allTime)}</span></td>
+            <td class="px-3 py-4 text-center text-base font-bold text-emerald-400 border-l border-slate-600">${fmtCurrency(ps.paymentAmount.lifetime)}<br><span class="text-[10px] text-slate-500">All: ${fmtCurrency(ps.paymentAmount.allTime)}</span></td>
           </tr>
         </tbody>
       </table>
