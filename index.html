@@ -759,6 +759,25 @@ const getInspectionStyle = s => { if (!s || s === '(No value)') return 'bg-slate
 const getPTOStyle = d => (!d || d === '(No value)' || d === 'None') ? 'bg-slate-800 text-slate-500 border-slate-700' : 'bg-green-900/50 text-green-400 border-green-800';
 const getDaysColor = d => d === null ? 'text-slate-600' : d > 90 ? 'text-red-400' : d > 60 ? 'text-amber-400' : d > 30 ? 'text-yellow-400' : 'text-slate-300';
 
+// Helper to get PTO display - shows date if complete, or interconnection status if pending
+const hasPtoComplete = d => d.ptoDate && d.ptoDate !== '(No value)' && d.ptoDate !== 'None';
+const getPtoDisplayValue = d => {
+  if (hasPtoComplete(d)) return d.ptoDate;
+  if (d.interconnectionStatus) return d.interconnectionStatus;
+  return 'Pending';
+};
+const getPtoDisplayStyle = d => {
+  if (hasPtoComplete(d)) return 'bg-green-900/50 text-green-400 border-green-800';
+  if (d.interconnectionStatus) {
+    const status = d.interconnectionStatus.toLowerCase();
+    if (status.includes('granted') || status.includes('complete') || status.includes('done')) return 'bg-green-900/50 text-green-400 border-green-800';
+    if (status.includes('submitted') || status.includes('requested')) return 'bg-blue-900/50 text-blue-400 border-blue-800';
+    if (status.includes('information') || status.includes('pending')) return 'bg-amber-900/50 text-amber-400 border-amber-800';
+    return 'bg-slate-700 text-slate-300 border-slate-600';
+  }
+  return 'bg-slate-800 text-slate-500 border-slate-700';
+};
+
 function setTab(t) { state.tab = t; state.search = ''; render(); }
 function setStatsSubTab(t) { state.statsSubTab = t; render(); }
 function setIcfSubTab(t) { state.icfSubTab = t; state.icfSortBy = null; state.icfSortDir = 'desc'; render(); }
@@ -980,7 +999,7 @@ function renderInstalledTab(stats, filtered, activeStages, stageCounts, permitOp
             const info = getStageInfo(d.sgipProgress);
             const utility = getUtility(d);
             const cca = getCCA(d);
-            return '<tr class="hover:bg-slate-800/50"><td class="px-2 py-2"><div class="min-w-[150px]">'+customerCell(d)+(d.applicationCode?'<br><span class="text-xs text-slate-500 mono">'+d.applicationCode+'</span>':'')+'</div></td><td class="px-2 py-2"><span class="px-1.5 py-0.5 rounded text-xs border '+getUtilityStyle(utility)+'">'+(utility||'—')+'</span></td><td class="px-2 py-2"><span class="px-1.5 py-0.5 rounded text-xs border '+(cca ? getCCAStyle(cca) : 'bg-slate-800/50 text-slate-500 border-slate-700')+'">'+(cca||'—')+'</span></td><td class="px-2 py-2 text-xs mono">'+(d.installDate||'—')+'</td><td class="px-2 py-2"><span class="font-semibold '+getDaysColor(d.daysSinceInstall)+'">'+(d.daysSinceInstall!==null?d.daysSinceInstall+'d':'—')+'</span></td><td class="px-2 py-2"><span class="editable px-1.5 py-0.5 rounded text-xs border '+getPermitStyle(d.permitStatus)+'" onclick="openEditModal('+i+',\'permitStatus\')">'+(d.permitStatus||'—')+'</span></td><td class="px-2 py-2"><span class="editable px-1.5 py-0.5 rounded text-xs border '+getInspectionStyle(d.inspectionStatus)+'" onclick="openEditModal('+i+',\'inspectionStatus\')">'+(d.inspectionStatus&&d.inspectionStatus!=='(No value)'?d.inspectionStatus:'—')+'</span></td><td class="px-2 py-2"><span class="editable px-1.5 py-0.5 rounded text-xs border '+getPTOStyle(d.ptoDate)+'" onclick="openEditModal('+i+',\'ptoDate\')">'+(d.ptoDate&&d.ptoDate!=='(No value)'&&d.ptoDate!=='None'?d.ptoDate:'Pending')+'</span></td><td class="px-2 py-2 text-xs">'+(d.sgipStage||'—')+'</td><td class="px-2 py-2 text-xs text-slate-400">'+(d.sgipStatus||'—')+'</td><td class="px-2 py-2"><span class="px-1.5 py-0.5 rounded text-xs font-medium" style="background:'+info.color+'20;color:'+info.color+'">'+info.label+'</span></td><td class="px-2 py-2 text-xs mono">'+(d.nextDueDate||'—')+'</td><td class="px-2 py-2 text-right"><span class="'+((d.sgipProgress||'').toLowerCase().includes('payment')&&(d.sgipProgress||'').toLowerCase().includes('completed')?'text-emerald-400':'text-slate-300')+'">'+(d.currentIncentive||'—')+'</span></td><td class="px-2 py-2 text-xs text-slate-400">'+(d.installer||'—')+'</td></tr>';
+            return '<tr class="hover:bg-slate-800/50"><td class="px-2 py-2"><div class="min-w-[150px]">'+customerCell(d)+(d.applicationCode?'<br><span class="text-xs text-slate-500 mono">'+d.applicationCode+'</span>':'')+'</div></td><td class="px-2 py-2"><span class="px-1.5 py-0.5 rounded text-xs border '+getUtilityStyle(utility)+'">'+(utility||'—')+'</span></td><td class="px-2 py-2"><span class="px-1.5 py-0.5 rounded text-xs border '+(cca ? getCCAStyle(cca) : 'bg-slate-800/50 text-slate-500 border-slate-700')+'">'+(cca||'—')+'</span></td><td class="px-2 py-2 text-xs mono">'+(d.installDate||'—')+'</td><td class="px-2 py-2"><span class="font-semibold '+getDaysColor(d.daysSinceInstall)+'">'+(d.daysSinceInstall!==null?d.daysSinceInstall+'d':'—')+'</span></td><td class="px-2 py-2"><span class="editable px-1.5 py-0.5 rounded text-xs border '+getPermitStyle(d.permitStatus)+'" onclick="openEditModal('+i+',\'permitStatus\')">'+(d.permitStatus||'—')+'</span></td><td class="px-2 py-2"><span class="editable px-1.5 py-0.5 rounded text-xs border '+getInspectionStyle(d.inspectionStatus)+'" onclick="openEditModal('+i+',\'inspectionStatus\')">'+(d.inspectionStatus&&d.inspectionStatus!=='(No value)'?d.inspectionStatus:'—')+'</span></td><td class="px-2 py-2"><span class="editable px-1.5 py-0.5 rounded text-xs border '+getPtoDisplayStyle(d)+'" onclick="openEditModal('+i+',\'ptoDate\')">'+getPtoDisplayValue(d)+'</span></td><td class="px-2 py-2 text-xs">'+(d.sgipStage||'—')+'</td><td class="px-2 py-2 text-xs text-slate-400">'+(d.sgipStatus||'—')+'</td><td class="px-2 py-2"><span class="px-1.5 py-0.5 rounded text-xs font-medium" style="background:'+info.color+'20;color:'+info.color+'">'+info.label+'</span></td><td class="px-2 py-2 text-xs mono">'+(d.nextDueDate||'—')+'</td><td class="px-2 py-2 text-right"><span class="'+((d.sgipProgress||'').toLowerCase().includes('payment')&&(d.sgipProgress||'').toLowerCase().includes('completed')?'text-emerald-400':'text-slate-300')+'">'+(d.currentIncentive||'—')+'</span></td><td class="px-2 py-2 text-xs text-slate-400">'+(d.installer||'—')+'</td></tr>';
           }).join('')}</tbody>
         </table>
       </div>
