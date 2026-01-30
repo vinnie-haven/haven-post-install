@@ -1458,9 +1458,17 @@ function getPtoFunnelData() {
     d.permitStatus === 'Approved' && 
     d.inspectionStatus === 'Passed'
   );
-  const ptoSubmitted = ptoNotApproved.filter(d => hasPtoSubmitted(d))
+  
+  // Check if PTO is submitted via ptoSubmittedDate OR interconnection status contains "PTO Submitted"
+  const isPtoSubmitted = (d) => {
+    if (hasPtoSubmitted(d)) return true;
+    const interconnection = (d.interconnectionStatus || '').toLowerCase();
+    return interconnection.includes('pto submitted');
+  };
+  
+  const ptoSubmitted = ptoNotApproved.filter(d => isPtoSubmitted(d))
     .map(d => ({ ...d, daysSinceSubmitted: daysSince(d.ptoSubmittedDate), daysSinceInstall: daysSince(d.installDate) }));
-  const ptoNotSubmitted = ptoNotApproved.filter(d => !hasPtoSubmitted(d))
+  const ptoNotSubmitted = ptoNotApproved.filter(d => !isPtoSubmitted(d))
     .map(d => ({ ...d, daysSinceInstall: daysSince(d.installDate) }));
   
   return { permitPending, needToSubmitPermit, inspectionScheduled, inspectionNotComplete, meterCollarNeeded, ptoSubmitted, ptoNotSubmitted };
