@@ -1494,6 +1494,47 @@ function getFilterOptions(deals, key, getter) {
   return Object.entries(counts).sort((a, b) => b[1] - a[1]);
 }
 
+let openPtoIcfDropdown = null;
+
+function togglePtoIcfDropdown(id) {
+  const menu = document.getElementById(id);
+  if (!menu) return;
+  
+  // Close any other open dropdown
+  if (openPtoIcfDropdown && openPtoIcfDropdown !== id) {
+    const other = document.getElementById(openPtoIcfDropdown);
+    if (other) other.classList.add('hidden');
+  }
+  
+  // Toggle this dropdown
+  if (menu.classList.contains('hidden')) {
+    menu.classList.remove('hidden');
+    openPtoIcfDropdown = id;
+  } else {
+    menu.classList.add('hidden');
+    openPtoIcfDropdown = null;
+  }
+}
+
+function selectAllPtoFilter(key, options) {
+  state.ptoFilters[key] = options.map(o => o[0]);
+  render();
+}
+
+function selectAllIcfFilter(key, options) {
+  state.icfFilters[key] = options.map(o => o[0]);
+  render();
+}
+
+// Close dropdowns when clicking outside
+document.addEventListener('click', function(e) {
+  if (openPtoIcfDropdown && !e.target.closest('.relative')) {
+    const menu = document.getElementById(openPtoIcfDropdown);
+    if (menu) menu.classList.add('hidden');
+    openPtoIcfDropdown = null;
+  }
+});
+
 function ptoFilterHeader(label, filterKey, options, sortKey = null) {
   const isActive = state.ptoFilters[filterKey]?.length > 0;
   const dropdownId = 'pto-filter-' + filterKey;
@@ -1501,18 +1542,18 @@ function ptoFilterHeader(label, filterKey, options, sortKey = null) {
     <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase relative">
       <div class="flex items-center gap-1">
         <span class="${sortKey ? 'cursor-pointer' : ''}" ${sortKey ? `onclick="setPtoSort('${sortKey}')"` : ''}>${label} ${sortKey && state.ptoSortBy === sortKey ? (state.ptoSortDir === 'asc' ? '↑' : '↓') : ''}</span>
-        <button onclick="event.stopPropagation(); toggleDropdown('${dropdownId}')" class="p-0.5 rounded hover:bg-slate-700 ${isActive ? 'text-emerald-400' : 'text-slate-500'}">
+        <button onclick="event.stopPropagation(); togglePtoIcfDropdown('${dropdownId}')" class="p-0.5 rounded hover:bg-slate-700 ${isActive ? 'text-emerald-400' : 'text-slate-500'}">
           <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M3 3a1 1 0 011-1h12a1 1 0 011 1v3a1 1 0 01-.293.707L12 11.414V15a1 1 0 01-.293.707l-2 2A1 1 0 018 17v-5.586L3.293 6.707A1 1 0 013 6V3z" clip-rule="evenodd"/></svg>
         </button>
       </div>
-      <div id="${dropdownId}" class="dropdown-menu absolute top-full left-0 mt-1 bg-slate-800 border border-slate-700 rounded-lg shadow-xl z-50 min-w-[180px] max-h-64 overflow-y-auto hidden">
+      <div id="${dropdownId}" class="absolute top-full left-0 mt-1 bg-slate-800 border border-slate-700 rounded-lg shadow-xl z-50 min-w-[180px] max-h-64 overflow-y-auto hidden">
         <div class="p-2 border-b border-slate-700 flex gap-1">
-          <button onclick="state.ptoFilters.${filterKey} = options${filterKey}.map(o => o[0]); render();" class="px-2 py-1 text-xs bg-slate-700 hover:bg-slate-600 rounded">All</button>
-          <button onclick="state.ptoFilters.${filterKey} = []; render();" class="px-2 py-1 text-xs bg-slate-700 hover:bg-slate-600 rounded">None</button>
+          <button onclick="selectAllPtoFilter('${filterKey}', ${JSON.stringify(options).replace(/"/g, '&quot;')})" class="px-2 py-1 text-xs bg-slate-700 hover:bg-slate-600 rounded">All</button>
+          <button onclick="state.ptoFilters['${filterKey}'] = []; render();" class="px-2 py-1 text-xs bg-slate-700 hover:bg-slate-600 rounded">None</button>
         </div>
         <div class="p-1">
           ${options.map(([val, count]) => `
-            <label class="flex items-center gap-2 px-2 py-1.5 hover:bg-slate-700/50 rounded cursor-pointer text-xs">
+            <label class="flex items-center gap-2 px-2 py-1.5 hover:bg-slate-700/50 rounded cursor-pointer text-xs" onclick="event.stopPropagation()">
               <input type="checkbox" ${state.ptoFilters[filterKey]?.includes(val) ? 'checked' : ''} onchange="togglePtoFilter('${filterKey}', '${val.replace(/'/g, "\\'")}');" class="rounded bg-slate-700 border-slate-600">
               <span class="flex-1 truncate">${val}</span>
               <span class="text-slate-500">${count}</span>
@@ -1531,18 +1572,18 @@ function icfFilterHeader(label, filterKey, options, sortKey = null) {
     <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase relative">
       <div class="flex items-center gap-1">
         <span class="${sortKey ? 'cursor-pointer' : ''}" ${sortKey ? `onclick="setIcfSort('${sortKey}')"` : ''}>${label} ${sortKey && state.icfSortBy === sortKey ? (state.icfSortDir === 'asc' ? '↑' : '↓') : ''}</span>
-        <button onclick="event.stopPropagation(); toggleDropdown('${dropdownId}')" class="p-0.5 rounded hover:bg-slate-700 ${isActive ? 'text-emerald-400' : 'text-slate-500'}">
+        <button onclick="event.stopPropagation(); togglePtoIcfDropdown('${dropdownId}')" class="p-0.5 rounded hover:bg-slate-700 ${isActive ? 'text-emerald-400' : 'text-slate-500'}">
           <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M3 3a1 1 0 011-1h12a1 1 0 011 1v3a1 1 0 01-.293.707L12 11.414V15a1 1 0 01-.293.707l-2 2A1 1 0 018 17v-5.586L3.293 6.707A1 1 0 013 6V3z" clip-rule="evenodd"/></svg>
         </button>
       </div>
-      <div id="${dropdownId}" class="dropdown-menu absolute top-full left-0 mt-1 bg-slate-800 border border-slate-700 rounded-lg shadow-xl z-50 min-w-[180px] max-h-64 overflow-y-auto hidden">
+      <div id="${dropdownId}" class="absolute top-full left-0 mt-1 bg-slate-800 border border-slate-700 rounded-lg shadow-xl z-50 min-w-[180px] max-h-64 overflow-y-auto hidden">
         <div class="p-2 border-b border-slate-700 flex gap-1">
-          <button onclick="state.icfFilters.${filterKey} = options${filterKey}.map(o => o[0]); render();" class="px-2 py-1 text-xs bg-slate-700 hover:bg-slate-600 rounded">All</button>
-          <button onclick="state.icfFilters.${filterKey} = []; render();" class="px-2 py-1 text-xs bg-slate-700 hover:bg-slate-600 rounded">None</button>
+          <button onclick="selectAllIcfFilter('${filterKey}', ${JSON.stringify(options).replace(/"/g, '&quot;')})" class="px-2 py-1 text-xs bg-slate-700 hover:bg-slate-600 rounded">All</button>
+          <button onclick="state.icfFilters['${filterKey}'] = []; render();" class="px-2 py-1 text-xs bg-slate-700 hover:bg-slate-600 rounded">None</button>
         </div>
         <div class="p-1">
           ${options.map(([val, count]) => `
-            <label class="flex items-center gap-2 px-2 py-1.5 hover:bg-slate-700/50 rounded cursor-pointer text-xs">
+            <label class="flex items-center gap-2 px-2 py-1.5 hover:bg-slate-700/50 rounded cursor-pointer text-xs" onclick="event.stopPropagation()">
               <input type="checkbox" ${state.icfFilters[filterKey]?.includes(val) ? 'checked' : ''} onchange="toggleIcfFilter('${filterKey}', '${val.replace(/'/g, "\\'")}');" class="rounded bg-slate-700 border-slate-600">
               <span class="flex-1 truncate">${val}</span>
               <span class="text-slate-500">${count}</span>
@@ -2521,8 +2562,8 @@ function renderIcfSummary(data) {
           <h3 class="font-semibold text-slate-200">📊 ICF Pipeline Summary</h3>
           <p class="text-sm text-slate-400 mt-1">Current snapshot of all ICF pipeline stages</p>
         </div>
-        <button onclick="saveCurrentIcfSnapshot()" class="px-3 py-1.5 text-xs rounded-lg font-medium ${hasToday ? 'bg-slate-700 text-slate-400' : 'bg-emerald-600 hover:bg-emerald-500 text-white'}">
-          ${hasToday ? '✓ Today Saved' : '💾 Save Today\'s Snapshot'}
+        <button onclick="saveCurrentIcfSnapshot()" class="px-3 py-1.5 text-xs rounded-lg font-medium ${hasToday ? 'bg-blue-600 hover:bg-blue-500 text-white' : 'bg-emerald-600 hover:bg-emerald-500 text-white'}">
+          ${hasToday ? '🔄 Update Today' : '💾 Save Today\'s Snapshot'}
         </button>
       </div>
     </div>
