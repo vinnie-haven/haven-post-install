@@ -138,6 +138,8 @@ let state = {
   ptoSortDir: 'desc',
   actionSubTab: 'needPermit',
   search: '', 
+  ptoSearch: '',
+  icfSearch: '',
   filters: { permitStatus: [], inspectionStatus: [], ptoStatus: [], sgipStage: [], sgipStatus: [], sgipProgress: [], installer: [], installMonth: [], utility: [], cca: [] },
   ptoFilters: { utility: [], installer: [], inspectionStatus: [], interconnectionStatus: [] },
   icfFilters: { utility: [], installer: [], sgipProgress: [], suspendedType: [], sgipRateStatus: [], sgipIcfStatus: [], demandResponseProgram: [] },
@@ -592,8 +594,29 @@ function getInstallMonthCounts() {
 
 function getFilteredData() {
   const allInstalled = getAllInstalled();
-  let indices = state.search ? SEARCH_INDEX.filter(s => s.text.includes(state.search.toLowerCase())).map(s => s.idx) : allInstalled.map((_, i) => i);
-  let r = indices.map(i => ({ ...allInstalled[i], _index: i, daysSinceInstall: getDaysSince(allInstalled[i].installDate) }));
+  const searchLower = state.search ? state.search.toLowerCase() : '';
+  
+  // Use search index for filtering
+  let indices;
+  if (searchLower) {
+    indices = [];
+    for (let i = 0; i < SEARCH_INDEX.length; i++) {
+      if (SEARCH_INDEX[i].text.includes(searchLower)) {
+        indices.push(SEARCH_INDEX[i].idx);
+      }
+    }
+  } else {
+    indices = allInstalled.map((_, i) => i);
+  }
+  
+  // Build result array with minimal object creation
+  let r = [];
+  for (let i = 0; i < indices.length; i++) {
+    const idx = indices[i];
+    const d = allInstalled[idx];
+    r.push({ ...d, _index: idx, daysSinceInstall: getDaysSince(d.installDate) });
+  }
+  
   if (state.filters.permitStatus.length > 0) r = r.filter(d => state.filters.permitStatus.includes(d.permitStatus || '(empty)') || (!d.permitStatus && state.filters.permitStatus.includes('(empty)')));
   if (state.filters.inspectionStatus.length > 0) r = r.filter(d => { let v = d.inspectionStatus; if (!v || v === '(No value)') v = '(empty)'; return state.filters.inspectionStatus.includes(v); });
   if (state.filters.ptoStatus.length > 0) r = r.filter(d => { const has = d.ptoDate && d.ptoDate !== '(No value)' && d.ptoDate !== 'None'; return state.filters.ptoStatus.includes(has ? 'Complete' : 'Pending'); });
@@ -783,7 +806,34 @@ function setStatsSubTab(t) { state.statsSubTab = t; render(); }
 function setIcfSubTab(t) { state.icfSubTab = t; state.icfSortBy = null; state.icfSortDir = 'desc'; render(); }
 function setActionSubTab(t) { state.actionSubTab = t; state.ptoSortBy = null; state.icfSortBy = null; render(); }
 function setIcfSort(col) { if (state.icfSortBy === col) state.icfSortDir = state.icfSortDir === 'asc' ? 'desc' : 'asc'; else { state.icfSortBy = col; state.icfSortDir = 'desc'; } render(); }
-function updateSearch(v) { state.search = v; if (searchTimeout) clearTimeout(searchTimeout); searchTimeout = setTimeout(() => render(), 150); }
+let lastSearchValue = '';
+let lastSearchResults = null;
+
+function updateSearch(v) { 
+  // Update input value immediately for responsiveness
+  state.search = v;
+  
+  // Clear any pending search
+  if (searchTimeout) clearTimeout(searchTimeout); 
+  
+  // If search is empty, render immediately
+  if (!v) {
+    lastSearchValue = '';
+    lastSearchResults = null;
+    render();
+    return;
+  }
+  
+  // Debounce the actual search/render
+  searchTimeout = setTimeout(() => {
+    // Only re-render if value actually changed
+    if (v !== lastSearchValue) {
+      lastSearchValue = v;
+      lastSearchResults = null;
+      render();
+    }
+  }, 250); 
+}
 function setSort(col) { if (state.sortBy === col) state.sortDir = state.sortDir === 'asc' ? 'desc' : 'asc'; else { state.sortBy = col; state.sortDir = 'desc'; } closeAllDropdowns(); render(); }
 
 let openDropdownId = null;
@@ -1437,6 +1487,146 @@ function renderActionItems() {
 function setPtoSubTab(tab) { state.ptoSubTab = tab; state.ptoSortBy = null; render(); }
 function setPtoSort(col) { if (state.ptoSortBy === col) state.ptoSortDir = state.ptoSortDir === 'asc' ? 'desc' : 'asc'; else { state.ptoSortBy = col; state.ptoSortDir = 'desc'; } render(); }
 
+// PTO Search Functions
+function handlePtoSearch(e) {
+  state.ptoSearch = e.target.value;
+  render();
+}
+
+function clearPtoSearch() {
+  state.ptoSearch = '';
+  render();
+}
+
+function searchPtoFunnel(data, query) {
+  const q = query.toLowerCase();
+  const results = [];
+  
+  const searchInCategory = (deals, category) => {
+    return deals.filter(d => 
+      (d.customerName || '').toLowerCase().includes(q) ||
+      (d.applicationCode || '').toLowerCase().includes(q)
+    ).map(d => ({ ...d, _category: category }));
+  };
+  
+  results.push(...searchInCategory(data.permitPending, 'Permit Pending'));
+  results.push(...searchInCategory(data.needToSubmitPermit, 'Need to Submit Permit'));
+  results.push(...searchInCategory(data.inspectionScheduled, 'Inspection Scheduled'));
+  results.push(...searchInCategory(data.inspectionNotComplete, 'Inspection Not Complete'));
+  results.push(...searchInCategory(data.meterCollarNeeded, 'Meter Collar Needed'));
+  results.push(...searchInCategory(data.ptoSubmitted, 'PTO Submitted'));
+  results.push(...searchInCategory(data.ptoNotSubmitted, 'PTO Not Submitted'));
+  
+  return results;
+}
+
+function renderPtoSearchResults(results) {
+  return `
+    <div class="bg-pink-500/10 border border-pink-500/30 rounded-lg p-4 mb-4">
+      <h3 class="font-semibold text-pink-400">🔍 Search Results for "${state.ptoSearch}"</h3>
+      <p class="text-sm text-slate-400 mt-1">Found ${results.length} matching project${results.length !== 1 ? 's' : ''}</p>
+    </div>
+    <div class="bg-slate-800/50 rounded-lg border border-slate-700/50 overflow-hidden">
+      <div class="table-container overflow-x-auto" style="max-height: 600px;">
+        <table class="w-full text-sm">
+          <thead class="sticky-header"><tr>
+            <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Customer</th>
+            <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Category</th>
+            <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Utility</th>
+            <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Install Date</th>
+            <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Permit Status</th>
+            <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Inspection Status</th>
+            <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Installer</th>
+          </tr></thead>
+          <tbody class="divide-y divide-slate-700/30">
+            ${results.length === 0 ? '<tr><td colspan="7" class="px-3 py-8 text-center text-slate-500">No matching projects found</td></tr>' : results.map(d => `
+              <tr class="hover:bg-slate-800/50">
+                <td class="px-3 py-2">${customerCell(d)}${d.applicationCode ? '<br><span class="text-xs text-slate-500 mono">'+d.applicationCode+'</span>' : ''}</td>
+                <td class="px-3 py-2"><span class="px-1.5 py-0.5 rounded text-xs bg-slate-700 text-slate-300">${d._category}</span></td>
+                <td class="px-3 py-2"><span class="px-1.5 py-0.5 rounded text-xs border ${getUtilityStyle(getUtility(d))}">${getUtility(d) || '—'}</span></td>
+                <td class="px-3 py-2 text-xs mono">${d.installDate || '—'}</td>
+                <td class="px-3 py-2 text-xs">${d.permitStatus || '—'}</td>
+                <td class="px-3 py-2 text-xs">${d.inspectionStatus || '—'}</td>
+                <td class="px-3 py-2 text-xs">${d.installer || '—'}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
+
+// ICF Search Functions
+function handleIcfSearch(e) {
+  state.icfSearch = e.target.value;
+  render();
+}
+
+function clearIcfSearch() {
+  state.icfSearch = '';
+  render();
+}
+
+function searchIcfDeepDive(data, query) {
+  const q = query.toLowerCase();
+  const results = [];
+  
+  const searchInCategory = (deals, category) => {
+    return deals.filter(d => 
+      (d.customerName || '').toLowerCase().includes(q) ||
+      (d.applicationCode || '').toLowerCase().includes(q)
+    ).map(d => ({ ...d, _category: category }));
+  };
+  
+  results.push(...searchInCategory(data.ptoNoIcf, "PTO'd, No ICF"));
+  results.push(...searchInCategory(data.revisions, 'Revisions Required'));
+  results.push(...searchInCategory(data.icfSubmitted, 'ICF Submitted'));
+  results.push(...searchInCategory(data.icfReview, 'ICF Review'));
+  results.push(...searchInCategory(data.icfInspection, 'ICF Inspection'));
+  results.push(...searchInCategory(data.pendingPayment, 'Pending Payment'));
+  results.push(...searchInCategory(data.paymentComplete, 'Payment Complete'));
+  
+  return results;
+}
+
+function renderIcfSearchResults(results) {
+  return `
+    <div class="bg-cyan-500/10 border border-cyan-500/30 rounded-lg p-4 mb-4">
+      <h3 class="font-semibold text-cyan-400">🔍 Search Results for "${state.icfSearch}"</h3>
+      <p class="text-sm text-slate-400 mt-1">Found ${results.length} matching project${results.length !== 1 ? 's' : ''}</p>
+    </div>
+    <div class="bg-slate-800/50 rounded-lg border border-slate-700/50 overflow-hidden">
+      <div class="table-container overflow-x-auto" style="max-height: 600px;">
+        <table class="w-full text-sm">
+          <thead class="sticky-header"><tr>
+            <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Customer</th>
+            <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">ICF Stage</th>
+            <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Utility</th>
+            <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Install Date</th>
+            <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">PTO Date</th>
+            <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">SGIP Status</th>
+            <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Incentive</th>
+          </tr></thead>
+          <tbody class="divide-y divide-slate-700/30">
+            ${results.length === 0 ? '<tr><td colspan="7" class="px-3 py-8 text-center text-slate-500">No matching projects found</td></tr>' : results.map(d => `
+              <tr class="hover:bg-slate-800/50">
+                <td class="px-3 py-2">${customerCell(d)}${d.applicationCode ? '<br><span class="text-xs text-slate-500 mono">'+d.applicationCode+'</span>' : ''}</td>
+                <td class="px-3 py-2"><span class="px-1.5 py-0.5 rounded text-xs bg-slate-700 text-slate-300">${d._category}</span></td>
+                <td class="px-3 py-2"><span class="px-1.5 py-0.5 rounded text-xs border ${getUtilityStyle(getUtility(d))}">${getUtility(d) || '—'}</span></td>
+                <td class="px-3 py-2 text-xs mono">${d.installDate || '—'}</td>
+                <td class="px-3 py-2 text-xs mono text-green-400">${d.ptoDate || '—'}</td>
+                <td class="px-3 py-2 text-xs">${d.sgipProgress || '—'}</td>
+                <td class="px-3 py-2 text-xs text-emerald-400">${fmtCurrency(parseNum(d.currentIncentive || d.finalIncentive))}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
+
 function togglePtoFilter(key, value) {
   const arr = state.ptoFilters[key];
   const idx = arr.indexOf(value);
@@ -1727,15 +1917,27 @@ function renderPtoFunnelTab() {
     { key: 'ptoStatus', label: 'PTO Status', count: data.ptoSubmitted.length + data.ptoNotSubmitted.length, color: 'cyan' }
   ];
   
+  // Search across all PTO data
+  const searchResult = state.ptoSearch ? searchPtoFunnel(data, state.ptoSearch) : null;
+  
   return `
-    <div class="flex gap-2 mb-4 flex-wrap">
+    <div class="flex gap-2 mb-4 flex-wrap items-center">
       ${tabs.map(t => `
         <button onclick="setPtoSubTab('${t.key}')" class="subtab px-3 py-1.5 rounded-lg text-sm font-medium border ${state.ptoSubTab === t.key ? `active border-${t.color}-500/40 text-${t.color}-400` : 'border-slate-700/50 text-slate-400'}">
           ${t.label} <span class="ml-1 px-1.5 py-0.5 rounded text-xs ${state.ptoSubTab === t.key ? `bg-${t.color}-500/20` : 'bg-slate-700'}">${t.count}</span>
         </button>
       `).join('')}
+      <div class="ml-auto flex items-center gap-2">
+        <div class="relative">
+          <input type="text" placeholder="Search customer..." value="${state.ptoSearch}" 
+            onkeyup="handlePtoSearch(event)" 
+            class="bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-sm w-48 focus:outline-none focus:border-pink-500">
+          ${state.ptoSearch ? `<button onclick="clearPtoSearch()" class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300">✕</button>` : ''}
+        </div>
+      </div>
     </div>
-    ${state.ptoSubTab === 'summary' ? renderPtoFunnelSummary(data) :
+    ${searchResult ? renderPtoSearchResults(searchResult) :
+      state.ptoSubTab === 'summary' ? renderPtoFunnelSummary(data) :
       state.ptoSubTab === 'permitPending' ? renderPermitPending(data.permitPending) :
       state.ptoSubTab === 'needToSubmitPermit' ? renderNeedToSubmitPermit(data.needToSubmitPermit) : 
       state.ptoSubTab === 'inspectionScheduled' ? renderInspectionScheduled(data.inspectionScheduled) :
@@ -2328,15 +2530,27 @@ function renderIcfDeepDiveTab() {
     { key: 'paymentComplete', label: 'Payment Complete', count: data.paymentComplete.length, color: 'green' }
   ];
   
+  // Search across all ICF data
+  const searchResult = state.icfSearch ? searchIcfDeepDive(data, state.icfSearch) : null;
+  
   return `
-    <div class="flex gap-2 mb-4 flex-wrap">
+    <div class="flex gap-2 mb-4 flex-wrap items-center">
       ${tabs.map(t => `
         <button onclick="setIcfSubTab('${t.key}')" class="subtab px-3 py-1.5 rounded-lg text-sm font-medium border ${state.icfSubTab === t.key ? `active border-${t.color}-500/40 text-${t.color}-400` : 'border-slate-700/50 text-slate-400'}">
           ${t.label} <span class="ml-1 px-1.5 py-0.5 rounded text-xs ${state.icfSubTab === t.key ? `bg-${t.color}-500/20` : 'bg-slate-700'}">${t.count}</span>
         </button>
       `).join('')}
+      <div class="ml-auto flex items-center gap-2">
+        <div class="relative">
+          <input type="text" placeholder="Search customer..." value="${state.icfSearch}" 
+            onkeyup="handleIcfSearch(event)" 
+            class="bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-sm w-48 focus:outline-none focus:border-yellow-500">
+          ${state.icfSearch ? `<button onclick="clearIcfSearch()" class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300">✕</button>` : ''}
+        </div>
+      </div>
     </div>
-    ${state.icfSubTab === 'summary' ? renderIcfSummary(data) :
+    ${searchResult ? renderIcfSearchResults(searchResult) :
+      state.icfSubTab === 'summary' ? renderIcfSummary(data) :
       state.icfSubTab === 'ptoNoIcf' ? renderPtoNoIcf(data.ptoNoIcf) : 
       state.icfSubTab === 'revisions' ? renderRevisions(data.revisions) :
       state.icfSubTab === 'icfSubmitted' ? renderIcfSubmittedDeep(data.icfSubmitted) :
