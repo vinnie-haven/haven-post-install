@@ -140,7 +140,7 @@ let state = {
   search: '', 
   filters: { permitStatus: [], inspectionStatus: [], ptoStatus: [], sgipStage: [], sgipStatus: [], sgipProgress: [], installer: [], installMonth: [], utility: [], cca: [] },
   ptoFilters: { utility: [], installer: [], inspectionStatus: [], interconnectionStatus: [] },
-  icfFilters: { utility: [], installer: [], sgipProgress: [], suspendedType: [] },
+  icfFilters: { utility: [], installer: [], sgipProgress: [], suspendedType: [], sgipRateStatus: [], sgipIcfStatus: [], demandResponseProgram: [] },
   sortBy: 'daysSinceInstall', 
   sortDir: 'desc', 
   editingDeal: null, 
@@ -1473,6 +1473,15 @@ function applyIcfFilters(deals) {
   if (state.icfFilters.suspendedType.length > 0) {
     filtered = filtered.filter(d => state.icfFilters.suspendedType.includes(d.suspendedType || '(empty)'));
   }
+  if (state.icfFilters.sgipRateStatus.length > 0) {
+    filtered = filtered.filter(d => state.icfFilters.sgipRateStatus.includes(d.sgipRateStatus || '(empty)'));
+  }
+  if (state.icfFilters.sgipIcfStatus.length > 0) {
+    filtered = filtered.filter(d => state.icfFilters.sgipIcfStatus.includes(d.sgipIcfStatus || '(empty)'));
+  }
+  if (state.icfFilters.demandResponseProgram.length > 0) {
+    filtered = filtered.filter(d => state.icfFilters.demandResponseProgram.includes(d.demandResponseProgram || '(empty)'));
+  }
   return filtered;
 }
 
@@ -2592,10 +2601,12 @@ function renderIcfSummary(data) {
 }
 
 function renderPtoNoIcf(deals) {
-  // Get filter options
+  // Get filter options for all filterable columns
   const utilityOpts = getFilterOptions(deals, 'utility', d => getUtility(d) || '(empty)');
-  const installerOpts = getFilterOptions(deals, 'installer', d => d.installer || '(empty)');
   const sgipProgressOpts = getFilterOptions(deals, 'sgipProgress', d => d.sgipProgress || '(empty)');
+  const sgipRateOpts = getFilterOptions(deals, 'sgipRateStatus', d => d.sgipRateStatus || '(empty)');
+  const icfStatusOpts = getFilterOptions(deals, 'sgipIcfStatus', d => d.sgipIcfStatus || '(empty)');
+  const drProgramOpts = getFilterOptions(deals, 'demandResponseProgram', d => d.demandResponseProgram || '(empty)');
   
   // Apply filters
   const filtered = applyIcfFilters(deals);
@@ -2629,9 +2640,9 @@ function renderPtoNoIcf(deals) {
             ${icfSortHeader('PTO Date', 'ptoDate')}
             ${icfSortHeader('Days Since PTO', 'daysSincePto')}
             ${icfFilterHeader('Current Status', 'sgipProgress', sgipProgressOpts)}
-            <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">SGIP Rate</th>
-            <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">ICF Status</th>
-            <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">DR Program</th>
+            ${icfFilterHeader('SGIP Rate', 'sgipRateStatus', sgipRateOpts)}
+            ${icfFilterHeader('ICF Status', 'sgipIcfStatus', icfStatusOpts)}
+            ${icfFilterHeader('DR Program', 'demandResponseProgram', drProgramOpts)}
           </tr></thead>
           <tbody class="divide-y divide-slate-700/30">
             ${sorted.length === 0 ? '<tr><td colspan="9" class="px-3 py-8 text-center text-slate-500">No projects in this category</td></tr>' : sorted.map(d => `
@@ -2655,9 +2666,12 @@ function renderPtoNoIcf(deals) {
 }
 
 function renderRevisions(deals) {
-  // Get filter options
+  // Get filter options for all filterable columns
   const utilityOpts = getFilterOptions(deals, 'utility', d => getUtility(d) || '(empty)');
   const suspendedTypeOpts = getFilterOptions(deals, 'suspendedType', d => d.suspendedType || '(empty)');
+  const sgipRateOpts = getFilterOptions(deals, 'sgipRateStatus', d => d.sgipRateStatus || '(empty)');
+  const icfStatusOpts = getFilterOptions(deals, 'sgipIcfStatus', d => d.sgipIcfStatus || '(empty)');
+  const drProgramOpts = getFilterOptions(deals, 'demandResponseProgram', d => d.demandResponseProgram || '(empty)');
   
   // Apply filters
   const filtered = applyIcfFilters(deals);
@@ -2692,9 +2706,9 @@ function renderRevisions(deals) {
             ${icfSortHeader('Suspended Date', 'icfSuspendedDate')}
             ${icfSortHeader('Days Suspended', 'daysSinceSuspended')}
             ${icfSortHeader('Next Due Date', 'nextDueDate')}
-            <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">SGIP Rate</th>
-            <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">ICF Status</th>
-            <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">DR Program</th>
+            ${icfFilterHeader('SGIP Rate', 'sgipRateStatus', sgipRateOpts)}
+            ${icfFilterHeader('ICF Status', 'sgipIcfStatus', icfStatusOpts)}
+            ${icfFilterHeader('DR Program', 'demandResponseProgram', drProgramOpts)}
           </tr></thead>
           <tbody class="divide-y divide-slate-700/30">
             ${sorted.length === 0 ? '<tr><td colspan="10" class="px-3 py-8 text-center text-slate-500">No projects in this category</td></tr>' : sorted.map(d => `
