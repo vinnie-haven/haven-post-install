@@ -739,13 +739,25 @@ function getInstallsByMonth() {
     if (!byMonth[month]) byMonth[month] = { total: 0, icfComplete: 0, icfPending: 0, inspectionComplete: 0, ptoComplete: 0 };
     byMonth[month].total++;
     const sgipProgress = (d.sgipProgress || '').toLowerCase();
+    const hasPto = d.ptoDate && d.ptoDate !== '(No value)' && d.ptoDate !== 'None';
+    
     // ICF Complete = Pending Payment or Payment Completed (any variation)
-    if (sgipProgress.includes('pending payment') || sgipProgress.includes('payment') && sgipProgress.includes('completed')) byMonth[month].icfComplete++;
-    else byMonth[month].icfPending++;
-    // Inspection complete = Passed
-    if (d.inspectionStatus === 'Passed') byMonth[month].inspectionComplete++;
+    // Fix operator precedence with parentheses
+    if (sgipProgress.includes('pending payment') || (sgipProgress.includes('payment') && sgipProgress.includes('completed'))) {
+      byMonth[month].icfComplete++;
+    } else {
+      byMonth[month].icfPending++;
+    }
+    
+    // Inspection complete = Passed OR has PTO (since PTO implies inspection passed)
+    if (d.inspectionStatus === 'Passed' || hasPto) {
+      byMonth[month].inspectionComplete++;
+    }
+    
     // PTO complete = has a valid PTO date
-    if (d.ptoDate && d.ptoDate !== '(No value)' && d.ptoDate !== 'None') byMonth[month].ptoComplete++;
+    if (hasPto) {
+      byMonth[month].ptoComplete++;
+    }
   });
   return Object.entries(byMonth).sort((a, b) => b[0].localeCompare(a[0])).map(([month, data]) => ({ month, ...data }));
 }
@@ -1263,7 +1275,7 @@ function renderMonthlyStats() {
         </tbody>
       </table>
     </div>
-    <p class="text-xs text-slate-500 mt-4">Inspection Complete = Passed • PTO Complete = Has PTO date • ICF Complete = ICF: Pending Payment or Payment: Completed</p>
+    <p class="text-xs text-slate-500 mt-4">Inspection Complete = Passed or has PTO • PTO Complete = Has PTO date • ICF Complete = ICF: Pending Payment or Payment: Completed</p>
   `;
 }
 
