@@ -1089,11 +1089,13 @@ function renderStatsTab() {
       <button onclick="setStatsSubTab('activity')" class="subtab px-3 py-1.5 rounded-lg text-sm font-medium border ${state.statsSubTab === 'activity' ? 'active border-blue-500/40 text-blue-400' : 'border-slate-700/50 text-slate-400'}">📊 Activity</button>
       <button onclick="setStatsSubTab('status')" class="subtab px-3 py-1.5 rounded-lg text-sm font-medium border ${state.statsSubTab === 'status' ? 'active border-purple-500/40 text-purple-400' : 'border-slate-700/50 text-slate-400'}">📋 Status Counts</button>
       <button onclick="setStatsSubTab('monthly')" class="subtab px-3 py-1.5 rounded-lg text-sm font-medium border ${state.statsSubTab === 'monthly' ? 'active border-cyan-500/40 text-cyan-400' : 'border-slate-700/50 text-slate-400'}">📅 Installs by Month</button>
+      <button onclick="setStatsSubTab('icfMonthly')" class="subtab px-3 py-1.5 rounded-lg text-sm font-medium border ${state.statsSubTab === 'icfMonthly' ? 'active border-yellow-500/40 text-yellow-400' : 'border-slate-700/50 text-slate-400'}">📝 ICF by Month</button>
       <button onclick="setStatsSubTab('budget')" class="subtab px-3 py-1.5 rounded-lg text-sm font-medium border ${state.statsSubTab === 'budget' ? 'active border-emerald-500/40 text-emerald-400' : 'border-slate-700/50 text-slate-400'}">💰 Budget Category</button>
     </div>
     ${state.statsSubTab === 'activity' ? renderActivityStats() : 
       state.statsSubTab === 'status' ? renderStatusCounts() : 
       state.statsSubTab === 'monthly' ? renderMonthlyStats() : 
+      state.statsSubTab === 'icfMonthly' ? renderIcfMonthlyStats() :
       renderBudgetCategoryStats()}
   `;
 }
@@ -1304,6 +1306,144 @@ function getInstallsByBudgetCategory() {
     }
   });
   return Object.entries(byMonth).sort((a, b) => b[0].localeCompare(a[0])).map(([month, data]) => ({ month, ...data }));
+}
+
+function getIcfStatsByMonth() {
+  // Get ICF data from SGIP_DATA grouped by month
+  // Start from October 2025
+  const startDate = new Date('2025-10-01');
+  
+  const byMonth = {};
+  
+  SGIP_DATA.forEach(d => {
+    // ICF Submitted - use icfSubmittedDate
+    if (d.icfSubmittedDate) {
+      const date = parseAnyDate(d.icfSubmittedDate);
+      if (date && date >= startDate) {
+        const month = date.toISOString().slice(0, 7); // YYYY-MM format
+        if (!byMonth[month]) byMonth[month] = { submitted: 0, resubmitted: 0, approved: 0 };
+        byMonth[month].submitted++;
+      }
+    }
+    
+    // ICF Resubmitted - use icfResubmittedDate
+    if (d.icfResubmittedDate) {
+      const date = parseAnyDate(d.icfResubmittedDate);
+      if (date && date >= startDate) {
+        const month = date.toISOString().slice(0, 7);
+        if (!byMonth[month]) byMonth[month] = { submitted: 0, resubmitted: 0, approved: 0 };
+        byMonth[month].resubmitted++;
+      }
+    }
+    
+    // ICF Approved - use icfPendingPaymentDate (when it moves to Pending Payment, it's approved)
+    if (d.icfPendingPaymentDate) {
+      const date = parseAnyDate(d.icfPendingPaymentDate);
+      if (date && date >= startDate) {
+        const month = date.toISOString().slice(0, 7);
+        if (!byMonth[month]) byMonth[month] = { submitted: 0, resubmitted: 0, approved: 0 };
+        byMonth[month].approved++;
+      }
+    }
+  });
+  
+  // Sort by month descending and format
+  return Object.entries(byMonth)
+    .sort((a, b) => b[0].localeCompare(a[0]))
+    .map(([month, data]) => ({ 
+      month, 
+      monthLabel: formatMonthLabel(month),
+      ...data 
+    }));
+}
+
+function renderIcfMonthlyStats() {
+  const icfData = getIcfStatsByMonth();
+  
+  // Calculate totals
+  const totals = icfData.reduce((acc, m) => ({
+    submitted: acc.submitted + m.submitted,
+    resubmitted: acc.resubmitted + m.resubmitted,
+    approved: acc.approved + m.approved
+  }), { submitted: 0, resubmitted: 0, approved: 0 });
+  
+  return `
+    <div class="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-4 mb-4">
+      <h3 class="font-semibold text-yellow-400">📝 ICF Activity by Month</h3>
+      <p class="text-sm text-slate-400 mt-1">ICF submissions, resubmissions, and approvals tracked by month (since Oct 2025)</p>
+    </div>
+    
+    <!-- Summary Cards -->
+    <div class="grid grid-cols-3 gap-4 mb-6">
+      <div class="bg-slate-800/50 rounded-lg p-4 border border-slate-700/50">
+        <p class="text-slate-400 text-xs uppercase mb-1">Total Submitted</p>
+        <p class="text-3xl font-bold text-blue-400">${totals.submitted}</p>
+      </div>
+      <div class="bg-slate-800/50 rounded-lg p-4 border border-slate-700/50">
+        <p class="text-slate-400 text-xs uppercase mb-1">Total Resubmitted</p>
+        <p class="text-3xl font-bold text-amber-400">${totals.resubmitted}</p>
+      </div>
+      <div class="bg-slate-800/50 rounded-lg p-4 border border-slate-700/50">
+        <p class="text-slate-400 text-xs uppercase mb-1">Total Approved</p>
+        <p class="text-3xl font-bold text-green-400">${totals.approved}</p>
+      </div>
+    </div>
+    
+    <!-- Monthly Table -->
+    <div class="bg-slate-800/50 rounded-lg border border-slate-700/50 overflow-hidden">
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="border-b border-slate-700 bg-slate-900/50">
+            <th class="px-4 py-3 text-left text-xs font-semibold text-slate-400 uppercase">Month</th>
+            <th class="px-4 py-3 text-center text-xs font-semibold text-blue-400 uppercase">ICF Submitted</th>
+            <th class="px-4 py-3 text-center text-xs font-semibold text-amber-400 uppercase">ICF Resubmitted</th>
+            <th class="px-4 py-3 text-center text-xs font-semibold text-green-400 uppercase">ICF Approved</th>
+            <th class="px-4 py-3 text-center text-xs font-semibold text-slate-400 uppercase">Approval Rate</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-700/30">
+          ${icfData.length === 0 ? `
+            <tr><td colspan="5" class="px-4 py-8 text-center text-slate-500">No ICF data available. Make sure SGIP data is loaded.</td></tr>
+          ` : icfData.map(m => {
+            const totalActivity = m.submitted + m.resubmitted;
+            const approvalRate = totalActivity > 0 ? Math.round(m.approved / totalActivity * 100) : 0;
+            return `
+              <tr class="hover:bg-slate-800/50">
+                <td class="px-4 py-3 font-medium text-slate-300">${m.monthLabel}</td>
+                <td class="px-4 py-3 text-center text-xl font-bold text-blue-400">${m.submitted}</td>
+                <td class="px-4 py-3 text-center text-xl font-bold text-amber-400">${m.resubmitted}</td>
+                <td class="px-4 py-3 text-center text-xl font-bold text-green-400">${m.approved}</td>
+                <td class="px-4 py-3 text-center">
+                  <div class="flex items-center justify-center gap-2">
+                    <div class="w-16 bg-slate-700 rounded-full h-2">
+                      <div class="h-full bg-green-500 rounded-full" style="width: ${approvalRate}%"></div>
+                    </div>
+                    <span class="text-xs text-slate-400 w-10">${approvalRate}%</span>
+                  </div>
+                </td>
+              </tr>
+            `;
+          }).join('')}
+          <!-- Totals Row -->
+          <tr class="border-t-2 border-slate-600 bg-slate-900/50 font-bold">
+            <td class="px-4 py-3 text-slate-300">TOTAL</td>
+            <td class="px-4 py-3 text-center text-xl text-blue-400">${totals.submitted}</td>
+            <td class="px-4 py-3 text-center text-xl text-amber-400">${totals.resubmitted}</td>
+            <td class="px-4 py-3 text-center text-xl text-green-400">${totals.approved}</td>
+            <td class="px-4 py-3 text-center">
+              <div class="flex items-center justify-center gap-2">
+                <div class="w-16 bg-slate-700 rounded-full h-2">
+                  <div class="h-full bg-green-500 rounded-full" style="width: ${(totals.submitted + totals.resubmitted) > 0 ? Math.round(totals.approved / (totals.submitted + totals.resubmitted) * 100) : 0}%"></div>
+                </div>
+                <span class="text-xs text-slate-400 w-10">${(totals.submitted + totals.resubmitted) > 0 ? Math.round(totals.approved / (totals.submitted + totals.resubmitted) * 100) : 0}%</span>
+              </div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="text-xs text-slate-500 mt-4">ICF Submitted = Initial ICF submission date • ICF Resubmitted = Last resubmission date • ICF Approved = Date moved to Pending Payment status</p>
+  `;
 }
 
 function renderBudgetCategoryStats() {
