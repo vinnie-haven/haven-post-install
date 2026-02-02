@@ -1318,9 +1318,9 @@ function getIcfStatsByMonth() {
   SGIP_DATA.forEach(d => {
     // ICF Submitted - use icfSubmittedDate
     if (d.icfSubmittedDate) {
-      const date = parseAnyDate(d.icfSubmittedDate);
+      const date = parseDate(d.icfSubmittedDate);
       if (date && date >= startDate) {
-        const month = date.toISOString().slice(0, 7); // YYYY-MM format
+        const month = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
         if (!byMonth[month]) byMonth[month] = { submitted: 0, resubmitted: 0, approved: 0 };
         byMonth[month].submitted++;
       }
@@ -1328,9 +1328,9 @@ function getIcfStatsByMonth() {
     
     // ICF Resubmitted - use icfResubmittedDate
     if (d.icfResubmittedDate) {
-      const date = parseAnyDate(d.icfResubmittedDate);
+      const date = parseDate(d.icfResubmittedDate);
       if (date && date >= startDate) {
-        const month = date.toISOString().slice(0, 7);
+        const month = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
         if (!byMonth[month]) byMonth[month] = { submitted: 0, resubmitted: 0, approved: 0 };
         byMonth[month].resubmitted++;
       }
@@ -1338,9 +1338,9 @@ function getIcfStatsByMonth() {
     
     // ICF Approved - use icfPendingPaymentDate (when it moves to Pending Payment, it's approved)
     if (d.icfPendingPaymentDate) {
-      const date = parseAnyDate(d.icfPendingPaymentDate);
+      const date = parseDate(d.icfPendingPaymentDate);
       if (date && date >= startDate) {
-        const month = date.toISOString().slice(0, 7);
+        const month = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
         if (!byMonth[month]) byMonth[month] = { submitted: 0, resubmitted: 0, approved: 0 };
         byMonth[month].approved++;
       }
@@ -1398,46 +1398,25 @@ function renderIcfMonthlyStats() {
             <th class="px-4 py-3 text-center text-xs font-semibold text-blue-400 uppercase">ICF Submitted</th>
             <th class="px-4 py-3 text-center text-xs font-semibold text-amber-400 uppercase">ICF Resubmitted</th>
             <th class="px-4 py-3 text-center text-xs font-semibold text-green-400 uppercase">ICF Approved</th>
-            <th class="px-4 py-3 text-center text-xs font-semibold text-slate-400 uppercase">Approval Rate</th>
           </tr>
         </thead>
         <tbody class="divide-y divide-slate-700/30">
           ${icfData.length === 0 ? `
-            <tr><td colspan="5" class="px-4 py-8 text-center text-slate-500">No ICF data available. Make sure SGIP data is loaded.</td></tr>
-          ` : icfData.map(m => {
-            const totalActivity = m.submitted + m.resubmitted;
-            const approvalRate = totalActivity > 0 ? Math.round(m.approved / totalActivity * 100) : 0;
-            return `
+            <tr><td colspan="4" class="px-4 py-8 text-center text-slate-500">No ICF data available. Make sure SGIP data is loaded.</td></tr>
+          ` : icfData.map(m => `
               <tr class="hover:bg-slate-800/50">
                 <td class="px-4 py-3 font-medium text-slate-300">${m.monthLabel}</td>
                 <td class="px-4 py-3 text-center text-xl font-bold text-blue-400">${m.submitted}</td>
                 <td class="px-4 py-3 text-center text-xl font-bold text-amber-400">${m.resubmitted}</td>
                 <td class="px-4 py-3 text-center text-xl font-bold text-green-400">${m.approved}</td>
-                <td class="px-4 py-3 text-center">
-                  <div class="flex items-center justify-center gap-2">
-                    <div class="w-16 bg-slate-700 rounded-full h-2">
-                      <div class="h-full bg-green-500 rounded-full" style="width: ${approvalRate}%"></div>
-                    </div>
-                    <span class="text-xs text-slate-400 w-10">${approvalRate}%</span>
-                  </div>
-                </td>
               </tr>
-            `;
-          }).join('')}
+            `).join('')}
           <!-- Totals Row -->
           <tr class="border-t-2 border-slate-600 bg-slate-900/50 font-bold">
             <td class="px-4 py-3 text-slate-300">TOTAL</td>
             <td class="px-4 py-3 text-center text-xl text-blue-400">${totals.submitted}</td>
             <td class="px-4 py-3 text-center text-xl text-amber-400">${totals.resubmitted}</td>
             <td class="px-4 py-3 text-center text-xl text-green-400">${totals.approved}</td>
-            <td class="px-4 py-3 text-center">
-              <div class="flex items-center justify-center gap-2">
-                <div class="w-16 bg-slate-700 rounded-full h-2">
-                  <div class="h-full bg-green-500 rounded-full" style="width: ${(totals.submitted + totals.resubmitted) > 0 ? Math.round(totals.approved / (totals.submitted + totals.resubmitted) * 100) : 0}%"></div>
-                </div>
-                <span class="text-xs text-slate-400 w-10">${(totals.submitted + totals.resubmitted) > 0 ? Math.round(totals.approved / (totals.submitted + totals.resubmitted) * 100) : 0}%</span>
-              </div>
-            </td>
           </tr>
         </tbody>
       </table>
