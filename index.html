@@ -1090,12 +1090,14 @@ function renderStatsTab() {
       <button onclick="setStatsSubTab('status')" class="subtab px-3 py-1.5 rounded-lg text-sm font-medium border ${state.statsSubTab === 'status' ? 'active border-purple-500/40 text-purple-400' : 'border-slate-700/50 text-slate-400'}">📋 Status Counts</button>
       <button onclick="setStatsSubTab('monthly')" class="subtab px-3 py-1.5 rounded-lg text-sm font-medium border ${state.statsSubTab === 'monthly' ? 'active border-cyan-500/40 text-cyan-400' : 'border-slate-700/50 text-slate-400'}">📅 Installs by Month</button>
       <button onclick="setStatsSubTab('icfMonthly')" class="subtab px-3 py-1.5 rounded-lg text-sm font-medium border ${state.statsSubTab === 'icfMonthly' ? 'active border-yellow-500/40 text-yellow-400' : 'border-slate-700/50 text-slate-400'}">📝 ICF by Month</button>
+      <button onclick="setStatsSubTab('icfWeekly')" class="subtab px-3 py-1.5 rounded-lg text-sm font-medium border ${state.statsSubTab === 'icfWeekly' ? 'active border-orange-500/40 text-orange-400' : 'border-slate-700/50 text-slate-400'}">📆 ICF by Week</button>
       <button onclick="setStatsSubTab('budget')" class="subtab px-3 py-1.5 rounded-lg text-sm font-medium border ${state.statsSubTab === 'budget' ? 'active border-emerald-500/40 text-emerald-400' : 'border-slate-700/50 text-slate-400'}">💰 Budget Category</button>
     </div>
     ${state.statsSubTab === 'activity' ? renderActivityStats() : 
       state.statsSubTab === 'status' ? renderStatusCounts() : 
       state.statsSubTab === 'monthly' ? renderMonthlyStats() : 
       state.statsSubTab === 'icfMonthly' ? renderIcfMonthlyStats() :
+      state.statsSubTab === 'icfWeekly' ? renderIcfWeeklyStats() :
       renderBudgetCategoryStats()}
   `;
 }
@@ -1414,6 +1416,155 @@ function renderIcfMonthlyStats() {
           <!-- Totals Row -->
           <tr class="border-t-2 border-slate-600 bg-slate-900/50 font-bold">
             <td class="px-4 py-3 text-slate-300">TOTAL</td>
+            <td class="px-4 py-3 text-center text-xl text-blue-400">${totals.submitted}</td>
+            <td class="px-4 py-3 text-center text-xl text-amber-400">${totals.resubmitted}</td>
+            <td class="px-4 py-3 text-center text-xl text-green-400">${totals.approved}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="text-xs text-slate-500 mt-4">ICF Submitted = Initial ICF submission date • ICF Resubmitted = Last resubmission date • ICF Approved = Date moved to Pending Payment status</p>
+  `;
+}
+
+function getWeekStartMonday(date) {
+  const d = new Date(date);
+  const day = d.getDay();
+  const diff = d.getDate() - day + (day === 0 ? -6 : 1); // Adjust when day is Sunday
+  return new Date(d.setDate(diff));
+}
+
+function formatWeekLabel(weekStart) {
+  const weekEnd = new Date(weekStart);
+  weekEnd.setDate(weekEnd.getDate() + 6);
+  const formatDate = (d) => `${d.getMonth() + 1}/${d.getDate()}`;
+  return `${formatDate(weekStart)} - ${formatDate(weekEnd)}`;
+}
+
+function getIcfStatsByWeek() {
+  // Get last 10 weeks of ICF data
+  const now = new Date();
+  const currentWeekStart = getWeekStartMonday(now);
+  
+  // Build array of last 10 week start dates
+  const weeks = [];
+  for (let i = 0; i < 10; i++) {
+    const weekStart = new Date(currentWeekStart);
+    weekStart.setDate(weekStart.getDate() - (i * 7));
+    weeks.push({
+      weekStart: weekStart,
+      weekKey: weekStart.toISOString().slice(0, 10),
+      weekLabel: formatWeekLabel(weekStart),
+      submitted: 0,
+      resubmitted: 0,
+      approved: 0
+    });
+  }
+  
+  // Create a map for quick lookup
+  const weekMap = {};
+  weeks.forEach(w => {
+    weekMap[w.weekKey] = w;
+  });
+  
+  SGIP_DATA.forEach(d => {
+    // ICF Submitted
+    if (d.icfSubmittedDate) {
+      const date = parseDate(d.icfSubmittedDate);
+      if (date) {
+        const weekStart = getWeekStartMonday(date);
+        const weekKey = weekStart.toISOString().slice(0, 10);
+        if (weekMap[weekKey]) {
+          weekMap[weekKey].submitted++;
+        }
+      }
+    }
+    
+    // ICF Resubmitted
+    if (d.icfResubmittedDate) {
+      const date = parseDate(d.icfResubmittedDate);
+      if (date) {
+        const weekStart = getWeekStartMonday(date);
+        const weekKey = weekStart.toISOString().slice(0, 10);
+        if (weekMap[weekKey]) {
+          weekMap[weekKey].resubmitted++;
+        }
+      }
+    }
+    
+    // ICF Approved
+    if (d.icfPendingPaymentDate) {
+      const date = parseDate(d.icfPendingPaymentDate);
+      if (date) {
+        const weekStart = getWeekStartMonday(date);
+        const weekKey = weekStart.toISOString().slice(0, 10);
+        if (weekMap[weekKey]) {
+          weekMap[weekKey].approved++;
+        }
+      }
+    }
+  });
+  
+  return weeks;
+}
+
+function renderIcfWeeklyStats() {
+  const icfData = getIcfStatsByWeek();
+  
+  // Calculate totals
+  const totals = icfData.reduce((acc, w) => ({
+    submitted: acc.submitted + w.submitted,
+    resubmitted: acc.resubmitted + w.resubmitted,
+    approved: acc.approved + w.approved
+  }), { submitted: 0, resubmitted: 0, approved: 0 });
+  
+  return `
+    <div class="bg-orange-500/10 border border-orange-500/30 rounded-lg p-4 mb-4">
+      <h3 class="font-semibold text-orange-400">📆 ICF Activity by Week</h3>
+      <p class="text-sm text-slate-400 mt-1">ICF submissions, resubmissions, and approvals for the last 10 weeks (weeks start on Monday)</p>
+    </div>
+    
+    <!-- Summary Cards -->
+    <div class="grid grid-cols-3 gap-4 mb-6">
+      <div class="bg-slate-800/50 rounded-lg p-4 border border-slate-700/50">
+        <p class="text-slate-400 text-xs uppercase mb-1">Total Submitted (10 wks)</p>
+        <p class="text-3xl font-bold text-blue-400">${totals.submitted}</p>
+      </div>
+      <div class="bg-slate-800/50 rounded-lg p-4 border border-slate-700/50">
+        <p class="text-slate-400 text-xs uppercase mb-1">Total Resubmitted (10 wks)</p>
+        <p class="text-3xl font-bold text-amber-400">${totals.resubmitted}</p>
+      </div>
+      <div class="bg-slate-800/50 rounded-lg p-4 border border-slate-700/50">
+        <p class="text-slate-400 text-xs uppercase mb-1">Total Approved (10 wks)</p>
+        <p class="text-3xl font-bold text-green-400">${totals.approved}</p>
+      </div>
+    </div>
+    
+    <!-- Weekly Table -->
+    <div class="bg-slate-800/50 rounded-lg border border-slate-700/50 overflow-hidden">
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="border-b border-slate-700 bg-slate-900/50">
+            <th class="px-4 py-3 text-left text-xs font-semibold text-slate-400 uppercase">Week</th>
+            <th class="px-4 py-3 text-center text-xs font-semibold text-blue-400 uppercase">ICF Submitted</th>
+            <th class="px-4 py-3 text-center text-xs font-semibold text-amber-400 uppercase">ICF Resubmitted</th>
+            <th class="px-4 py-3 text-center text-xs font-semibold text-green-400 uppercase">ICF Approved</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-700/30">
+          ${icfData.length === 0 ? `
+            <tr><td colspan="4" class="px-4 py-8 text-center text-slate-500">No ICF data available. Make sure SGIP data is loaded.</td></tr>
+          ` : icfData.map((w, i) => `
+              <tr class="hover:bg-slate-800/50 ${i === 0 ? 'bg-orange-500/5' : ''}">
+                <td class="px-4 py-3 font-medium text-slate-300">${w.weekLabel}${i === 0 ? ' <span class="text-orange-400 text-xs">(current)</span>' : ''}</td>
+                <td class="px-4 py-3 text-center text-xl font-bold text-blue-400">${w.submitted}</td>
+                <td class="px-4 py-3 text-center text-xl font-bold text-amber-400">${w.resubmitted}</td>
+                <td class="px-4 py-3 text-center text-xl font-bold text-green-400">${w.approved}</td>
+              </tr>
+            `).join('')}
+          <!-- Totals Row -->
+          <tr class="border-t-2 border-slate-600 bg-slate-900/50 font-bold">
+            <td class="px-4 py-3 text-slate-300">TOTAL (10 weeks)</td>
             <td class="px-4 py-3 text-center text-xl text-blue-400">${totals.submitted}</td>
             <td class="px-4 py-3 text-center text-xl text-amber-400">${totals.resubmitted}</td>
             <td class="px-4 py-3 text-center text-xl text-green-400">${totals.approved}</td>
