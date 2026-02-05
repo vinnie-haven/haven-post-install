@@ -285,6 +285,7 @@ async function loadFromSupabase() {
         dealId: String(d.id), dealName: d.deal_name, customerName: parseCustomerName(d.deal_name),
         email: (d.email || '').toLowerCase().trim(), installDate: d.install_date,
         permitStatus: mapPermit(d.permit_status), ptoDate: d.pto_date,
+        ptoSubmittedDate: d.pto_submitted_date || '',
         inspectionStatus: mapInspection(d.inspection_status), sgipStatusHubspot: d.sgip_status_hubspot, installer: d.installer,
         attributedSource: d.attributed_source || '',
         sgipRateStatus: d.sgip_rate_status || '',
@@ -1441,6 +1442,41 @@ function formatWeekLabel(weekStart) {
   return `${formatDate(weekStart)} - ${formatDate(weekEnd)}`;
 }
 
+function parseAnyDateWeekly(dateStr) {
+  if (!dateStr || dateStr === 'None' || dateStr === '(No value)') return null;
+  try {
+    let d;
+    const str = String(dateStr).trim();
+    // Handle MM/DD/YY or MM/DD/YYYY format
+    if (str.includes('/')) {
+      const parts = str.split('/');
+      if (parts.length === 3) {
+        let year = parseInt(parts[2]);
+        if (year < 100) year += 2000;
+        d = new Date(year, parseInt(parts[0]) - 1, parseInt(parts[1]));
+      }
+    } 
+    // Handle ISO format (YYYY-MM-DD) or other standard formats
+    else if (str.includes('-') || str.includes('T')) {
+      // For ISO dates, parse and adjust for timezone
+      const parsed = new Date(str);
+      if (!isNaN(parsed.getTime())) {
+        // If it's a date-only string, create date at midnight local time
+        if (str.match(/^\d{4}-\d{2}-\d{2}$/)) {
+          const [y, m, day] = str.split('-').map(Number);
+          d = new Date(y, m - 1, day);
+        } else {
+          d = parsed;
+        }
+      }
+    }
+    else {
+      d = new Date(str);
+    }
+    return (d && !isNaN(d.getTime())) ? d : null;
+  } catch { return null; }
+}
+
 function getWeeklyStats() {
   // Get last 10 weeks of data
   const now = new Date();
@@ -1464,11 +1500,20 @@ function getWeeklyStats() {
     });
   }
   
-  // Create a map for quick lookup
+  // Create a map for quick lookup - use local date string to avoid timezone issues
   const weekMap = {};
   weeks.forEach(w => {
-    weekMap[w.weekKey] = w;
+    // Use a consistent local date format
+    const localKey = `${w.weekStart.getFullYear()}-${String(w.weekStart.getMonth() + 1).padStart(2, '0')}-${String(w.weekStart.getDate()).padStart(2, '0')}`;
+    w.localKey = localKey;
+    weekMap[localKey] = w;
   });
+  
+  // Helper to get week key from a date
+  const getWeekKey = (date) => {
+    const weekStart = getWeekStartMonday(date);
+    return `${weekStart.getFullYear()}-${String(weekStart.getMonth() + 1).padStart(2, '0')}-${String(weekStart.getDate()).padStart(2, '0')}`;
+  };
   
   // Get all installed deals for installs and PTOs
   const allDeals = getAllInstalled();
@@ -1476,10 +1521,9 @@ function getWeeklyStats() {
   allDeals.forEach(d => {
     // Installs - use installDate
     if (d.installDate) {
-      const date = parseDate(d.installDate);
+      const date = parseAnyDateWeekly(d.installDate);
       if (date) {
-        const weekStart = getWeekStartMonday(date);
-        const weekKey = weekStart.toISOString().slice(0, 10);
+        const weekKey = getWeekKey(date);
         if (weekMap[weekKey]) {
           weekMap[weekKey].installs++;
         }
@@ -1488,10 +1532,9 @@ function getWeeklyStats() {
     
     // PTO Submitted - use ptoSubmittedDate from HubSpot
     if (d.ptoSubmittedDate) {
-      const date = parseDate(d.ptoSubmittedDate);
+      const date = parseAnyDateWeekly(d.ptoSubmittedDate);
       if (date) {
-        const weekStart = getWeekStartMonday(date);
-        const weekKey = weekStart.toISOString().slice(0, 10);
+        const weekKey = getWeekKey(date);
         if (weekMap[weekKey]) {
           weekMap[weekKey].ptoSubmitted++;
         }
@@ -1500,10 +1543,9 @@ function getWeeklyStats() {
     
     // PTO Approved - use ptoDate (PTO complete date)
     if (d.ptoDate && d.ptoDate !== '(No value)' && d.ptoDate !== 'None') {
-      const date = parseDate(d.ptoDate);
+      const date = parseAnyDateWeekly(d.ptoDate);
       if (date) {
-        const weekStart = getWeekStartMonday(date);
-        const weekKey = weekStart.toISOString().slice(0, 10);
+        const weekKey = getWeekKey(date);
         if (weekMap[weekKey]) {
           weekMap[weekKey].ptoApproved++;
         }
@@ -1515,10 +1557,9 @@ function getWeeklyStats() {
   SGIP_DATA.forEach(d => {
     // ICF Submitted
     if (d.icfSubmittedDate) {
-      const date = parseDate(d.icfSubmittedDate);
+      const date = parseAnyDateWeekly(d.icfSubmittedDate);
       if (date) {
-        const weekStart = getWeekStartMonday(date);
-        const weekKey = weekStart.toISOString().slice(0, 10);
+        const weekKey = getWeekKey(date);
         if (weekMap[weekKey]) {
           weekMap[weekKey].icfSubmitted++;
         }
@@ -1527,10 +1568,9 @@ function getWeeklyStats() {
     
     // ICF Resubmitted
     if (d.icfResubmittedDate) {
-      const date = parseDate(d.icfResubmittedDate);
+      const date = parseAnyDateWeekly(d.icfResubmittedDate);
       if (date) {
-        const weekStart = getWeekStartMonday(date);
-        const weekKey = weekStart.toISOString().slice(0, 10);
+        const weekKey = getWeekKey(date);
         if (weekMap[weekKey]) {
           weekMap[weekKey].icfResubmitted++;
         }
@@ -1539,10 +1579,9 @@ function getWeeklyStats() {
     
     // ICF Approved
     if (d.icfPendingPaymentDate) {
-      const date = parseDate(d.icfPendingPaymentDate);
+      const date = parseAnyDateWeekly(d.icfPendingPaymentDate);
       if (date) {
-        const weekStart = getWeekStartMonday(date);
-        const weekKey = weekStart.toISOString().slice(0, 10);
+        const weekKey = getWeekKey(date);
         if (weekMap[weekKey]) {
           weekMap[weekKey].icfApproved++;
         }
