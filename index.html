@@ -1312,40 +1312,88 @@ function getInstallsByBudgetCategory() {
 }
 
 function getIcfStatsByMonth() {
-  // Get ICF data from SGIP_DATA grouped by month
+  // Get monthly data matching the weekly view columns
   // Start from October 2025
   const startDate = new Date('2025-10-01');
   
   const byMonth = {};
   
+  // Helper to get month key from date
+  const getMonthKey = (date) => {
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+  };
+  
+  // Helper to ensure month exists in byMonth
+  const ensureMonth = (month) => {
+    if (!byMonth[month]) {
+      byMonth[month] = { installs: 0, ptoSubmitted: 0, ptoApproved: 0, icfSubmitted: 0, icfResubmitted: 0, icfApproved: 0 };
+    }
+  };
+  
+  // Get all installed deals for installs and PTOs
+  const allDeals = getAllInstalled();
+  
+  allDeals.forEach(d => {
+    // Installs - use installDate
+    if (d.installDate) {
+      const date = parseAnyDateWeekly(d.installDate);
+      if (date && date >= startDate) {
+        const month = getMonthKey(date);
+        ensureMonth(month);
+        byMonth[month].installs++;
+      }
+    }
+    
+    // PTO Submitted - use ptoSubmittedDate
+    if (d.ptoSubmittedDate) {
+      const date = parseAnyDateWeekly(d.ptoSubmittedDate);
+      if (date && date >= startDate) {
+        const month = getMonthKey(date);
+        ensureMonth(month);
+        byMonth[month].ptoSubmitted++;
+      }
+    }
+    
+    // PTO Approved - use ptoDate
+    if (d.ptoDate && d.ptoDate !== '(No value)' && d.ptoDate !== 'None') {
+      const date = parseAnyDateWeekly(d.ptoDate);
+      if (date && date >= startDate) {
+        const month = getMonthKey(date);
+        ensureMonth(month);
+        byMonth[month].ptoApproved++;
+      }
+    }
+  });
+  
+  // Get ICF data from SGIP_DATA
   SGIP_DATA.forEach(d => {
     // ICF Submitted - use icfSubmittedDate
     if (d.icfSubmittedDate) {
-      const date = parseDate(d.icfSubmittedDate);
+      const date = parseAnyDateWeekly(d.icfSubmittedDate);
       if (date && date >= startDate) {
-        const month = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-        if (!byMonth[month]) byMonth[month] = { submitted: 0, resubmitted: 0, approved: 0 };
-        byMonth[month].submitted++;
+        const month = getMonthKey(date);
+        ensureMonth(month);
+        byMonth[month].icfSubmitted++;
       }
     }
     
     // ICF Resubmitted - use icfResubmittedDate
     if (d.icfResubmittedDate) {
-      const date = parseDate(d.icfResubmittedDate);
+      const date = parseAnyDateWeekly(d.icfResubmittedDate);
       if (date && date >= startDate) {
-        const month = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-        if (!byMonth[month]) byMonth[month] = { submitted: 0, resubmitted: 0, approved: 0 };
-        byMonth[month].resubmitted++;
+        const month = getMonthKey(date);
+        ensureMonth(month);
+        byMonth[month].icfResubmitted++;
       }
     }
     
-    // ICF Approved - use icfPendingPaymentDate (when it moves to Pending Payment, it's approved)
+    // ICF Approved - use icfPendingPaymentDate
     if (d.icfPendingPaymentDate) {
-      const date = parseDate(d.icfPendingPaymentDate);
+      const date = parseAnyDateWeekly(d.icfPendingPaymentDate);
       if (date && date >= startDate) {
-        const month = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-        if (!byMonth[month]) byMonth[month] = { submitted: 0, resubmitted: 0, approved: 0 };
-        byMonth[month].approved++;
+        const month = getMonthKey(date);
+        ensureMonth(month);
+        byMonth[month].icfApproved++;
       }
     }
   });
@@ -1361,70 +1409,66 @@ function getIcfStatsByMonth() {
 }
 
 function renderIcfMonthlyStats() {
-  const icfData = getIcfStatsByMonth();
+  const monthlyData = getIcfStatsByMonth();
   
   // Calculate totals
-  const totals = icfData.reduce((acc, m) => ({
-    submitted: acc.submitted + m.submitted,
-    resubmitted: acc.resubmitted + m.resubmitted,
-    approved: acc.approved + m.approved
-  }), { submitted: 0, resubmitted: 0, approved: 0 });
+  const totals = monthlyData.reduce((acc, m) => ({
+    installs: acc.installs + m.installs,
+    ptoSubmitted: acc.ptoSubmitted + m.ptoSubmitted,
+    ptoApproved: acc.ptoApproved + m.ptoApproved,
+    icfSubmitted: acc.icfSubmitted + m.icfSubmitted,
+    icfResubmitted: acc.icfResubmitted + m.icfResubmitted,
+    icfApproved: acc.icfApproved + m.icfApproved
+  }), { installs: 0, ptoSubmitted: 0, ptoApproved: 0, icfSubmitted: 0, icfResubmitted: 0, icfApproved: 0 });
   
   return `
     <div class="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-4 mb-4">
-      <h3 class="font-semibold text-yellow-400">📝 ICF Activity by Month</h3>
-      <p class="text-sm text-slate-400 mt-1">ICF submissions, resubmissions, and approvals tracked by month (since Oct 2025)</p>
-    </div>
-    
-    <!-- Summary Cards -->
-    <div class="grid grid-cols-3 gap-4 mb-6">
-      <div class="bg-slate-800/50 rounded-lg p-4 border border-slate-700/50">
-        <p class="text-slate-400 text-xs uppercase mb-1">Total Submitted</p>
-        <p class="text-3xl font-bold text-blue-400">${totals.submitted}</p>
-      </div>
-      <div class="bg-slate-800/50 rounded-lg p-4 border border-slate-700/50">
-        <p class="text-slate-400 text-xs uppercase mb-1">Total Resubmitted</p>
-        <p class="text-3xl font-bold text-amber-400">${totals.resubmitted}</p>
-      </div>
-      <div class="bg-slate-800/50 rounded-lg p-4 border border-slate-700/50">
-        <p class="text-slate-400 text-xs uppercase mb-1">Total Approved</p>
-        <p class="text-3xl font-bold text-green-400">${totals.approved}</p>
-      </div>
+      <h3 class="font-semibold text-yellow-400">📅 Monthly Activity Summary</h3>
+      <p class="text-sm text-slate-400 mt-1">Installs, PTOs, and ICF activity by month (since Oct 2025)</p>
     </div>
     
     <!-- Monthly Table -->
-    <div class="bg-slate-800/50 rounded-lg border border-slate-700/50 overflow-hidden">
+    <div class="bg-slate-800/50 rounded-lg border border-slate-700/50 overflow-hidden overflow-x-auto">
       <table class="w-full text-sm">
         <thead>
           <tr class="border-b border-slate-700 bg-slate-900/50">
             <th class="px-4 py-3 text-left text-xs font-semibold text-slate-400 uppercase">Month</th>
+            <th class="px-4 py-3 text-center text-xs font-semibold text-emerald-400 uppercase">Installs</th>
+            <th class="px-4 py-3 text-center text-xs font-semibold text-orange-400 uppercase">PTO Submitted</th>
+            <th class="px-4 py-3 text-center text-xs font-semibold text-cyan-400 uppercase">PTO Approved</th>
             <th class="px-4 py-3 text-center text-xs font-semibold text-blue-400 uppercase">ICF Submitted</th>
             <th class="px-4 py-3 text-center text-xs font-semibold text-amber-400 uppercase">ICF Resubmitted</th>
             <th class="px-4 py-3 text-center text-xs font-semibold text-green-400 uppercase">ICF Approved</th>
           </tr>
         </thead>
         <tbody class="divide-y divide-slate-700/30">
-          ${icfData.length === 0 ? `
-            <tr><td colspan="4" class="px-4 py-8 text-center text-slate-500">No ICF data available. Make sure SGIP data is loaded.</td></tr>
-          ` : icfData.map(m => `
+          ${monthlyData.length === 0 ? `
+            <tr><td colspan="7" class="px-4 py-8 text-center text-slate-500">No data available for this period.</td></tr>
+          ` : monthlyData.map(m => `
               <tr class="hover:bg-slate-800/50">
                 <td class="px-4 py-3 font-medium text-slate-300">${m.monthLabel}</td>
-                <td class="px-4 py-3 text-center text-xl font-bold text-blue-400">${m.submitted}</td>
-                <td class="px-4 py-3 text-center text-xl font-bold text-amber-400">${m.resubmitted}</td>
-                <td class="px-4 py-3 text-center text-xl font-bold text-green-400">${m.approved}</td>
+                <td class="px-4 py-3 text-center text-xl font-bold text-emerald-400">${m.installs}</td>
+                <td class="px-4 py-3 text-center text-xl font-bold text-orange-400">${m.ptoSubmitted}</td>
+                <td class="px-4 py-3 text-center text-xl font-bold text-cyan-400">${m.ptoApproved}</td>
+                <td class="px-4 py-3 text-center text-xl font-bold text-blue-400">${m.icfSubmitted}</td>
+                <td class="px-4 py-3 text-center text-xl font-bold text-amber-400">${m.icfResubmitted}</td>
+                <td class="px-4 py-3 text-center text-xl font-bold text-green-400">${m.icfApproved}</td>
               </tr>
             `).join('')}
           <!-- Totals Row -->
           <tr class="border-t-2 border-slate-600 bg-slate-900/50 font-bold">
             <td class="px-4 py-3 text-slate-300">TOTAL</td>
-            <td class="px-4 py-3 text-center text-xl text-blue-400">${totals.submitted}</td>
-            <td class="px-4 py-3 text-center text-xl text-amber-400">${totals.resubmitted}</td>
-            <td class="px-4 py-3 text-center text-xl text-green-400">${totals.approved}</td>
+            <td class="px-4 py-3 text-center text-xl text-emerald-400">${totals.installs}</td>
+            <td class="px-4 py-3 text-center text-xl text-orange-400">${totals.ptoSubmitted}</td>
+            <td class="px-4 py-3 text-center text-xl text-cyan-400">${totals.ptoApproved}</td>
+            <td class="px-4 py-3 text-center text-xl text-blue-400">${totals.icfSubmitted}</td>
+            <td class="px-4 py-3 text-center text-xl text-amber-400">${totals.icfResubmitted}</td>
+            <td class="px-4 py-3 text-center text-xl text-green-400">${totals.icfApproved}</td>
           </tr>
         </tbody>
       </table>
     </div>
-    <p class="text-xs text-slate-500 mt-4">ICF Submitted = Initial ICF submission date • ICF Resubmitted = Last resubmission date • ICF Approved = Date moved to Pending Payment status</p>
+    <p class="text-xs text-slate-500 mt-4">Installs = Installation completed date • PTO Submitted = PTO submission date • PTO Approved = PTO complete date • ICF Submitted/Resubmitted/Approved = From SGIP export</p>
   `;
 }
 
