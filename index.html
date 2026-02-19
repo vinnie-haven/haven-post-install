@@ -2441,9 +2441,26 @@ function getPtoFunnelData() {
     .map(d => ({ ...d, daysSinceInstall: daysSince(d.installDate) }));
   
   // 2. Need to Submit Permit (Rejected, or no status/empty)
-  const needToSubmitPermit = allDeals.filter(d => 
-    d.permitStatus !== 'Approved' && !permitPendingStatuses.includes(d.permitStatus)
-  ).map(d => ({ ...d, daysSinceInstall: daysSince(d.installDate) }));
+  // Exclude if permit says "Approved" (even if needs pickup) AND project is at inspection, interconnection, or ICF stage
+  const isAtLaterStage = (d) => {
+    // Check if at inspection stage
+    if (d.inspectionStatus && d.inspectionStatus !== '(No value)' && d.inspectionStatus !== 'None') return true;
+    // Check if at interconnection stage
+    if (d.interconnectionStatus && d.interconnectionStatus !== '(No value)' && d.interconnectionStatus !== 'None' && d.interconnectionStatus !== '') return true;
+    // Check if at ICF stage (has SGIP progress beyond RRF)
+    if (d.sgipProgress && (d.sgipProgress.toLowerCase().includes('icf') || d.sgipProgress.toLowerCase().includes('payment'))) return true;
+    return false;
+  };
+  
+  const needToSubmitPermit = allDeals.filter(d => {
+    // If permit is approved (even with pickup note), exclude from this bucket
+    if (d.permitStatus && d.permitStatus.toLowerCase().includes('approved')) return false;
+    // If permit is in pending status, exclude
+    if (permitPendingStatuses.includes(d.permitStatus)) return false;
+    // If project is already at a later stage (inspection, interconnection, ICF), exclude
+    if (isAtLaterStage(d)) return false;
+    return true;
+  }).map(d => ({ ...d, daysSinceInstall: daysSince(d.installDate) }));
   
   // 3. Inspection Scheduled/Requested
   const inspectionScheduled = allDeals.filter(d => 
