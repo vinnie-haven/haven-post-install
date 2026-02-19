@@ -1091,11 +1091,13 @@ function renderStatsTab() {
     <div class="flex gap-2 mb-4 flex-wrap">
       <button onclick="setStatsSubTab('icfMonthly')" class="subtab px-3 py-1.5 rounded-lg text-sm font-medium border ${state.statsSubTab === 'icfMonthly' ? 'active border-yellow-500/40 text-yellow-400' : 'border-slate-700/50 text-slate-400'}">📅 Monthly Report</button>
       <button onclick="setStatsSubTab('icfWeekly')" class="subtab px-3 py-1.5 rounded-lg text-sm font-medium border ${state.statsSubTab === 'icfWeekly' ? 'active border-orange-500/40 text-orange-400' : 'border-slate-700/50 text-slate-400'}">📆 Weekly Report</button>
+      <button onclick="setStatsSubTab('pipeline')" class="subtab px-3 py-1.5 rounded-lg text-sm font-medium border ${state.statsSubTab === 'pipeline' ? 'active border-purple-500/40 text-purple-400' : 'border-slate-700/50 text-slate-400'}">💰 Pipeline Value</button>
       <button onclick="setStatsSubTab('monthly')" class="subtab px-3 py-1.5 rounded-lg text-sm font-medium border ${state.statsSubTab === 'monthly' ? 'active border-cyan-500/40 text-cyan-400' : 'border-slate-700/50 text-slate-400'}">📊 Installs by Month</button>
-      <button onclick="setStatsSubTab('budget')" class="subtab px-3 py-1.5 rounded-lg text-sm font-medium border ${state.statsSubTab === 'budget' ? 'active border-emerald-500/40 text-emerald-400' : 'border-slate-700/50 text-slate-400'}">💰 Budget Category</button>
+      <button onclick="setStatsSubTab('budget')" class="subtab px-3 py-1.5 rounded-lg text-sm font-medium border ${state.statsSubTab === 'budget' ? 'active border-emerald-500/40 text-emerald-400' : 'border-slate-700/50 text-slate-400'}">🏷️ Budget Category</button>
     </div>
     ${state.statsSubTab === 'icfMonthly' ? renderIcfMonthlyStats() :
       state.statsSubTab === 'icfWeekly' ? renderIcfWeeklyStats() :
+      state.statsSubTab === 'pipeline' ? renderPipelineValue() :
       state.statsSubTab === 'monthly' ? renderMonthlyStats() : 
       renderBudgetCategoryStats()}
   `;
@@ -1725,6 +1727,175 @@ function renderIcfWeeklyStats() {
       </table>
     </div>
     <p class="text-xs text-slate-500 mt-4">Installs = Installation completed date • Inspections = Inspection passed date (HubSpot) • PTO Submitted = PTO submission date • PTO Approved = PTO complete date • ICF Submitted/Resubmitted/Approved = From SGIP export</p>
+  `;
+}
+
+function renderPipelineValue() {
+  const ptoData = getPtoFunnelData();
+  const icfData = getIcfDeepDiveData();
+  
+  const calcIncentive = (deals) => deals.reduce((sum, d) => sum + parseNum(d.currentIncentive || d.finalIncentive), 0);
+  const calcPayment = (deals) => deals.reduce((sum, d) => sum + parseNum(d.paymentAmount), 0);
+  
+  // PTO Funnel buckets
+  const ptoBuckets = [
+    { label: 'Permit Pending', count: ptoData.permitPending.length, amount: calcIncentive(ptoData.permitPending), color: 'slate', section: 'PTO Funnel' },
+    { label: 'Need to Submit Permit', count: ptoData.needToSubmitPermit.length, amount: calcIncentive(ptoData.needToSubmitPermit), color: 'red', section: 'PTO Funnel' },
+    { label: 'Inspection Scheduled', count: ptoData.inspectionScheduled.length, amount: calcIncentive(ptoData.inspectionScheduled), color: 'blue', section: 'PTO Funnel' },
+    { label: 'Inspection Not Complete', count: ptoData.inspectionNotComplete.length, amount: calcIncentive(ptoData.inspectionNotComplete), color: 'amber', section: 'PTO Funnel' },
+    { label: 'Meter Collar Needed', count: ptoData.meterCollarNeeded.length, amount: calcIncentive(ptoData.meterCollarNeeded), color: 'orange', section: 'PTO Funnel' },
+    { label: 'PTO Submitted', count: ptoData.ptoSubmitted.length, amount: calcIncentive(ptoData.ptoSubmitted), color: 'cyan', section: 'PTO Funnel' },
+    { label: 'PTO Not Submitted', count: ptoData.ptoNotSubmitted.length, amount: calcIncentive(ptoData.ptoNotSubmitted), color: 'yellow', section: 'PTO Funnel' }
+  ];
+  
+  // ICF Deep Dive buckets
+  const icfBuckets = [
+    { label: "PTO'd, No ICF", count: icfData.ptoNoIcf.length, amount: calcIncentive(icfData.ptoNoIcf), color: 'amber', section: 'ICF Pipeline' },
+    { label: 'Revisions Required', count: icfData.revisions.length, amount: calcIncentive(icfData.revisions), color: 'red', section: 'ICF Pipeline' },
+    { label: 'ICF Submitted', count: icfData.icfSubmitted.length, amount: calcIncentive(icfData.icfSubmitted), color: 'blue', section: 'ICF Pipeline' },
+    { label: 'ICF Review', count: icfData.icfReview.length, amount: calcIncentive(icfData.icfReview), color: 'purple', section: 'ICF Pipeline' },
+    { label: 'ICF Inspection', count: icfData.icfInspection.length, amount: calcIncentive(icfData.icfInspection), color: 'cyan', section: 'ICF Pipeline' },
+    { label: 'Pending Payment', count: icfData.pendingPayment.length, amount: calcIncentive(icfData.pendingPayment), color: 'emerald', section: 'ICF Pipeline' },
+    { label: 'Payment Complete', count: icfData.paymentComplete.length, amount: calcPayment(icfData.paymentComplete), color: 'green', section: 'ICF Pipeline', isPayment: true }
+  ];
+  
+  const ptoTotal = ptoBuckets.reduce((sum, b) => sum + b.amount, 0);
+  const ptoCount = ptoBuckets.reduce((sum, b) => sum + b.count, 0);
+  const icfPipelineTotal = icfBuckets.filter(b => !b.isPayment).reduce((sum, b) => sum + b.amount, 0);
+  const icfPipelineCount = icfBuckets.filter(b => !b.isPayment).reduce((sum, b) => sum + b.count, 0);
+  const paymentCompleteAmount = icfBuckets.find(b => b.isPayment)?.amount || 0;
+  const paymentCompleteCount = icfBuckets.find(b => b.isPayment)?.count || 0;
+  
+  return `
+    <div class="bg-purple-500/10 border border-purple-500/30 rounded-lg p-4 mb-4">
+      <h3 class="font-semibold text-purple-400">💰 Pipeline Value by Stage</h3>
+      <p class="text-sm text-slate-400 mt-1">Incentive value breakdown across all PTO Funnel and ICF Pipeline stages</p>
+    </div>
+    
+    <!-- Summary Cards -->
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+      <div class="bg-slate-800/50 rounded-lg p-4 border border-slate-700/50">
+        <p class="text-slate-400 text-xs uppercase mb-1">PTO Funnel Total</p>
+        <p class="text-2xl font-bold text-cyan-400">${fmtCurrency(ptoTotal)}</p>
+        <p class="text-xs text-slate-500 mt-1">${ptoCount} projects</p>
+      </div>
+      <div class="bg-slate-800/50 rounded-lg p-4 border border-slate-700/50">
+        <p class="text-slate-400 text-xs uppercase mb-1">ICF Pipeline Total</p>
+        <p class="text-2xl font-bold text-purple-400">${fmtCurrency(icfPipelineTotal)}</p>
+        <p class="text-xs text-slate-500 mt-1">${icfPipelineCount} projects</p>
+      </div>
+      <div class="bg-slate-800/50 rounded-lg p-4 border border-slate-700/50">
+        <p class="text-slate-400 text-xs uppercase mb-1">Payment Complete</p>
+        <p class="text-2xl font-bold text-green-400">${fmtCurrency(paymentCompleteAmount)}</p>
+        <p class="text-xs text-slate-500 mt-1">${paymentCompleteCount} projects</p>
+      </div>
+      <div class="bg-slate-700/50 rounded-lg p-4 border border-slate-500/50">
+        <p class="text-slate-400 text-xs uppercase mb-1">Grand Total Pipeline</p>
+        <p class="text-2xl font-bold text-white">${fmtCurrency(ptoTotal + icfPipelineTotal)}</p>
+        <p class="text-xs text-slate-500 mt-1">${ptoCount + icfPipelineCount} projects</p>
+      </div>
+    </div>
+    
+    <!-- PTO Funnel Table -->
+    <div class="bg-slate-800/50 rounded-lg border border-slate-700/50 overflow-hidden mb-6">
+      <div class="px-4 py-3 border-b border-slate-700/50 bg-cyan-500/10">
+        <h4 class="font-semibold text-cyan-400">🎯 PTO Funnel Stages</h4>
+      </div>
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="border-b border-slate-700 bg-slate-900/50">
+            <th class="px-4 py-3 text-left text-xs font-semibold text-slate-400 uppercase">Stage</th>
+            <th class="px-4 py-3 text-center text-xs font-semibold text-slate-400 uppercase">Projects</th>
+            <th class="px-4 py-3 text-right text-xs font-semibold text-slate-400 uppercase">Incentive Value</th>
+            <th class="px-4 py-3 text-center text-xs font-semibold text-slate-400 uppercase">% of Total</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-700/30">
+          ${ptoBuckets.map(b => {
+            const pct = ptoTotal > 0 ? ((b.amount / ptoTotal) * 100).toFixed(1) : 0;
+            return `
+              <tr class="hover:bg-slate-800/50">
+                <td class="px-4 py-3">
+                  <span class="inline-flex items-center gap-2">
+                    <span class="w-3 h-3 rounded-full bg-${b.color}-500"></span>
+                    <span class="font-medium text-slate-300">${b.label}</span>
+                  </span>
+                </td>
+                <td class="px-4 py-3 text-center font-bold text-${b.color}-400">${b.count}</td>
+                <td class="px-4 py-3 text-right font-bold text-${b.color}-400">${fmtCurrency(b.amount)}</td>
+                <td class="px-4 py-3 text-center">
+                  <div class="flex items-center justify-center gap-2">
+                    <div class="w-16 h-2 bg-slate-700 rounded-full overflow-hidden">
+                      <div class="h-full bg-${b.color}-500 rounded-full" style="width: ${pct}%"></div>
+                    </div>
+                    <span class="text-xs text-slate-400">${pct}%</span>
+                  </div>
+                </td>
+              </tr>
+            `;
+          }).join('')}
+          <tr class="border-t-2 border-slate-600 bg-slate-900/50 font-bold">
+            <td class="px-4 py-3 text-slate-300">PTO Funnel Total</td>
+            <td class="px-4 py-3 text-center text-white">${ptoCount}</td>
+            <td class="px-4 py-3 text-right text-cyan-400">${fmtCurrency(ptoTotal)}</td>
+            <td class="px-4 py-3 text-center text-slate-400">100%</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    
+    <!-- ICF Pipeline Table -->
+    <div class="bg-slate-800/50 rounded-lg border border-slate-700/50 overflow-hidden">
+      <div class="px-4 py-3 border-b border-slate-700/50 bg-purple-500/10">
+        <h4 class="font-semibold text-purple-400">🔍 ICF Pipeline Stages</h4>
+      </div>
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="border-b border-slate-700 bg-slate-900/50">
+            <th class="px-4 py-3 text-left text-xs font-semibold text-slate-400 uppercase">Stage</th>
+            <th class="px-4 py-3 text-center text-xs font-semibold text-slate-400 uppercase">Projects</th>
+            <th class="px-4 py-3 text-right text-xs font-semibold text-slate-400 uppercase">Incentive Value</th>
+            <th class="px-4 py-3 text-center text-xs font-semibold text-slate-400 uppercase">% of Pipeline</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-700/30">
+          ${icfBuckets.map(b => {
+            const total = b.isPayment ? paymentCompleteAmount : icfPipelineTotal;
+            const pct = total > 0 ? ((b.amount / total) * 100).toFixed(1) : 0;
+            return `
+              <tr class="hover:bg-slate-800/50 ${b.isPayment ? 'border-t-2 border-slate-600' : ''}">
+                <td class="px-4 py-3">
+                  <span class="inline-flex items-center gap-2">
+                    <span class="w-3 h-3 rounded-full bg-${b.color}-500"></span>
+                    <span class="font-medium text-slate-300">${b.label}</span>
+                  </span>
+                </td>
+                <td class="px-4 py-3 text-center font-bold text-${b.color}-400">${b.count}</td>
+                <td class="px-4 py-3 text-right font-bold text-${b.color}-400">${fmtCurrency(b.amount)}</td>
+                <td class="px-4 py-3 text-center">
+                  ${b.isPayment ? '<span class="text-xs text-slate-500">—</span>' : `
+                  <div class="flex items-center justify-center gap-2">
+                    <div class="w-16 h-2 bg-slate-700 rounded-full overflow-hidden">
+                      <div class="h-full bg-${b.color}-500 rounded-full" style="width: ${pct}%"></div>
+                    </div>
+                    <span class="text-xs text-slate-400">${pct}%</span>
+                  </div>
+                  `}
+                </td>
+              </tr>
+            `;
+          }).join('')}
+          <tr class="border-t-2 border-slate-600 bg-slate-900/50 font-bold">
+            <td class="px-4 py-3 text-slate-300">ICF Pipeline Total (excl. paid)</td>
+            <td class="px-4 py-3 text-center text-white">${icfPipelineCount}</td>
+            <td class="px-4 py-3 text-right text-purple-400">${fmtCurrency(icfPipelineTotal)}</td>
+            <td class="px-4 py-3 text-center text-slate-400">100%</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    
+    <p class="text-xs text-slate-500 mt-4">Values based on current/final incentive amounts from SGIP data. Payment Complete shows actual payment amounts received.</p>
   `;
 }
 
