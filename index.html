@@ -1739,13 +1739,14 @@ function renderPipelineValue() {
   
   // PTO Funnel buckets
   const ptoBuckets = [
-    { label: 'Permit Pending', count: ptoData.permitPending.length, amount: calcIncentive(ptoData.permitPending), color: 'slate', section: 'PTO Funnel' },
+    { label: 'Permit Pending', count: ptoData.permitPending.length, amount: calcIncentive(ptoData.permitPending), color: 'blue', section: 'PTO Funnel' },
     { label: 'Need to Submit Permit', count: ptoData.needToSubmitPermit.length, amount: calcIncentive(ptoData.needToSubmitPermit), color: 'red', section: 'PTO Funnel' },
-    { label: 'Inspection Scheduled', count: ptoData.inspectionScheduled.length, amount: calcIncentive(ptoData.inspectionScheduled), color: 'blue', section: 'PTO Funnel' },
+    { label: 'Inspection Scheduled', count: ptoData.inspectionScheduled.length, amount: calcIncentive(ptoData.inspectionScheduled), color: 'purple', section: 'PTO Funnel' },
     { label: 'Inspection Not Complete', count: ptoData.inspectionNotComplete.length, amount: calcIncentive(ptoData.inspectionNotComplete), color: 'amber', section: 'PTO Funnel' },
     { label: 'Meter Collar Needed', count: ptoData.meterCollarNeeded.length, amount: calcIncentive(ptoData.meterCollarNeeded), color: 'orange', section: 'PTO Funnel' },
     { label: 'PTO Submitted', count: ptoData.ptoSubmitted.length, amount: calcIncentive(ptoData.ptoSubmitted), color: 'cyan', section: 'PTO Funnel' },
-    { label: 'PTO Not Submitted', count: ptoData.ptoNotSubmitted.length, amount: calcIncentive(ptoData.ptoNotSubmitted), color: 'yellow', section: 'PTO Funnel' }
+    { label: 'PTO Not Submitted', count: ptoData.ptoNotSubmitted.length, amount: calcIncentive(ptoData.ptoNotSubmitted), color: 'yellow', section: 'PTO Funnel' },
+    { label: 'Uncategorized', count: ptoData.uncategorized.length, amount: calcIncentive(ptoData.uncategorized), color: 'slate', section: 'PTO Funnel' }
   ];
   
   // ICF Deep Dive buckets
@@ -2440,24 +2441,25 @@ function getPtoFunnelData() {
   const permitPending = allDeals.filter(d => permitPendingStatuses.includes(d.permitStatus))
     .map(d => ({ ...d, daysSinceInstall: daysSince(d.installDate) }));
   
-  // 2. Need to Submit Permit (Rejected, or no status/empty)
-  // Exclude if permit says "Approved" (even if needs pickup) AND project is at inspection, interconnection, or ICF stage
+  // 2. Need to Submit Permit (Rejected, or no status/empty) - only if NOT at a later stage
+  // Projects that truly need permit work - not approved and not progressed past permit stage
   const isAtLaterStage = (d) => {
-    // Check if at inspection stage
-    if (d.inspectionStatus && d.inspectionStatus !== '(No value)' && d.inspectionStatus !== 'None') return true;
-    // Check if at interconnection stage
-    if (d.interconnectionStatus && d.interconnectionStatus !== '(No value)' && d.interconnectionStatus !== 'None' && d.interconnectionStatus !== '') return true;
-    // Check if at ICF stage (has SGIP progress beyond RRF)
-    if (d.sgipProgress && (d.sgipProgress.toLowerCase().includes('icf') || d.sgipProgress.toLowerCase().includes('payment'))) return true;
+    // Check if inspection is passed
+    if (d.inspectionStatus === 'Passed') return true;
+    // Check if has PTO
+    if (hasPto(d)) return true;
+    // Check if at ICF stage (has SGIP progress at ICF or payment)
+    const sgip = (d.sgipProgress || '').toLowerCase();
+    if (sgip.includes('icf') || sgip.includes('payment')) return true;
     return false;
   };
   
   const needToSubmitPermit = allDeals.filter(d => {
-    // If permit is approved (even with pickup note), exclude from this bucket
-    if (d.permitStatus && d.permitStatus.toLowerCase().includes('approved')) return false;
-    // If permit is in pending status, exclude
+    // If permit is approved, exclude
+    if (d.permitStatus === 'Approved') return false;
+    // If permit is in pending status, exclude (handled by permitPending)
     if (permitPendingStatuses.includes(d.permitStatus)) return false;
-    // If project is already at a later stage (inspection, interconnection, ICF), exclude
+    // If project is already at a later stage, exclude
     if (isAtLaterStage(d)) return false;
     return true;
   }).map(d => ({ ...d, daysSinceInstall: daysSince(d.installDate) }));
@@ -2502,7 +2504,23 @@ function getPtoFunnelData() {
   // PTO submitted > 90 days but not yet approved
   const ptoOver90Days = ptoSubmitted.filter(d => d.daysSinceSubmitted !== null && d.daysSinceSubmitted > 90);
   
-  return { permitPending, needToSubmitPermit, inspectionScheduled, inspectionNotComplete, meterCollarNeeded, ptoSubmitted, ptoNotSubmitted, ptoOver90Days };
+  // Catch-all: Projects not in any other PTO Funnel bucket and don't have PTO yet
+  const ptoFunnelIds = new Set([
+    ...permitPending.map(d => d.dealId),
+    ...needToSubmitPermit.map(d => d.dealId),
+    ...inspectionScheduled.map(d => d.dealId),
+    ...inspectionNotComplete.map(d => d.dealId),
+    ...meterCollarNeeded.map(d => d.dealId),
+    ...ptoSubmitted.map(d => d.dealId),
+    ...ptoNotSubmitted.map(d => d.dealId)
+  ]);
+  
+  const uncategorized = allDeals.filter(d => {
+    if (hasPto(d)) return false; // Has PTO, should be in ICF pipeline
+    return !ptoFunnelIds.has(d.dealId);
+  }).map(d => ({ ...d, daysSinceInstall: daysSince(d.installDate) }));
+  
+  return { permitPending, needToSubmitPermit, inspectionScheduled, inspectionNotComplete, meterCollarNeeded, ptoSubmitted, ptoNotSubmitted, ptoOver90Days, uncategorized };
 }
 
 function sortPtoData(deals, sortBy, sortDir) {
@@ -2531,7 +2549,7 @@ function ptoSortHeader(label, col) {
 
 function renderPtoFunnelTab() {
   const data = getPtoFunnelData();
-  const total = data.permitPending.length + data.needToSubmitPermit.length + data.inspectionScheduled.length + data.inspectionNotComplete.length + data.meterCollarNeeded.length + data.ptoSubmitted.length + data.ptoNotSubmitted.length;
+  const total = data.permitPending.length + data.needToSubmitPermit.length + data.inspectionScheduled.length + data.inspectionNotComplete.length + data.meterCollarNeeded.length + data.ptoSubmitted.length + data.ptoNotSubmitted.length + data.uncategorized.length;
   const tabs = [
     { key: 'summary', label: '📊 Summary', count: total, color: 'slate' },
     { key: 'permitPending', label: 'Permit Pending', count: data.permitPending.length, color: 'blue' },
@@ -2539,7 +2557,8 @@ function renderPtoFunnelTab() {
     { key: 'inspectionScheduled', label: 'Inspection Scheduled', count: data.inspectionScheduled.length, color: 'purple' },
     { key: 'inspectionNotComplete', label: 'Inspection Not Complete', count: data.inspectionNotComplete.length, color: 'amber' },
     { key: 'meterCollar', label: 'Meter Collar Needed', count: data.meterCollarNeeded.length, color: 'orange' },
-    { key: 'ptoStatus', label: 'PTO Status', count: data.ptoSubmitted.length + data.ptoNotSubmitted.length, color: 'cyan' }
+    { key: 'ptoStatus', label: 'PTO Status', count: data.ptoSubmitted.length + data.ptoNotSubmitted.length, color: 'cyan' },
+    { key: 'uncategorized', label: 'Uncategorized', count: data.uncategorized.length, color: 'slate' }
   ];
   
   // Search across all PTO data
@@ -2568,6 +2587,7 @@ function renderPtoFunnelTab() {
       state.ptoSubTab === 'inspectionScheduled' ? renderInspectionScheduled(data.inspectionScheduled) :
       state.ptoSubTab === 'inspectionNotComplete' ? renderInspectionNotComplete(data.inspectionNotComplete) :
       state.ptoSubTab === 'meterCollar' ? renderMeterCollarNeeded(data.meterCollarNeeded) :
+      state.ptoSubTab === 'uncategorized' ? renderUncategorized(data.uncategorized) :
       renderPtoStatus(data.ptoSubmitted, data.ptoNotSubmitted)}
   `;
 }
@@ -2581,8 +2601,9 @@ function renderPtoFunnelSummary(data) {
     { label: 'Inspection Scheduled', count: data.inspectionScheduled.length, amount: calcIncentive(data.inspectionScheduled), color: 'purple', key: 'inspectionScheduled' },
     { label: 'Inspection Not Complete', count: data.inspectionNotComplete.length, amount: calcIncentive(data.inspectionNotComplete), color: 'amber', key: 'inspectionNotComplete' },
     { label: 'Meter Collar Needed', count: data.meterCollarNeeded.length, amount: calcIncentive(data.meterCollarNeeded), color: 'orange', key: 'meterCollar' },
-    { label: 'PTO Submitted', count: data.ptoSubmitted.length, amount: calcIncentive(data.ptoSubmitted), color: 'blue', key: 'ptoStatus' },
-    { label: 'PTO Not Submitted', count: data.ptoNotSubmitted.length, amount: calcIncentive(data.ptoNotSubmitted), color: 'amber', key: 'ptoStatus' }
+    { label: 'PTO Submitted', count: data.ptoSubmitted.length, amount: calcIncentive(data.ptoSubmitted), color: 'cyan', key: 'ptoStatus' },
+    { label: 'PTO Not Submitted', count: data.ptoNotSubmitted.length, amount: calcIncentive(data.ptoNotSubmitted), color: 'yellow', key: 'ptoStatus' },
+    { label: 'Uncategorized', count: data.uncategorized.length, amount: calcIncentive(data.uncategorized), color: 'slate', key: 'uncategorized' }
   ];
   
   const total = categories.reduce((sum, c) => sum + c.count, 0);
@@ -3027,6 +3048,57 @@ function renderPtoStatus(ptoSubmitted, ptoNotSubmitted) {
   `;
 }
 
+function renderUncategorized(deals) {
+  const sorted = sortPtoData(deals, state.ptoSortBy || 'daysSinceInstall', state.ptoSortDir);
+  const totalIncentive = deals.reduce((sum, d) => sum + parseNum(d.currentIncentive || d.finalIncentive), 0);
+  return `
+    <div class="bg-slate-500/10 border border-slate-500/30 rounded-lg p-4 mb-4">
+      <h3 class="font-semibold text-slate-400">❓ Uncategorized Projects</h3>
+      <p class="text-sm text-slate-400 mt-1">Projects that don't fit into other PTO Funnel categories - may need data cleanup</p>
+      <div class="mt-3 flex gap-6">
+        <div>
+          <div class="text-2xl font-bold text-slate-400">${deals.length}</div>
+          <div class="text-xs text-slate-400">projects</div>
+        </div>
+        <div>
+          <div class="text-2xl font-bold text-slate-400">${fmtCurrency(totalIncentive)}</div>
+          <div class="text-xs text-slate-400">total incentive</div>
+        </div>
+      </div>
+    </div>
+    <div class="bg-slate-800/50 rounded-lg border border-slate-700/50 overflow-hidden">
+      <div class="table-container overflow-x-auto" style="max-height: 600px;">
+        <table class="w-full text-sm">
+          <thead class="sticky-header"><tr>
+            ${ptoSortHeader('Customer', 'customer')}
+            ${ptoSortHeader('Utility', 'utility')}
+            ${ptoSortHeader('Install Date', 'installDate')}
+            ${ptoSortHeader('Days Since Install', 'daysSinceInstall')}
+            ${ptoSortHeader('Permit Status', 'permitStatus')}
+            ${ptoSortHeader('Inspection Status', 'inspectionStatus')}
+            <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">SGIP Progress</th>
+            ${ptoSortHeader('Installer', 'installer')}
+          </tr></thead>
+          <tbody class="divide-y divide-slate-700/30">
+            ${sorted.length === 0 ? '<tr><td colspan="8" class="px-3 py-8 text-center text-slate-500">No uncategorized projects - all accounted for!</td></tr>' : sorted.map(d => `
+              <tr class="hover:bg-slate-800/50">
+                <td class="px-3 py-2">${customerCell(d)}${d.applicationCode ? '<br><span class="text-xs text-slate-500 mono">'+d.applicationCode+'</span>' : ''}</td>
+                <td class="px-3 py-2"><span class="px-1.5 py-0.5 rounded text-xs border ${getUtilityStyle(getUtility(d))}">${getUtility(d) || '—'}</span></td>
+                <td class="px-3 py-2 text-xs mono">${d.installDate || '—'}</td>
+                <td class="px-3 py-2 font-bold ${d.daysSinceInstall > 30 ? 'text-red-400' : d.daysSinceInstall > 14 ? 'text-amber-400' : 'text-slate-300'}">${d.daysSinceInstall !== null ? d.daysSinceInstall + 'd' : '—'}</td>
+                <td class="px-3 py-2"><span class="px-1.5 py-0.5 rounded text-xs bg-slate-700 text-slate-400 border border-slate-600">${d.permitStatus || 'Not Set'}</span></td>
+                <td class="px-3 py-2"><span class="px-1.5 py-0.5 rounded text-xs ${d.inspectionStatus === 'Passed' ? 'bg-green-900/50 text-green-400 border border-green-800' : 'bg-slate-700 text-slate-400 border border-slate-600'}">${d.inspectionStatus || 'Not Set'}</span></td>
+                <td class="px-3 py-2 text-xs">${d.sgipProgress || '—'}</td>
+                <td class="px-3 py-2 text-xs">${d.installer || '—'}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
+
 // ICF Deep Dive Functions
 function getIcfDeepDiveData() {
   const allDeals = getAllInstalled();
@@ -3046,11 +3118,15 @@ function getIcfDeepDiveData() {
     return Math.floor((now - d) / (1000 * 60 * 60 * 24));
   };
   
-  // 1. PTO'd but ICF not yet submitted (still in RRF statuses or ICF Draft)
+  // 1. PTO'd but ICF not yet submitted (still in RRF statuses, ICF Draft, or no/unknown status)
   const ptoNoIcf = allDeals.filter(d => {
     if (!hasPto(d)) return false;
     const status = getStatus(d);
-    return status.includes('rrf') || status === 'icf: draft' || status.includes('icf draft');
+    // Include if in RRF stages or ICF Draft
+    if (status.includes('rrf') || status === 'icf: draft' || status.includes('icf draft')) return true;
+    // Also include if status is empty/unknown (has PTO but no ICF progress)
+    if (!status || status === '' || status === '(no value)' || status === 'none') return true;
+    return false;
   }).map(d => ({ ...d, daysSincePto: daysSince(d.ptoDate) }));
   
   // 2. Revisions required (ICF Suspended or ICF Inspection Suspended)
