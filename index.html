@@ -1757,6 +1757,7 @@ function renderPipelineValue() {
     { label: 'ICF Review', count: icfData.icfReview.length, amount: calcIncentive(icfData.icfReview), color: 'purple', section: 'ICF Pipeline' },
     { label: 'ICF Inspection', count: icfData.icfInspection.length, amount: calcIncentive(icfData.icfInspection), color: 'cyan', section: 'ICF Pipeline' },
     { label: 'Pending Payment', count: icfData.pendingPayment.length, amount: calcIncentive(icfData.pendingPayment), color: 'emerald', section: 'ICF Pipeline' },
+    { label: 'ICF Uncategorized', count: icfData.icfUncategorized.length, amount: calcIncentive(icfData.icfUncategorized), color: 'slate', section: 'ICF Pipeline' },
     { label: 'Payment Complete', count: icfData.paymentComplete.length, amount: calcPayment(icfData.paymentComplete), color: 'green', section: 'ICF Pipeline', isPayment: true }
   ];
   
@@ -2436,89 +2437,87 @@ function getPtoFunnelData() {
   // Helper to check if PTO is submitted
   const hasPtoSubmitted = (d) => d.ptoSubmittedDate && d.ptoSubmittedDate !== '(No value)' && d.ptoSubmittedDate !== 'None';
   
-  // 1. Permit Pending (Submitted, Resubmitted, Revisions in progress)
-  const permitPendingStatuses = ['Submitted', 'Resubmitted', 'Revisions in progress'];
-  const permitPending = allDeals.filter(d => permitPendingStatuses.includes(d.permitStatus))
-    .map(d => ({ ...d, daysSinceInstall: daysSince(d.installDate) }));
-  
-  // 2. Need to Submit Permit (Rejected, or no status/empty) - only if NOT at a later stage
-  // Projects that truly need permit work - not approved and not progressed past permit stage
-  const isAtLaterStage = (d) => {
-    // Check if inspection is passed
-    if (d.inspectionStatus === 'Passed') return true;
-    // Check if has PTO
-    if (hasPto(d)) return true;
-    // Check if at ICF stage (has SGIP progress at ICF or payment)
-    const sgip = (d.sgipProgress || '').toLowerCase();
-    if (sgip.includes('icf') || sgip.includes('payment')) return true;
-    return false;
-  };
-  
-  const needToSubmitPermit = allDeals.filter(d => {
-    // If permit is approved, exclude
-    if (d.permitStatus === 'Approved') return false;
-    // If permit is in pending status, exclude (handled by permitPending)
-    if (permitPendingStatuses.includes(d.permitStatus)) return false;
-    // If project is already at a later stage, exclude
-    if (isAtLaterStage(d)) return false;
-    return true;
-  }).map(d => ({ ...d, daysSinceInstall: daysSince(d.installDate) }));
-  
-  // 3. Inspection Scheduled/Requested
-  const inspectionScheduled = allDeals.filter(d => 
-    d.inspectionStatus === 'Scheduled' || d.inspectionStatus === 'Requested'
-  ).map(d => ({ ...d, daysSinceInstall: daysSince(d.installDate) }));
-  
-  // 4. Inspection Not Complete (Failed, Pending HO Action, Need to Request Inspection, or no status)
-  const inspectionNotComplete = allDeals.filter(d => {
-    const status = d.inspectionStatus;
-    return d.permitStatus === 'Approved' && 
-           (status === 'Failed' || status === 'Pending HO Action' || status === 'Need to Request Inspection' || !status || status === '(No value)');
-  }).map(d => ({ ...d, daysSinceInstall: daysSince(d.installDate) }));
-  
-  // 5. Meter Collar Needed
-  const meterCollarNeeded = allDeals.filter(d => 
-    d.inspectionStatus === 'Meter Collar Needed' || 
-    (d.inspectionStatus && d.inspectionStatus.toLowerCase().includes('meter collar'))
-  ).map(d => ({ ...d, daysSinceInstall: daysSince(d.installDate) }));
-  
-  // 6. PTO Status - Not yet approved, but permit approved AND inspection passed
-  const ptoNotApproved = allDeals.filter(d => 
-    !hasPto(d) && 
-    d.permitStatus === 'Approved' && 
-    d.inspectionStatus === 'Passed'
-  );
-  
   // Check if PTO is submitted via ptoSubmittedDate OR interconnection status contains "PTO Submitted"
-  const isPtoSubmitted = (d) => {
+  const isPtoSubmittedCheck = (d) => {
     if (hasPtoSubmitted(d)) return true;
     const interconnection = (d.interconnectionStatus || '').toLowerCase();
     return interconnection.includes('pto submitted');
   };
   
-  const ptoSubmitted = ptoNotApproved.filter(d => isPtoSubmitted(d))
-    .map(d => ({ ...d, daysSinceSubmitted: daysSince(d.ptoSubmittedDate), daysSinceInstall: daysSince(d.installDate) }));
-  const ptoNotSubmitted = ptoNotApproved.filter(d => !isPtoSubmitted(d))
-    .map(d => ({ ...d, daysSinceInstall: daysSince(d.installDate) }));
+  // IMPORTANT: All PTO Funnel buckets should ONLY include projects WITHOUT PTO
+  // Projects WITH PTO belong in ICF Pipeline
+  const dealsWithoutPto = allDeals.filter(d => !hasPto(d));
+  
+  // Initialize buckets
+  const permitPending = [];
+  const needToSubmitPermit = [];
+  const inspectionScheduled = [];
+  const inspectionNotComplete = [];
+  const meterCollarNeeded = [];
+  const ptoSubmitted = [];
+  const ptoNotSubmitted = [];
+  const uncategorized = [];
+  
+  const permitPendingStatuses = ['Submitted', 'Resubmitted', 'Revisions in progress'];
+  
+  // Categorize each deal into exactly ONE bucket based on priority
+  dealsWithoutPto.forEach(d => {
+    const dealWithDays = { ...d, daysSinceInstall: daysSince(d.installDate) };
+    
+    // Priority 1: If permit approved AND inspection passed → PTO Status
+    if (d.permitStatus === 'Approved' && d.inspectionStatus === 'Passed') {
+      if (isPtoSubmittedCheck(d)) {
+        ptoSubmitted.push({ ...dealWithDays, daysSinceSubmitted: daysSince(d.ptoSubmittedDate) });
+      } else {
+        ptoNotSubmitted.push(dealWithDays);
+      }
+      return;
+    }
+    
+    // Priority 2: Meter Collar Needed (specific inspection status)
+    if (d.inspectionStatus === 'Meter Collar Needed' || 
+        (d.inspectionStatus && d.inspectionStatus.toLowerCase().includes('meter collar'))) {
+      meterCollarNeeded.push(dealWithDays);
+      return;
+    }
+    
+    // Priority 3: Inspection Scheduled/Requested
+    if (d.inspectionStatus === 'Scheduled' || d.inspectionStatus === 'Requested') {
+      inspectionScheduled.push(dealWithDays);
+      return;
+    }
+    
+    // Priority 4: Permit Approved but inspection not complete
+    if (d.permitStatus === 'Approved') {
+      // Inspection is not Passed, not Scheduled, not Meter Collar - so it's not complete
+      inspectionNotComplete.push(dealWithDays);
+      return;
+    }
+    
+    // Priority 5: Permit Pending (Submitted, Resubmitted, Revisions in progress)
+    if (permitPendingStatuses.includes(d.permitStatus)) {
+      permitPending.push(dealWithDays);
+      return;
+    }
+    
+    // Priority 6: Need to Submit Permit (permit not approved, not pending)
+    // But only if not at a later stage (inspection passed or ICF stage)
+    const sgip = (d.sgipProgress || '').toLowerCase();
+    const isAtLaterStage = d.inspectionStatus === 'Passed' || 
+                           sgip.includes('icf') || 
+                           sgip.includes('payment');
+    
+    if (!isAtLaterStage) {
+      needToSubmitPermit.push(dealWithDays);
+      return;
+    }
+    
+    // Everything else goes to uncategorized
+    uncategorized.push(dealWithDays);
+  });
   
   // PTO submitted > 90 days but not yet approved
   const ptoOver90Days = ptoSubmitted.filter(d => d.daysSinceSubmitted !== null && d.daysSinceSubmitted > 90);
-  
-  // Catch-all: Projects not in any other PTO Funnel bucket and don't have PTO yet
-  const ptoFunnelIds = new Set([
-    ...permitPending.map(d => d.dealId),
-    ...needToSubmitPermit.map(d => d.dealId),
-    ...inspectionScheduled.map(d => d.dealId),
-    ...inspectionNotComplete.map(d => d.dealId),
-    ...meterCollarNeeded.map(d => d.dealId),
-    ...ptoSubmitted.map(d => d.dealId),
-    ...ptoNotSubmitted.map(d => d.dealId)
-  ]);
-  
-  const uncategorized = allDeals.filter(d => {
-    if (hasPto(d)) return false; // Has PTO, should be in ICF pipeline
-    return !ptoFunnelIds.has(d.dealId);
-  }).map(d => ({ ...d, daysSinceInstall: daysSince(d.installDate) }));
   
   return { permitPending, needToSubmitPermit, inspectionScheduled, inspectionNotComplete, meterCollarNeeded, ptoSubmitted, ptoNotSubmitted, ptoOver90Days, uncategorized };
 }
@@ -3118,9 +3117,11 @@ function getIcfDeepDiveData() {
     return Math.floor((now - d) / (1000 * 60 * 60 * 24));
   };
   
+  // ICF Pipeline should ONLY include projects WITH PTO
+  const dealsWithPto = allDeals.filter(d => hasPto(d));
+  
   // 1. PTO'd but ICF not yet submitted (still in RRF statuses, ICF Draft, or no/unknown status)
-  const ptoNoIcf = allDeals.filter(d => {
-    if (!hasPto(d)) return false;
+  const ptoNoIcf = dealsWithPto.filter(d => {
     const status = getStatus(d);
     // Include if in RRF stages or ICF Draft
     if (status.includes('rrf') || status === 'icf: draft' || status.includes('icf draft')) return true;
@@ -3130,7 +3131,7 @@ function getIcfDeepDiveData() {
   }).map(d => ({ ...d, daysSincePto: daysSince(d.ptoDate) }));
   
   // 2. Revisions required (ICF Suspended or ICF Inspection Suspended)
-  const revisions = allDeals.filter(d => {
+  const revisions = dealsWithPto.filter(d => {
     const status = getStatus(d);
     return status.includes('icf suspended') || status.includes('icf: suspended') || 
            status.includes('inspection suspended');
@@ -3141,7 +3142,7 @@ function getIcfDeepDiveData() {
   });
   
   // 3. ICF Submitted (ICF Submitted or ICF Resubmitted status)
-  const icfSubmitted = allDeals.filter(d => {
+  const icfSubmitted = dealsWithPto.filter(d => {
     const status = getStatus(d);
     return status === 'icf: submitted' || status === 'icf submitted' || 
            status === 'icf: resubmitted' || status === 'icf resubmitted';
@@ -3152,7 +3153,7 @@ function getIcfDeepDiveData() {
   });
   
   // 4. ICF Review (ICF Review or ICF Technical Review)
-  const icfReview = allDeals.filter(d => {
+  const icfReview = dealsWithPto.filter(d => {
     const status = getStatus(d);
     return status === 'icf: review' || status === 'icf review' || 
            status === 'icf: technical review' || status === 'icf technical review';
@@ -3162,25 +3163,39 @@ function getIcfDeepDiveData() {
   });
   
   // 5. ICF Inspection
-  const icfInspection = allDeals.filter(d => {
+  const icfInspection = dealsWithPto.filter(d => {
     const status = getStatus(d);
     return (status === 'icf: inspection' || status === 'icf inspection') && 
            !status.includes('suspended');
   });
   
   // 6. Pending Payment (ICF Pending Payment)
-  const pendingPayment = allDeals.filter(d => {
+  const pendingPayment = dealsWithPto.filter(d => {
     const status = getStatus(d);
     return status === 'icf: pending payment' || status === 'icf pending payment';
   }).map(d => ({ ...d, daysSinceApproved: daysSince(d.icfPendingPaymentDate) }));
   
   // 7. Payment Complete
-  const paymentComplete = allDeals.filter(d => {
+  const paymentComplete = dealsWithPto.filter(d => {
     const status = getStatus(d);
     return status === 'payment: completed' || status === 'payment completed';
   });
   
-  return { ptoNoIcf, revisions, icfSubmitted, icfReview, icfInspection, pendingPayment, paymentComplete };
+  // Catch-all: Projects with PTO not in any other ICF bucket
+  const icfPipelineIds = new Set([
+    ...ptoNoIcf.map(d => d.dealId),
+    ...revisions.map(d => d.dealId),
+    ...icfSubmitted.map(d => d.dealId),
+    ...icfReview.map(d => d.dealId),
+    ...icfInspection.map(d => d.dealId),
+    ...pendingPayment.map(d => d.dealId),
+    ...paymentComplete.map(d => d.dealId)
+  ]);
+  
+  const icfUncategorized = dealsWithPto.filter(d => !icfPipelineIds.has(d.dealId))
+    .map(d => ({ ...d, daysSincePto: daysSince(d.ptoDate) }));
+  
+  return { ptoNoIcf, revisions, icfSubmitted, icfReview, icfInspection, pendingPayment, paymentComplete, icfUncategorized };
 }
 
 function sortIcfData(deals, sortBy, sortDir) {
@@ -3219,7 +3234,7 @@ function icfSortHeader(label, col) {
 
 function renderIcfDeepDiveTab() {
   const data = getIcfDeepDiveData();
-  const total = data.ptoNoIcf.length + data.revisions.length + data.icfSubmitted.length + data.icfReview.length + data.icfInspection.length + data.pendingPayment.length;
+  const total = data.ptoNoIcf.length + data.revisions.length + data.icfSubmitted.length + data.icfReview.length + data.icfInspection.length + data.pendingPayment.length + data.icfUncategorized.length;
   const tabs = [
     { key: 'summary', label: '📊 Summary', count: total, color: 'slate' },
     { key: 'ptoNoIcf', label: 'PTO\'d, No ICF', count: data.ptoNoIcf.length, color: 'amber' },
@@ -3228,7 +3243,8 @@ function renderIcfDeepDiveTab() {
     { key: 'icfReview', label: 'ICF Review', count: data.icfReview.length, color: 'purple' },
     { key: 'icfInspection', label: 'ICF Inspection', count: data.icfInspection.length, color: 'cyan' },
     { key: 'pendingPayment', label: 'Pending Payment', count: data.pendingPayment.length, color: 'emerald' },
-    { key: 'paymentComplete', label: 'Payment Complete', count: data.paymentComplete.length, color: 'green' }
+    { key: 'paymentComplete', label: 'Payment Complete', count: data.paymentComplete.length, color: 'green' },
+    { key: 'icfUncategorized', label: 'Uncategorized', count: data.icfUncategorized.length, color: 'slate' }
   ];
   
   // Search across all ICF data
@@ -3258,6 +3274,7 @@ function renderIcfDeepDiveTab() {
       state.icfSubTab === 'icfReview' ? renderIcfReview(data.icfReview) :
       state.icfSubTab === 'icfInspection' ? renderIcfInspection(data.icfInspection) :
       state.icfSubTab === 'pendingPayment' ? renderPendingPayment(data.pendingPayment) :
+      state.icfSubTab === 'icfUncategorized' ? renderIcfUncategorized(data.icfUncategorized) :
       renderPaymentComplete(data.paymentComplete)}
   `;
 }
@@ -3618,7 +3635,7 @@ async function saveCurrentPtoSnapshot() {
 }
 
 function renderIcfSummary(data) {
-  const total = data.ptoNoIcf.length + data.revisions.length + data.icfSubmitted.length + data.icfReview.length + data.icfInspection.length + data.pendingPayment.length;
+  const total = data.ptoNoIcf.length + data.revisions.length + data.icfSubmitted.length + data.icfReview.length + data.icfInspection.length + data.pendingPayment.length + data.icfUncategorized.length;
   
   const calcIncentive = (deals) => deals.reduce((sum, d) => sum + parseNum(d.currentIncentive || d.finalIncentive), 0);
   const calcPayment = (deals) => deals.reduce((sum, d) => sum + parseNum(d.paymentAmount), 0);
@@ -3629,7 +3646,8 @@ function renderIcfSummary(data) {
     { label: 'ICF Submitted', count: data.icfSubmitted.length, amount: calcIncentive(data.icfSubmitted), color: 'blue', key: 'icfSubmitted' },
     { label: 'ICF Review', count: data.icfReview.length, amount: calcIncentive(data.icfReview), color: 'purple', key: 'icfReview' },
     { label: 'ICF Inspection', count: data.icfInspection.length, amount: calcIncentive(data.icfInspection), color: 'cyan', key: 'icfInspection' },
-    { label: 'Pending Payment', count: data.pendingPayment.length, amount: calcIncentive(data.pendingPayment), color: 'emerald', key: 'pendingPayment' }
+    { label: 'Pending Payment', count: data.pendingPayment.length, amount: calcIncentive(data.pendingPayment), color: 'emerald', key: 'pendingPayment' },
+    { label: 'Uncategorized', count: data.icfUncategorized.length, amount: calcIncentive(data.icfUncategorized), color: 'slate', key: 'icfUncategorized' }
   ];
   
   const totalIncentive = pipelineCategories.reduce((sum, c) => sum + c.amount, 0);
@@ -4083,6 +4101,55 @@ function renderPaymentComplete(deals) {
                 <td class="px-3 py-2 text-xs mono">${d.icfPendingPaymentDate || '—'}</td>
                 <td class="px-3 py-2 text-xs mono text-green-400">${d.paymentCompletedDate || '—'}</td>
                 <td class="px-3 py-2 text-right font-bold text-green-400">${d.paymentAmount ? fmtCurrency(parseNum(d.paymentAmount)) : '—'}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
+
+function renderIcfUncategorized(deals) {
+  const sorted = sortIcfData(deals, state.icfSortBy || 'daysSincePto', state.icfSortDir);
+  const totalIncentive = deals.reduce((sum, d) => sum + parseNum(d.currentIncentive || d.finalIncentive), 0);
+  return `
+    <div class="bg-slate-500/10 border border-slate-500/30 rounded-lg p-4 mb-4">
+      <h3 class="font-semibold text-slate-400">❓ ICF Uncategorized Projects</h3>
+      <p class="text-sm text-slate-400 mt-1">Projects with PTO but SGIP status doesn't match any known ICF stage - may need data cleanup</p>
+      <div class="mt-3 flex gap-6">
+        <div>
+          <div class="text-2xl font-bold text-slate-400">${deals.length}</div>
+          <div class="text-xs text-slate-400">projects</div>
+        </div>
+        <div>
+          <div class="text-2xl font-bold text-slate-400">${fmtCurrency(totalIncentive)}</div>
+          <div class="text-xs text-slate-400">total incentive</div>
+        </div>
+      </div>
+    </div>
+    <div class="bg-slate-800/50 rounded-lg border border-slate-700/50 overflow-hidden">
+      <div class="table-container overflow-x-auto" style="max-height: 600px;">
+        <table class="w-full text-sm">
+          <thead class="sticky-header"><tr>
+            ${icfSortHeader('Customer', 'customer')}
+            ${icfSortHeader('Utility', 'utility')}
+            ${icfSortHeader('PTO Date', 'ptoDate')}
+            ${icfSortHeader('Days Since PTO', 'daysSincePto')}
+            <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">SGIP Progress</th>
+            <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">ICF Status</th>
+            ${icfSortHeader('Incentive', 'incentive')}
+          </tr></thead>
+          <tbody class="divide-y divide-slate-700/30">
+            ${sorted.length === 0 ? '<tr><td colspan="7" class="px-3 py-8 text-center text-slate-500">No uncategorized ICF projects - all accounted for!</td></tr>' : sorted.map(d => `
+              <tr class="hover:bg-slate-800/50">
+                <td class="px-3 py-2">${customerCell(d)}${d.applicationCode ? '<br><span class="text-xs text-slate-500 mono">'+d.applicationCode+'</span>' : ''}</td>
+                <td class="px-3 py-2"><span class="px-1.5 py-0.5 rounded text-xs border ${getUtilityStyle(getUtility(d))}">${getUtility(d) || '—'}</span></td>
+                <td class="px-3 py-2 text-xs mono">${d.ptoDate || '—'}</td>
+                <td class="px-3 py-2 font-bold text-slate-400">${d.daysSincePto !== null ? d.daysSincePto + 'd' : '—'}</td>
+                <td class="px-3 py-2 text-xs">${d.sgipProgress || '—'}</td>
+                <td class="px-3 py-2 text-xs">${d.sgipIcfStatus || '—'}</td>
+                <td class="px-3 py-2 text-right">${d.currentIncentive || d.finalIncentive ? fmtCurrency(parseNum(d.currentIncentive || d.finalIncentive)) : '—'}</td>
               </tr>
             `).join('')}
           </tbody>
