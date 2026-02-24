@@ -1432,10 +1432,50 @@ function renderIcfMonthlyStats() {
     icfApproved: acc.icfApproved + m.icfApproved
   }), { installs: 0, inspections: 0, ptoSubmitted: 0, ptoApproved: 0, icfSubmitted: 0, icfResubmitted: 0, icfApproved: 0 });
   
+  // Reverse data for charts (oldest to newest)
+  const chartData = [...monthlyData].reverse();
+  const chartLabels = chartData.map(m => m.monthLabel.replace(' 20', ' \''));
+  
+  // Find max value for chart scaling
+  const allValues = chartData.flatMap(m => [m.installs, m.inspections, m.ptoSubmitted, m.ptoApproved, m.icfSubmitted, m.icfApproved]);
+  const maxValue = Math.max(...allValues, 1);
+  
+  // Helper to generate bar chart
+  const renderBarChart = (title, data, color, bgColor) => {
+    const max = Math.max(...data, 1);
+    return `
+      <div class="bg-slate-800/50 rounded-lg border border-slate-700/50 p-4">
+        <h4 class="text-sm font-semibold ${color} mb-3">${title}</h4>
+        <div class="flex items-end gap-1 h-32">
+          ${data.map((val, i) => {
+            const height = max > 0 ? (val / max) * 100 : 0;
+            return `
+              <div class="flex-1 flex flex-col items-center gap-1">
+                <span class="text-xs ${color} font-bold">${val}</span>
+                <div class="w-full ${bgColor} rounded-t" style="height: ${height}%"></div>
+                <span class="text-[10px] text-slate-500 truncate w-full text-center">${chartLabels[i].split(' ')[0]}</span>
+              </div>
+            `;
+          }).join('')}
+        </div>
+      </div>
+    `;
+  };
+  
   return `
     <div class="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-4 mb-4">
       <h3 class="font-semibold text-yellow-400">📅 Monthly Activity Summary</h3>
       <p class="text-sm text-slate-400 mt-1">Installs, inspections, PTOs, and ICF activity by month (since Oct 2025)</p>
+    </div>
+    
+    <!-- Charts Grid -->
+    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
+      ${renderBarChart('Installs', chartData.map(m => m.installs), 'text-emerald-400', 'bg-emerald-500')}
+      ${renderBarChart('Inspections', chartData.map(m => m.inspections), 'text-pink-400', 'bg-pink-500')}
+      ${renderBarChart('PTO Submitted', chartData.map(m => m.ptoSubmitted), 'text-orange-400', 'bg-orange-500')}
+      ${renderBarChart('PTO Approved', chartData.map(m => m.ptoApproved), 'text-cyan-400', 'bg-cyan-500')}
+      ${renderBarChart('ICF Submitted', chartData.map(m => m.icfSubmitted), 'text-blue-400', 'bg-blue-500')}
+      ${renderBarChart('ICF Approved', chartData.map(m => m.icfApproved), 'text-green-400', 'bg-green-500')}
     </div>
     
     <!-- Monthly Table -->
