@@ -1443,23 +1443,45 @@ function renderIcfMonthlyStats() {
   const allValues = chartData.flatMap(m => [m.installs, m.inspections, m.ptoSubmitted, m.ptoApproved, m.icfSubmitted, m.icfApproved]);
   const maxValue = Math.max(...allValues, 1);
   
-  // Helper to generate bar chart
+  // Helper to generate bar chart with Y-axis and grid lines
   const renderBarChart = (title, data, color, bgColor) => {
     const max = Math.max(...data, 1);
+    // Round up to nice number for Y-axis
+    const yMax = Math.ceil(max / 20) * 20;
+    const ySteps = 5;
+    const yIncrement = yMax / ySteps;
+    
     return `
       <div class="bg-slate-800/50 rounded-lg border border-slate-700/50 p-5">
         <h4 class="text-base font-semibold ${color} mb-4">${title}</h4>
-        <div class="flex items-end gap-4" style="height: 280px;">
-          ${data.map((val, i) => {
-            const heightPx = max > 0 ? Math.round((val / max) * 220) : 0;
-            return `
-              <div class="flex-1 flex flex-col items-center">
-                <span class="text-base ${color} font-bold mb-2">${val}</span>
-                <div class="w-full ${bgColor} rounded-t" style="height: ${heightPx}px; min-height: 4px;"></div>
-                <span class="text-sm text-slate-400 mt-3">${chartLabels[i]}</span>
-              </div>
-            `;
-          }).join('')}
+        <div class="flex" style="height: 240px;">
+          <!-- Y-axis labels -->
+          <div class="flex flex-col justify-between text-right pr-3 text-xs text-slate-500" style="width: 40px;">
+            ${Array.from({length: ySteps + 1}, (_, i) => `<span>${Math.round(yMax - (i * yIncrement))}</span>`).join('')}
+          </div>
+          <!-- Chart area -->
+          <div class="flex-1 relative">
+            <!-- Grid lines -->
+            <div class="absolute inset-0 flex flex-col justify-between pointer-events-none">
+              ${Array.from({length: ySteps + 1}, () => `<div class="border-t border-slate-700/50 w-full"></div>`).join('')}
+            </div>
+            <!-- Bars -->
+            <div class="relative flex items-end justify-around h-full px-2">
+              ${data.map((val, i) => {
+                const heightPct = yMax > 0 ? (val / yMax) * 100 : 0;
+                return `
+                  <div class="flex flex-col items-center" style="width: 14%;">
+                    <span class="text-sm ${color} font-bold mb-1">${val}</span>
+                    <div class="w-full ${bgColor} rounded-t" style="height: ${heightPct}%;"></div>
+                  </div>
+                `;
+              }).join('')}
+            </div>
+          </div>
+        </div>
+        <!-- X-axis labels -->
+        <div class="flex pl-10 mt-2">
+          ${data.map((_, i) => `<div class="flex-1 text-center text-sm text-slate-400">${chartLabels[i]}</div>`).join('')}
         </div>
       </div>
     `;
@@ -1472,15 +1494,19 @@ function renderIcfMonthlyStats() {
     </div>
     
     <!-- Charts Grid - Row 1 -->
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
       ${renderBarChart('Installs', chartData.map(m => m.installs), 'text-emerald-400', 'bg-emerald-500')}
       ${renderBarChart('Inspections', chartData.map(m => m.inspections), 'text-pink-400', 'bg-pink-500')}
-      ${renderBarChart('PTO Submitted', chartData.map(m => m.ptoSubmitted), 'text-orange-400', 'bg-orange-500')}
     </div>
     
     <!-- Charts Grid - Row 2 -->
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+      ${renderBarChart('PTO Submitted', chartData.map(m => m.ptoSubmitted), 'text-orange-400', 'bg-orange-500')}
       ${renderBarChart('PTO Approved', chartData.map(m => m.ptoApproved), 'text-cyan-400', 'bg-cyan-500')}
+    </div>
+    
+    <!-- Charts Grid - Row 3 -->
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
       ${renderBarChart('ICF Submitted', chartData.map(m => m.icfSubmitted), 'text-blue-400', 'bg-blue-500')}
       ${renderBarChart('ICF Approved', chartData.map(m => m.icfApproved), 'text-green-400', 'bg-green-500')}
     </div>
