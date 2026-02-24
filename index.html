@@ -1432,9 +1432,12 @@ function renderIcfMonthlyStats() {
     icfApproved: acc.icfApproved + m.icfApproved
   }), { installs: 0, inspections: 0, ptoSubmitted: 0, ptoApproved: 0, icfSubmitted: 0, icfResubmitted: 0, icfApproved: 0 });
   
-  // Reverse data for charts (oldest to newest)
-  const chartData = [...monthlyData].reverse();
-  const chartLabels = chartData.map(m => m.monthLabel.replace(' 20', ' \''));
+  // Reverse data for charts (oldest to newest) and limit to last 6 months
+  const chartData = [...monthlyData].reverse().slice(-6);
+  const chartLabels = chartData.map(m => {
+    const parts = m.monthLabel.split(' ');
+    return parts[0].substring(0, 3) + ' \'' + parts[1].slice(-2);
+  });
   
   // Find max value for chart scaling
   const allValues = chartData.flatMap(m => [m.installs, m.inspections, m.ptoSubmitted, m.ptoApproved, m.icfSubmitted, m.icfApproved]);
@@ -1444,16 +1447,16 @@ function renderIcfMonthlyStats() {
   const renderBarChart = (title, data, color, bgColor) => {
     const max = Math.max(...data, 1);
     return `
-      <div class="bg-slate-800/50 rounded-lg border border-slate-700/50 p-4">
-        <h4 class="text-sm font-semibold ${color} mb-4">${title}</h4>
-        <div class="flex items-end gap-3" style="height: 200px;">
+      <div class="bg-slate-800/50 rounded-lg border border-slate-700/50 p-5">
+        <h4 class="text-base font-semibold ${color} mb-4">${title}</h4>
+        <div class="flex items-end gap-4" style="height: 280px;">
           ${data.map((val, i) => {
-            const heightPx = max > 0 ? Math.round((val / max) * 160) : 0;
+            const heightPx = max > 0 ? Math.round((val / max) * 220) : 0;
             return `
               <div class="flex-1 flex flex-col items-center">
-                <span class="text-sm ${color} font-bold mb-2">${val}</span>
+                <span class="text-base ${color} font-bold mb-2">${val}</span>
                 <div class="w-full ${bgColor} rounded-t" style="height: ${heightPx}px; min-height: 4px;"></div>
-                <span class="text-xs text-slate-400 mt-2">${chartLabels[i].split(' ')[0]}</span>
+                <span class="text-sm text-slate-400 mt-3">${chartLabels[i]}</span>
               </div>
             `;
           }).join('')}
