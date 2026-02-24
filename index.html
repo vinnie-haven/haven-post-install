@@ -1445,15 +1445,15 @@ function renderIcfMonthlyStats() {
     const max = Math.max(...data, 1);
     return `
       <div class="bg-slate-800/50 rounded-lg border border-slate-700/50 p-4">
-        <h4 class="text-sm font-semibold ${color} mb-3">${title}</h4>
-        <div class="flex items-end gap-2" style="height: 120px;">
+        <h4 class="text-sm font-semibold ${color} mb-4">${title}</h4>
+        <div class="flex items-end gap-3" style="height: 200px;">
           ${data.map((val, i) => {
-            const heightPx = max > 0 ? Math.round((val / max) * 80) : 0;
+            const heightPx = max > 0 ? Math.round((val / max) * 160) : 0;
             return `
               <div class="flex-1 flex flex-col items-center">
-                <span class="text-xs ${color} font-bold mb-1">${val}</span>
+                <span class="text-sm ${color} font-bold mb-2">${val}</span>
                 <div class="w-full ${bgColor} rounded-t" style="height: ${heightPx}px; min-height: 4px;"></div>
-                <span class="text-[10px] text-slate-500 mt-1">${chartLabels[i].split(' ')[0]}</span>
+                <span class="text-xs text-slate-400 mt-2">${chartLabels[i].split(' ')[0]}</span>
               </div>
             `;
           }).join('')}
