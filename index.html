@@ -1468,11 +1468,15 @@ function renderIcfMonthlyStats() {
       <p class="text-sm text-slate-400 mt-1">Installs, inspections, PTOs, and ICF activity by month (since Oct 2025)</p>
     </div>
     
-    <!-- Charts Grid -->
-    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
+    <!-- Charts Grid - Row 1 -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
       ${renderBarChart('Installs', chartData.map(m => m.installs), 'text-emerald-400', 'bg-emerald-500')}
       ${renderBarChart('Inspections', chartData.map(m => m.inspections), 'text-pink-400', 'bg-pink-500')}
       ${renderBarChart('PTO Submitted', chartData.map(m => m.ptoSubmitted), 'text-orange-400', 'bg-orange-500')}
+    </div>
+    
+    <!-- Charts Grid - Row 2 -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
       ${renderBarChart('PTO Approved', chartData.map(m => m.ptoApproved), 'text-cyan-400', 'bg-cyan-500')}
       ${renderBarChart('ICF Submitted', chartData.map(m => m.icfSubmitted), 'text-blue-400', 'bg-blue-500')}
       ${renderBarChart('ICF Approved', chartData.map(m => m.icfApproved), 'text-green-400', 'bg-green-500')}
