@@ -285,7 +285,10 @@ async function loadFromSupabase() {
         dealId: String(d.id), dealName: d.deal_name, customerName: parseCustomerName(d.deal_name),
         email: (d.email || '').toLowerCase().trim(), installDate: d.install_date,
         permitStatus: mapPermit(d.permit_status), ptoDate: d.pto_date,
-        inspectionStatus: mapInspection(d.inspection_status), sgipStatusHubspot: d.sgip_status_hubspot, installer: d.installer,
+        ptoSubmittedDate: d.pto_submitted_date || '',
+        inspectionStatus: mapInspection(d.inspection_status), 
+        inspectionPassedDate: d.inspection_passed_date || '',
+        sgipStatusHubspot: d.sgip_status_hubspot, installer: d.installer,
         attributedSource: d.attributed_source || '',
         sgipRateStatus: d.sgip_rate_status || '',
         sgipIcfStatus: d.sgip_icf_status || '',
@@ -1369,9 +1372,9 @@ function getIcfStatsByMonth() {
       }
     }
     
-    // Inspections passed
-    if (d.inspectionDate) {
-      const date = parseDate(d.inspectionDate);
+    // Inspections passed - use inspectionPassedDate from HubSpot
+    if (d.inspectionPassedDate) {
+      const date = parseDate(d.inspectionPassedDate);
       if (date && date >= startDate) {
         const month = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
         if (!byMonth[month]) byMonth[month] = { installs: 0, inspections: 0, ptoSubmitted: 0, ptoApproved: 0, icfSubmitted: 0, icfResubmitted: 0, icfApproved: 0 };
