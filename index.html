@@ -1356,14 +1356,59 @@ function getIcfStatsByMonth() {
   
   const byMonth = {};
   
+  // Get install and inspection data from HubSpot deals
+  const allInstalled = getAllInstalled();
+  allInstalled.forEach(d => {
+    // Installs
+    if (d.installDate) {
+      const date = parseDate(d.installDate);
+      if (date && date >= startDate) {
+        const month = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+        if (!byMonth[month]) byMonth[month] = { installs: 0, inspections: 0, ptoSubmitted: 0, ptoApproved: 0, icfSubmitted: 0, icfResubmitted: 0, icfApproved: 0 };
+        byMonth[month].installs++;
+      }
+    }
+    
+    // Inspections passed
+    if (d.inspectionDate) {
+      const date = parseDate(d.inspectionDate);
+      if (date && date >= startDate) {
+        const month = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+        if (!byMonth[month]) byMonth[month] = { installs: 0, inspections: 0, ptoSubmitted: 0, ptoApproved: 0, icfSubmitted: 0, icfResubmitted: 0, icfApproved: 0 };
+        byMonth[month].inspections++;
+      }
+    }
+    
+    // PTO Submitted
+    if (d.ptoSubmittedDate) {
+      const date = parseDate(d.ptoSubmittedDate);
+      if (date && date >= startDate) {
+        const month = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+        if (!byMonth[month]) byMonth[month] = { installs: 0, inspections: 0, ptoSubmitted: 0, ptoApproved: 0, icfSubmitted: 0, icfResubmitted: 0, icfApproved: 0 };
+        byMonth[month].ptoSubmitted++;
+      }
+    }
+    
+    // PTO Approved
+    if (d.ptoDate) {
+      const date = parseDate(d.ptoDate);
+      if (date && date >= startDate) {
+        const month = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+        if (!byMonth[month]) byMonth[month] = { installs: 0, inspections: 0, ptoSubmitted: 0, ptoApproved: 0, icfSubmitted: 0, icfResubmitted: 0, icfApproved: 0 };
+        byMonth[month].ptoApproved++;
+      }
+    }
+  });
+  
+  // Get ICF data from SGIP
   SGIP_DATA.forEach(d => {
     // ICF Submitted - use icfSubmittedDate
     if (d.icfSubmittedDate) {
       const date = parseDate(d.icfSubmittedDate);
       if (date && date >= startDate) {
         const month = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-        if (!byMonth[month]) byMonth[month] = { submitted: 0, resubmitted: 0, approved: 0 };
-        byMonth[month].submitted++;
+        if (!byMonth[month]) byMonth[month] = { installs: 0, inspections: 0, ptoSubmitted: 0, ptoApproved: 0, icfSubmitted: 0, icfResubmitted: 0, icfApproved: 0 };
+        byMonth[month].icfSubmitted++;
       }
     }
     
@@ -1372,8 +1417,8 @@ function getIcfStatsByMonth() {
       const date = parseDate(d.icfResubmittedDate);
       if (date && date >= startDate) {
         const month = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-        if (!byMonth[month]) byMonth[month] = { submitted: 0, resubmitted: 0, approved: 0 };
-        byMonth[month].resubmitted++;
+        if (!byMonth[month]) byMonth[month] = { installs: 0, inspections: 0, ptoSubmitted: 0, ptoApproved: 0, icfSubmitted: 0, icfResubmitted: 0, icfApproved: 0 };
+        byMonth[month].icfResubmitted++;
       }
     }
     
@@ -1382,8 +1427,8 @@ function getIcfStatsByMonth() {
       const date = parseDate(d.icfPendingPaymentDate);
       if (date && date >= startDate) {
         const month = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-        if (!byMonth[month]) byMonth[month] = { submitted: 0, resubmitted: 0, approved: 0 };
-        byMonth[month].approved++;
+        if (!byMonth[month]) byMonth[month] = { installs: 0, inspections: 0, ptoSubmitted: 0, ptoApproved: 0, icfSubmitted: 0, icfResubmitted: 0, icfApproved: 0 };
+        byMonth[month].icfApproved++;
       }
     }
   });
@@ -1399,70 +1444,136 @@ function getIcfStatsByMonth() {
 }
 
 function renderIcfMonthlyStats() {
-  const icfData = getIcfStatsByMonth();
+  const monthlyData = getIcfStatsByMonth();
   
   // Calculate totals
-  const totals = icfData.reduce((acc, m) => ({
-    submitted: acc.submitted + m.submitted,
-    resubmitted: acc.resubmitted + m.resubmitted,
-    approved: acc.approved + m.approved
-  }), { submitted: 0, resubmitted: 0, approved: 0 });
+  const totals = monthlyData.reduce((acc, m) => ({
+    installs: acc.installs + m.installs,
+    inspections: acc.inspections + m.inspections,
+    ptoSubmitted: acc.ptoSubmitted + m.ptoSubmitted,
+    ptoApproved: acc.ptoApproved + m.ptoApproved,
+    icfSubmitted: acc.icfSubmitted + m.icfSubmitted,
+    icfResubmitted: acc.icfResubmitted + m.icfResubmitted,
+    icfApproved: acc.icfApproved + m.icfApproved
+  }), { installs: 0, inspections: 0, ptoSubmitted: 0, ptoApproved: 0, icfSubmitted: 0, icfResubmitted: 0, icfApproved: 0 });
+  
+  // Reverse data for charts (oldest to newest)
+  const chartData = [...monthlyData].reverse();
+  const chartLabels = chartData.map(m => m.monthLabel.replace(' 20', " '"));
+  
+  // Helper to generate bar chart with Y-axis and grid lines
+  const renderBarChart = (title, data, color, bgColor) => {
+    const max = Math.max(...data, 1);
+    // Round up to nice number for Y-axis
+    const yMax = Math.ceil(max / 20) * 20 || 20;
+    const ySteps = 5;
+    const yIncrement = yMax / ySteps;
+    
+    return `
+      <div class="bg-slate-800/50 rounded-lg border border-slate-700/50 p-5">
+        <h4 class="text-base font-semibold ${color} mb-4">${title}</h4>
+        <div class="flex" style="height: 200px;">
+          <!-- Y-axis labels -->
+          <div class="flex flex-col justify-between text-right pr-3 text-xs text-slate-500" style="width: 35px;">
+            ${Array.from({length: ySteps + 1}, (_, i) => `<span>${Math.round(yMax - (i * yIncrement))}</span>`).join('')}
+          </div>
+          <!-- Chart area -->
+          <div class="flex-1 relative">
+            <!-- Grid lines -->
+            <div class="absolute inset-0 flex flex-col justify-between pointer-events-none">
+              ${Array.from({length: ySteps + 1}, () => `<div class="border-t border-slate-700/50 w-full"></div>`).join('')}
+            </div>
+            <!-- Bars -->
+            <div class="relative flex items-end justify-around h-full px-2">
+              ${data.map((val, i) => {
+                const heightPct = yMax > 0 ? (val / yMax) * 100 : 0;
+                return `
+                  <div class="flex flex-col items-center" style="width: 14%;">
+                    <span class="text-sm ${color} font-bold mb-1">${val}</span>
+                    <div class="w-full ${bgColor}/70 rounded-t" style="height: ${heightPct}%;"></div>
+                  </div>
+                `;
+              }).join('')}
+            </div>
+          </div>
+        </div>
+        <!-- X-axis labels -->
+        <div class="flex pl-10 mt-2">
+          ${data.map((_, i) => `<div class="flex-1 text-center text-xs text-slate-400">${chartLabels[i]}</div>`).join('')}
+        </div>
+      </div>
+    `;
+  };
   
   return `
     <div class="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-4 mb-4">
-      <h3 class="font-semibold text-yellow-400">📝 ICF Activity by Month</h3>
-      <p class="text-sm text-slate-400 mt-1">ICF submissions, resubmissions, and approvals tracked by month (since Oct 2025)</p>
+      <h3 class="font-semibold text-yellow-400">📅 Monthly Activity Summary</h3>
+      <p class="text-sm text-slate-400 mt-1">Installs, inspections, PTOs, and ICF activity by month (since Oct 2025)</p>
     </div>
     
-    <!-- Summary Cards -->
-    <div class="grid grid-cols-3 gap-4 mb-6">
-      <div class="bg-slate-800/50 rounded-lg p-4 border border-slate-700/50">
-        <p class="text-slate-400 text-xs uppercase mb-1">Total Submitted</p>
-        <p class="text-3xl font-bold text-blue-400">${totals.submitted}</p>
-      </div>
-      <div class="bg-slate-800/50 rounded-lg p-4 border border-slate-700/50">
-        <p class="text-slate-400 text-xs uppercase mb-1">Total Resubmitted</p>
-        <p class="text-3xl font-bold text-amber-400">${totals.resubmitted}</p>
-      </div>
-      <div class="bg-slate-800/50 rounded-lg p-4 border border-slate-700/50">
-        <p class="text-slate-400 text-xs uppercase mb-1">Total Approved</p>
-        <p class="text-3xl font-bold text-green-400">${totals.approved}</p>
-      </div>
+    <!-- Charts Grid - Row 1 -->
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+      ${renderBarChart('Installs', chartData.map(m => m.installs), 'text-emerald-400', 'bg-emerald-500')}
+      ${renderBarChart('Inspections', chartData.map(m => m.inspections), 'text-pink-400', 'bg-pink-500')}
+    </div>
+    
+    <!-- Charts Grid - Row 2 -->
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+      ${renderBarChart('PTO Submitted', chartData.map(m => m.ptoSubmitted), 'text-orange-400', 'bg-orange-500')}
+      ${renderBarChart('PTO Approved', chartData.map(m => m.ptoApproved), 'text-cyan-400', 'bg-cyan-500')}
+    </div>
+    
+    <!-- Charts Grid - Row 3 -->
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+      ${renderBarChart('ICF Submitted', chartData.map(m => m.icfSubmitted), 'text-blue-400', 'bg-blue-500')}
+      ${renderBarChart('ICF Approved', chartData.map(m => m.icfApproved), 'text-green-400', 'bg-green-500')}
     </div>
     
     <!-- Monthly Table -->
-    <div class="bg-slate-800/50 rounded-lg border border-slate-700/50 overflow-hidden">
+    <div class="bg-slate-800/50 rounded-lg border border-slate-700/50 overflow-hidden overflow-x-auto">
       <table class="w-full text-sm">
         <thead>
           <tr class="border-b border-slate-700 bg-slate-900/50">
             <th class="px-4 py-3 text-left text-xs font-semibold text-slate-400 uppercase">Month</th>
-            <th class="px-4 py-3 text-center text-xs font-semibold text-blue-400 uppercase">ICF Submitted</th>
-            <th class="px-4 py-3 text-center text-xs font-semibold text-amber-400 uppercase">ICF Resubmitted</th>
-            <th class="px-4 py-3 text-center text-xs font-semibold text-green-400 uppercase">ICF Approved</th>
+            <th class="px-3 py-3 text-center text-xs font-semibold text-emerald-400 uppercase">Installs</th>
+            <th class="px-3 py-3 text-center text-xs font-semibold text-pink-400 uppercase border-r border-slate-600">Inspections</th>
+            <th class="px-3 py-3 text-center text-xs font-semibold text-orange-400 uppercase">PTO Submitted</th>
+            <th class="px-3 py-3 text-center text-xs font-semibold text-cyan-400 uppercase border-r border-slate-600">PTO Approved</th>
+            <th class="px-3 py-3 text-center text-xs font-semibold text-blue-400 uppercase">ICF Submitted</th>
+            <th class="px-3 py-3 text-center text-xs font-semibold text-amber-400 uppercase">ICF Resubmitted</th>
+            <th class="px-3 py-3 text-center text-xs font-semibold text-green-400 uppercase">ICF Approved</th>
           </tr>
         </thead>
         <tbody class="divide-y divide-slate-700/30">
-          ${icfData.length === 0 ? `
-            <tr><td colspan="4" class="px-4 py-8 text-center text-slate-500">No ICF data available. Make sure SGIP data is loaded.</td></tr>
-          ` : icfData.map(m => `
+          ${monthlyData.length === 0 ? `
+            <tr><td colspan="8" class="px-4 py-8 text-center text-slate-500">No data available for this period.</td></tr>
+          ` : monthlyData.map(m => `
               <tr class="hover:bg-slate-800/50">
                 <td class="px-4 py-3 font-medium text-slate-300">${m.monthLabel}</td>
-                <td class="px-4 py-3 text-center text-xl font-bold text-blue-400">${m.submitted}</td>
-                <td class="px-4 py-3 text-center text-xl font-bold text-amber-400">${m.resubmitted}</td>
-                <td class="px-4 py-3 text-center text-xl font-bold text-green-400">${m.approved}</td>
+                <td class="px-3 py-3 text-center text-xl font-bold text-emerald-400">${m.installs}</td>
+                <td class="px-3 py-3 text-center text-xl font-bold text-pink-400 border-r border-slate-600">${m.inspections}</td>
+                <td class="px-3 py-3 text-center text-xl font-bold text-orange-400">${m.ptoSubmitted}</td>
+                <td class="px-3 py-3 text-center text-xl font-bold text-cyan-400 border-r border-slate-600">${m.ptoApproved}</td>
+                <td class="px-3 py-3 text-center text-xl font-bold text-blue-400">${m.icfSubmitted}</td>
+                <td class="px-3 py-3 text-center text-xl font-bold text-amber-400">${m.icfResubmitted}</td>
+                <td class="px-3 py-3 text-center text-xl font-bold text-green-400">${m.icfApproved}</td>
               </tr>
             `).join('')}
           <!-- Totals Row -->
           <tr class="border-t-2 border-slate-600 bg-slate-900/50 font-bold">
             <td class="px-4 py-3 text-slate-300">TOTAL</td>
-            <td class="px-4 py-3 text-center text-xl text-blue-400">${totals.submitted}</td>
-            <td class="px-4 py-3 text-center text-xl text-amber-400">${totals.resubmitted}</td>
-            <td class="px-4 py-3 text-center text-xl text-green-400">${totals.approved}</td>
+            <td class="px-3 py-3 text-center text-xl text-emerald-400">${totals.installs}</td>
+            <td class="px-3 py-3 text-center text-xl text-pink-400 border-r border-slate-600">${totals.inspections}</td>
+            <td class="px-3 py-3 text-center text-xl text-orange-400">${totals.ptoSubmitted}</td>
+            <td class="px-3 py-3 text-center text-xl text-cyan-400 border-r border-slate-600">${totals.ptoApproved}</td>
+            <td class="px-3 py-3 text-center text-xl text-blue-400">${totals.icfSubmitted}</td>
+            <td class="px-3 py-3 text-center text-xl text-amber-400">${totals.icfResubmitted}</td>
+            <td class="px-3 py-3 text-center text-xl text-green-400">${totals.icfApproved}</td>
           </tr>
         </tbody>
       </table>
     </div>
-    <p class="text-xs text-slate-500 mt-4">ICF Submitted = Initial ICF submission date • ICF Resubmitted = Last resubmission date • ICF Approved = Date moved to Pending Payment status</p>
+    <p class="text-xs text-slate-500 mt-4">Installs = Installation completed date • Inspections = Inspection passed date (HubSpot) • PTO Submitted = PTO submission date • PTO Approved = PTO complete date • ICF Submitted/Resubmitted/Approved = From SGIP export</p>
   `;
 }
 
