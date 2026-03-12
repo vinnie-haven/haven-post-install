@@ -128,7 +128,7 @@ let CORRECTIONS = { manualMatches: {}, notInSgip: new Set(), notSgipProject: new
 let SEARCH_INDEX = [];
 let MATCH_STATS = { byEmail: 0, byAddress: 0, byManual: 0, noMatch: 0, excluded: 0 };
 let state = { 
-  tab: 'installed', 
+  tab: 'stats', 
   statsSubTab: 'icfMonthly',
   icfSubTab: 'summary',
   icfSortBy: 'daysSincePto',
@@ -136,13 +136,13 @@ let state = {
   ptoSubTab: 'summary',
   ptoSortBy: null,
   ptoSortDir: 'desc',
-  actionSubTab: 'needPermit',
+  actionSubTab: 'summary',
   search: '', 
   ptoSearch: '',
   icfSearch: '',
   filters: { permitStatus: [], inspectionStatus: [], ptoStatus: [], sgipStage: [], sgipStatus: [], sgipProgress: [], installer: [], installMonth: [], utility: [], cca: [] },
-  ptoFilters: { utility: [], installer: [], inspectionStatus: [], interconnectionStatus: [], budgetCategory: [] },
-  icfFilters: { utility: [], installer: [], sgipProgress: [], suspendedType: [], sgipRateStatus: [], sgipIcfStatus: [], demandResponseProgram: [], budgetCategory: [] },
+  ptoFilters: { utility: [], installer: [], inspectionStatus: [], interconnectionStatus: [] },
+  icfFilters: { utility: [], installer: [], sgipProgress: [], suspendedType: [], sgipRateStatus: [], sgipIcfStatus: [], demandResponseProgram: [] },
   sortBy: 'daysSinceInstall', 
   sortDir: 'desc', 
   editingDeal: null, 
@@ -287,7 +287,7 @@ async function loadFromSupabase() {
         permitStatus: mapPermit(d.permit_status), ptoDate: d.pto_date,
         ptoSubmittedDate: d.pto_submitted_date || '',
         inspectionStatus: mapInspection(d.inspection_status), 
-        inspectionPassedDate: d.inspection_passed_date || '',
+        inspectionPassDate: d.inspection_pass_date || '',
         sgipStatusHubspot: d.sgip_status_hubspot, installer: d.installer,
         attributedSource: d.attributed_source || '',
         sgipRateStatus: d.sgip_rate_status || '',
@@ -580,48 +580,6 @@ const getHubSpotUrl = id => id ? `https://app.hubspot.com/contacts/${HUBSPOT_POR
 
 function getInstallMonth(dateStr) { const d = parseDate(dateStr); if (!d) return null; return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; }
 function formatMonthLabel(monthKey) { if (!monthKey) return '(No date)'; const [year, month] = monthKey.split('-'); const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']; return `${monthNames[parseInt(month) - 1]} ${year}`; }
-
-// Budget Category helpers
-function getBudgetCategoryGroup(budgetCategory) {
-  if (!budgetCategory) return 'Unknown';
-  const cat = budgetCategory.toLowerCase();
-  
-  // RSSE - all "Residential Solar and Storage Equity" variants
-  if (cat.includes('residential solar and storage equity')) return 'RSSE';
-  
-  // ER - Equity Resiliency
-  if (cat.includes('equity resiliency')) return 'ER';
-  
-  // Equity - Residential Storage Equity (but NOT solar and storage, NOT non-residential)
-  if (cat === 'residential storage equity' || 
-      (cat.includes('residential storage equity') && !cat.includes('solar') && !cat.includes('non-residential'))) return 'Equity';
-  
-  // Original - Small Residential Storage
-  if (cat.includes('small residential storage')) return 'Original';
-  
-  // Commercial - Non-Residential Storage Equity
-  if (cat.includes('non-residential storage equity')) return 'Commercial';
-  
-  return 'Other';
-}
-
-function getBudgetCategoryStyle(group) {
-  switch(group) {
-    case 'RSSE': return 'bg-purple-900/50 text-purple-400 border border-purple-700';
-    case 'ER': return 'bg-amber-900/50 text-amber-400 border border-amber-700';
-    case 'Equity': return 'bg-blue-900/50 text-blue-400 border border-blue-700';
-    case 'Original': return 'bg-slate-600 text-slate-300 border border-slate-500';
-    case 'Commercial': return 'bg-cyan-900/50 text-cyan-400 border border-cyan-700';
-    case 'Other': return 'bg-slate-700 text-slate-400 border border-slate-600';
-    default: return 'bg-slate-700 text-slate-400 border border-slate-600';
-  }
-}
-
-function budgetCategoryCell(d) {
-  const group = getBudgetCategoryGroup(d.budgetCategory);
-  const style = getBudgetCategoryStyle(group);
-  return `<span class="px-1.5 py-0.5 rounded text-xs ${style}">${group}</span>`;
-}
 
 function getFilterCounts(field, transform = v => v) {
   const counts = {};
@@ -1054,11 +1012,11 @@ function render() {
     </div>
     <div class="max-w-[1920px] mx-auto px-4 py-4">
       <div class="flex gap-2 mb-4 flex-wrap">
-        <button onclick="setTab('installed')" class="px-4 py-2 rounded-lg text-sm font-medium ${state.tab === 'installed' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40' : 'bg-slate-800/50 text-slate-400 border border-slate-700/50'}">Installed (${allInstalled.length})</button>
-        <button onclick="setTab('stats')" class="px-4 py-2 rounded-lg text-sm font-medium ${state.tab === 'stats' ? 'bg-blue-500/20 text-blue-400 border border-blue-500/40' : 'bg-slate-800/50 text-slate-400 border border-slate-700/50'}">📊 Stats & Reports</button>
+        <button onclick="setTab('stats')" class="px-4 py-2 rounded-lg text-sm font-medium ${state.tab === 'stats' ? 'bg-blue-500/20 text-blue-400 border border-blue-500/40' : 'bg-slate-800/50 text-slate-400 border border-slate-700/50'}">📊 Stats</button>
+        <button onclick="setTab('actionItems')" class="px-4 py-2 rounded-lg text-sm font-medium ${state.tab === 'actionItems' ? 'bg-orange-500/20 text-orange-400 border border-orange-500/40' : 'bg-slate-800/50 text-slate-400 border border-slate-700/50'}">⚡ Action Items</button>
         <button onclick="setTab('ptoFunnel')" class="px-4 py-2 rounded-lg text-sm font-medium ${state.tab === 'ptoFunnel' ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/40' : 'bg-slate-800/50 text-slate-400 border border-slate-700/50'}">🎯 PTO Funnel</button>
         <button onclick="setTab('icfDeepDive')" class="px-4 py-2 rounded-lg text-sm font-medium ${state.tab === 'icfDeepDive' ? 'bg-purple-500/20 text-purple-400 border border-purple-500/40' : 'bg-slate-800/50 text-slate-400 border border-slate-700/50'}">🔍 ICF Deep Dive</button>
-        <button onclick="setTab('actionItems')" class="px-4 py-2 rounded-lg text-sm font-medium ${state.tab === 'actionItems' ? 'bg-orange-500/20 text-orange-400 border border-orange-500/40' : 'bg-slate-800/50 text-slate-400 border border-slate-700/50'}">⚡ Action Items</button>
+        <button onclick="setTab('installed')" class="px-4 py-2 rounded-lg text-sm font-medium ${state.tab === 'installed' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40' : 'bg-slate-800/50 text-slate-400 border border-slate-700/50'}">Installed (${allInstalled.length})</button>
       </div>
       ${state.tab === 'installed' ? renderInstalledTab(stats, filtered, activeStages, stageCounts, permitOpts, inspectOpts, ptoOpts, sgipStageOpts, sgipStatusOpts, icfOpts, installerOpts, utilityOpts, ccaOpts) : state.tab === 'ptoFunnel' ? renderPtoFunnelTab() : state.tab === 'icfDeepDive' ? renderIcfDeepDiveTab() : state.tab === 'actionItems' ? renderActionItemsTab() : renderStatsTab()}
     </div>
@@ -1131,18 +1089,16 @@ function renderNoSgipTab() {
 function renderStatsTab() {
   return `
     <div class="flex gap-2 mb-4 flex-wrap">
-      <button onclick="setStatsSubTab('activity')" class="subtab px-3 py-1.5 rounded-lg text-sm font-medium border ${state.statsSubTab === 'activity' ? 'active border-blue-500/40 text-blue-400' : 'border-slate-700/50 text-slate-400'}">📊 Activity</button>
-      <button onclick="setStatsSubTab('status')" class="subtab px-3 py-1.5 rounded-lg text-sm font-medium border ${state.statsSubTab === 'status' ? 'active border-purple-500/40 text-purple-400' : 'border-slate-700/50 text-slate-400'}">📋 Status Counts</button>
-      <button onclick="setStatsSubTab('monthly')" class="subtab px-3 py-1.5 rounded-lg text-sm font-medium border ${state.statsSubTab === 'monthly' ? 'active border-cyan-500/40 text-cyan-400' : 'border-slate-700/50 text-slate-400'}">📅 Installs by Month</button>
-      <button onclick="setStatsSubTab('icfMonthly')" class="subtab px-3 py-1.5 rounded-lg text-sm font-medium border ${state.statsSubTab === 'icfMonthly' ? 'active border-yellow-500/40 text-yellow-400' : 'border-slate-700/50 text-slate-400'}">📝 ICF by Month</button>
-      <button onclick="setStatsSubTab('icfWeekly')" class="subtab px-3 py-1.5 rounded-lg text-sm font-medium border ${state.statsSubTab === 'icfWeekly' ? 'active border-orange-500/40 text-orange-400' : 'border-slate-700/50 text-slate-400'}">📆 ICF by Week</button>
-      <button onclick="setStatsSubTab('budget')" class="subtab px-3 py-1.5 rounded-lg text-sm font-medium border ${state.statsSubTab === 'budget' ? 'active border-emerald-500/40 text-emerald-400' : 'border-slate-700/50 text-slate-400'}">💰 Budget Category</button>
+      <button onclick="setStatsSubTab('icfMonthly')" class="subtab px-3 py-1.5 rounded-lg text-sm font-medium border ${state.statsSubTab === 'icfMonthly' ? 'active border-yellow-500/40 text-yellow-400' : 'border-slate-700/50 text-slate-400'}">📅 Monthly Report</button>
+      <button onclick="setStatsSubTab('icfWeekly')" class="subtab px-3 py-1.5 rounded-lg text-sm font-medium border ${state.statsSubTab === 'icfWeekly' ? 'active border-orange-500/40 text-orange-400' : 'border-slate-700/50 text-slate-400'}">📆 Weekly Report</button>
+      <button onclick="setStatsSubTab('pipeline')" class="subtab px-3 py-1.5 rounded-lg text-sm font-medium border ${state.statsSubTab === 'pipeline' ? 'active border-purple-500/40 text-purple-400' : 'border-slate-700/50 text-slate-400'}">💰 Pipeline Value</button>
+      <button onclick="setStatsSubTab('monthly')" class="subtab px-3 py-1.5 rounded-lg text-sm font-medium border ${state.statsSubTab === 'monthly' ? 'active border-cyan-500/40 text-cyan-400' : 'border-slate-700/50 text-slate-400'}">📊 Installs by Month</button>
+      <button onclick="setStatsSubTab('budget')" class="subtab px-3 py-1.5 rounded-lg text-sm font-medium border ${state.statsSubTab === 'budget' ? 'active border-emerald-500/40 text-emerald-400' : 'border-slate-700/50 text-slate-400'}">🏷️ Budget Category</button>
     </div>
-    ${state.statsSubTab === 'activity' ? renderActivityStats() : 
-      state.statsSubTab === 'status' ? renderStatusCounts() : 
-      state.statsSubTab === 'monthly' ? renderMonthlyStats() : 
-      state.statsSubTab === 'icfMonthly' ? renderIcfMonthlyStats() :
+    ${state.statsSubTab === 'icfMonthly' ? renderIcfMonthlyStats() :
       state.statsSubTab === 'icfWeekly' ? renderIcfWeeklyStats() :
+      state.statsSubTab === 'pipeline' ? renderPipelineValue() :
+      state.statsSubTab === 'monthly' ? renderMonthlyStats() : 
       renderBudgetCategoryStats()}
   `;
 }
@@ -1339,121 +1295,121 @@ function getInstallsByBudgetCategory() {
   allDeals.forEach(d => {
     const month = getInstallMonth(d.installDate);
     if (!month) return;
-    if (!byMonth[month]) byMonth[month] = { total: 0, rsse: 0, er: 0, equity: 0, original: 0, commercial: 0, other: 0 };
+    if (!byMonth[month]) byMonth[month] = { total: 0, resStorage: 0, equityResiliency: 0, rsse: 0, other: 0 };
     byMonth[month].total++;
-    const group = getBudgetCategoryGroup(d.budgetCategory);
-    if (group === 'RSSE') byMonth[month].rsse++;
-    else if (group === 'ER') byMonth[month].er++;
-    else if (group === 'Equity') byMonth[month].equity++;
-    else if (group === 'Original') byMonth[month].original++;
-    else if (group === 'Commercial') byMonth[month].commercial++;
-    else byMonth[month].other++;
+    const cat = (d.budgetCategory || '').toLowerCase();
+    if (cat.includes('residential storage') && cat.includes('equity') && !cat.includes('solar')) {
+      byMonth[month].resStorage++;
+    } else if (cat.includes('equity resiliency') || cat.includes('equity resilience')) {
+      byMonth[month].equityResiliency++;
+    } else if (cat.includes('residential') && cat.includes('solar') && cat.includes('storage') && cat.includes('equity')) {
+      byMonth[month].rsse++;
+    } else if (d.budgetCategory) {
+      byMonth[month].other++;
+    }
   });
   return Object.entries(byMonth).sort((a, b) => b[0].localeCompare(a[0])).map(([month, data]) => ({ month, ...data }));
 }
 
 function getIcfStatsByMonth() {
-  // Get ICF data from SGIP_DATA grouped by month
+  // Get monthly data matching the weekly view columns
   // Start from October 2025
   const startDate = new Date('2025-10-01');
-  const startMonth = '2025-10';
   
   const byMonth = {};
   
-  // Get install and inspection data from HubSpot deals
-  const allInstalled = getAllInstalled();
-  allInstalled.forEach(d => {
-    // Installs
+  // Helper to get month key from date
+  const getMonthKey = (date) => {
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+  };
+  
+  // Helper to ensure month exists in byMonth
+  const ensureMonth = (month) => {
+    if (!byMonth[month]) {
+      byMonth[month] = { installs: 0, inspections: 0, ptoSubmitted: 0, ptoApproved: 0, icfSubmitted: 0, icfResubmitted: 0, icfApproved: 0 };
+    }
+  };
+  
+  // Get all installed deals for installs, inspections, and PTOs
+  const allDeals = getAllInstalled();
+  
+  allDeals.forEach(d => {
+    // Installs - use installDate
     if (d.installDate) {
-      const date = parseDate(d.installDate);
+      const date = parseAnyDateWeekly(d.installDate);
       if (date && date >= startDate) {
-        const month = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-        if (month >= startMonth) {
-          if (!byMonth[month]) byMonth[month] = { installs: 0, inspections: 0, ptoSubmitted: 0, ptoApproved: 0, icfSubmitted: 0, icfResubmitted: 0, icfApproved: 0 };
-          byMonth[month].installs++;
-        }
+        const month = getMonthKey(date);
+        ensureMonth(month);
+        byMonth[month].installs++;
       }
     }
     
-    // Inspections passed - use inspectionDate from SGIP data (merged into record)
-    if (d.inspectionDate && d.inspectionDate !== '(No value)' && d.inspectionDate !== 'None') {
-      const date = parseDate(d.inspectionDate);
+    // Inspections - use inspectionPassDate from HubSpot
+    if (d.inspectionPassDate) {
+      const date = parseAnyDateWeekly(d.inspectionPassDate);
       if (date && date >= startDate) {
-        const month = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-        if (month >= startMonth) {
-          if (!byMonth[month]) byMonth[month] = { installs: 0, inspections: 0, ptoSubmitted: 0, ptoApproved: 0, icfSubmitted: 0, icfResubmitted: 0, icfApproved: 0 };
-          byMonth[month].inspections++;
-        }
+        const month = getMonthKey(date);
+        ensureMonth(month);
+        byMonth[month].inspections++;
       }
     }
     
-    // PTO Submitted - use ptoSubmittedDate from HubSpot
-    if (d.ptoSubmittedDate && d.ptoSubmittedDate !== '(No value)' && d.ptoSubmittedDate !== 'None') {
-      const date = parseDate(d.ptoSubmittedDate);
+    // PTO Submitted - use ptoSubmittedDate
+    if (d.ptoSubmittedDate) {
+      const date = parseAnyDateWeekly(d.ptoSubmittedDate);
       if (date && date >= startDate) {
-        const month = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-        if (month >= startMonth) {
-          if (!byMonth[month]) byMonth[month] = { installs: 0, inspections: 0, ptoSubmitted: 0, ptoApproved: 0, icfSubmitted: 0, icfResubmitted: 0, icfApproved: 0 };
-          byMonth[month].ptoSubmitted++;
-        }
+        const month = getMonthKey(date);
+        ensureMonth(month);
+        byMonth[month].ptoSubmitted++;
       }
     }
     
-    // PTO Approved
+    // PTO Approved - use ptoDate
     if (d.ptoDate && d.ptoDate !== '(No value)' && d.ptoDate !== 'None') {
-      const date = parseDate(d.ptoDate);
+      const date = parseAnyDateWeekly(d.ptoDate);
       if (date && date >= startDate) {
-        const month = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-        if (month >= startMonth) {
-          if (!byMonth[month]) byMonth[month] = { installs: 0, inspections: 0, ptoSubmitted: 0, ptoApproved: 0, icfSubmitted: 0, icfResubmitted: 0, icfApproved: 0 };
-          byMonth[month].ptoApproved++;
-        }
+        const month = getMonthKey(date);
+        ensureMonth(month);
+        byMonth[month].ptoApproved++;
       }
     }
   });
   
-  // Get ICF data from SGIP
+  // Get ICF data from SGIP_DATA
   SGIP_DATA.forEach(d => {
     // ICF Submitted - use icfSubmittedDate
     if (d.icfSubmittedDate) {
-      const date = parseDate(d.icfSubmittedDate);
+      const date = parseAnyDateWeekly(d.icfSubmittedDate);
       if (date && date >= startDate) {
-        const month = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-        if (month >= startMonth) {
-          if (!byMonth[month]) byMonth[month] = { installs: 0, inspections: 0, ptoSubmitted: 0, ptoApproved: 0, icfSubmitted: 0, icfResubmitted: 0, icfApproved: 0 };
-          byMonth[month].icfSubmitted++;
-        }
+        const month = getMonthKey(date);
+        ensureMonth(month);
+        byMonth[month].icfSubmitted++;
       }
     }
     
     // ICF Resubmitted - use icfResubmittedDate
     if (d.icfResubmittedDate) {
-      const date = parseDate(d.icfResubmittedDate);
+      const date = parseAnyDateWeekly(d.icfResubmittedDate);
       if (date && date >= startDate) {
-        const month = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-        if (month >= startMonth) {
-          if (!byMonth[month]) byMonth[month] = { installs: 0, inspections: 0, ptoSubmitted: 0, ptoApproved: 0, icfSubmitted: 0, icfResubmitted: 0, icfApproved: 0 };
-          byMonth[month].icfResubmitted++;
-        }
+        const month = getMonthKey(date);
+        ensureMonth(month);
+        byMonth[month].icfResubmitted++;
       }
     }
     
-    // ICF Approved - use icfPendingPaymentDate (when it moves to Pending Payment, it's approved)
+    // ICF Approved - use icfPendingPaymentDate
     if (d.icfPendingPaymentDate) {
-      const date = parseDate(d.icfPendingPaymentDate);
+      const date = parseAnyDateWeekly(d.icfPendingPaymentDate);
       if (date && date >= startDate) {
-        const month = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-        if (month >= startMonth) {
-          if (!byMonth[month]) byMonth[month] = { installs: 0, inspections: 0, ptoSubmitted: 0, ptoApproved: 0, icfSubmitted: 0, icfResubmitted: 0, icfApproved: 0 };
-          byMonth[month].icfApproved++;
-        }
+        const month = getMonthKey(date);
+        ensureMonth(month);
+        byMonth[month].icfApproved++;
       }
     }
   });
   
-  // Sort by month descending and format, filter to only Oct 2025+
+  // Sort by month descending and format
   return Object.entries(byMonth)
-    .filter(([month]) => month >= startMonth)
     .sort((a, b) => b[0].localeCompare(a[0]))
     .map(([month, data]) => ({ 
       month, 
@@ -1476,52 +1432,48 @@ function renderIcfMonthlyStats() {
     icfApproved: acc.icfApproved + m.icfApproved
   }), { installs: 0, inspections: 0, ptoSubmitted: 0, ptoApproved: 0, icfSubmitted: 0, icfResubmitted: 0, icfApproved: 0 });
   
-  // Reverse data for charts (oldest to newest)
-  const chartData = [...monthlyData].reverse();
-  const chartLabels = chartData.map(m => m.monthLabel.replace(' 20', " '"));
+  // Reverse data for charts (oldest to newest) and limit to last 6 months
+  const chartData = [...monthlyData].reverse().slice(-6);
+  const chartLabels = chartData.map(m => {
+    const parts = m.monthLabel.split(' ');
+    return parts[0].substring(0, 3) + ' \'' + parts[1].slice(-2);
+  });
+  
+  // Find max value for chart scaling
+  const allValues = chartData.flatMap(m => [m.installs, m.inspections, m.ptoSubmitted, m.ptoApproved, m.icfSubmitted, m.icfApproved]);
+  const maxValue = Math.max(...allValues, 1);
   
   // Helper to generate bar chart with Y-axis and grid lines
   const renderBarChart = (title, data, color, bgColor) => {
     const max = Math.max(...data, 1);
     // Round up to nice number for Y-axis
-    const yMax = Math.ceil(max / 20) * 20 || 20;
+    const yMax = Math.ceil(max / 20) * 20;
     const ySteps = 5;
     const yIncrement = yMax / ySteps;
-    const chartHeight = 140; // pixels for the bar area
-    
-    // Map Tailwind color classes to actual colors for inline styles
-    const colorMap = {
-      'bg-emerald-500': '#10b981',
-      'bg-pink-500': '#ec4899',
-      'bg-orange-500': '#f97316',
-      'bg-cyan-500': '#06b6d4',
-      'bg-blue-500': '#3b82f6',
-      'bg-green-500': '#22c55e'
-    };
-    const barColor = colorMap[bgColor] || '#6b7280';
+    const chartHeight = 220;
     
     return `
-      <div class="bg-slate-800/50 rounded-lg border border-slate-700/50 p-4">
-        <h4 class="text-sm font-semibold ${color} mb-3">${title}</h4>
-        <div class="flex" style="height: 180px;">
+      <div class="bg-slate-800/50 rounded-lg border border-slate-700/50 p-5">
+        <h4 class="text-base font-semibold ${color} mb-4">${title}</h4>
+        <div class="flex">
           <!-- Y-axis labels -->
-          <div class="flex flex-col justify-between text-right pr-2 text-xs text-slate-500" style="width: 30px;">
+          <div class="flex flex-col justify-between text-right pr-3 text-xs text-slate-500" style="height: ${chartHeight}px; width: 40px;">
             ${Array.from({length: ySteps + 1}, (_, i) => `<span>${Math.round(yMax - (i * yIncrement))}</span>`).join('')}
           </div>
           <!-- Chart area -->
-          <div class="flex-1 relative">
+          <div class="flex-1 relative" style="height: ${chartHeight}px;">
             <!-- Grid lines -->
             <div class="absolute inset-0 flex flex-col justify-between pointer-events-none">
               ${Array.from({length: ySteps + 1}, () => `<div class="border-t border-slate-700/50 w-full"></div>`).join('')}
             </div>
-            <!-- Bars container -->
-            <div class="absolute bottom-0 left-0 right-0 flex items-end justify-between gap-2 px-1" style="height: ${chartHeight}px;">
+            <!-- Bars -->
+            <div class="absolute inset-0 flex items-end justify-around px-2">
               ${data.map((val, i) => {
                 const heightPx = yMax > 0 ? Math.round((val / yMax) * chartHeight) : 0;
                 return `
-                  <div class="flex-1 flex flex-col items-center justify-end" style="height: 100%;">
-                    <span class="text-xs ${color} font-bold mb-1">${val}</span>
-                    <div class="w-4/5 rounded-t" style="height: ${heightPx}px; background-color: ${barColor}; opacity: 0.8;"></div>
+                  <div class="flex flex-col items-center" style="width: 14%;">
+                    <span class="text-sm ${color} font-bold mb-1">${val}</span>
+                    <div class="w-full ${bgColor} rounded-t" style="height: ${heightPx}px; min-height: 2px;"></div>
                   </div>
                 `;
               }).join('')}
@@ -1529,8 +1481,8 @@ function renderIcfMonthlyStats() {
           </div>
         </div>
         <!-- X-axis labels -->
-        <div class="flex ml-8 mt-1">
-          ${data.map((_, i) => `<div class="flex-1 text-center text-[10px] text-slate-400">${chartLabels[i].split("'")[0]}</div>`).join('')}
+        <div class="flex mt-2" style="margin-left: 43px;">
+          ${data.map((_, i) => `<div class="flex-1 text-center text-sm text-slate-400">${chartLabels[i]}</div>`).join('')}
         </div>
       </div>
     `;
@@ -1543,17 +1495,21 @@ function renderIcfMonthlyStats() {
     </div>
     
     <!-- Charts Grid - Row 1 -->
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-      ${renderBarChart('Installs', chartData.map(m => m.installs), 'text-emerald-400', 'bg-emerald-500')}
-      ${renderBarChart('Inspections', chartData.map(m => m.inspections), 'text-pink-400', 'bg-pink-500')}
-      ${renderBarChart('PTO Submitted', chartData.map(m => m.ptoSubmitted), 'text-orange-400', 'bg-orange-500')}
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+      ${renderBarChart('Installs', chartData.map(m => m.installs), 'text-emerald-400', 'bg-emerald-500/70')}
+      ${renderBarChart('Inspections', chartData.map(m => m.inspections), 'text-pink-400', 'bg-pink-500/70')}
     </div>
     
     <!-- Charts Grid - Row 2 -->
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-      ${renderBarChart('PTO Approved', chartData.map(m => m.ptoApproved), 'text-cyan-400', 'bg-cyan-500')}
-      ${renderBarChart('ICF Submitted', chartData.map(m => m.icfSubmitted), 'text-blue-400', 'bg-blue-500')}
-      ${renderBarChart('ICF Approved', chartData.map(m => m.icfApproved), 'text-green-400', 'bg-green-500')}
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+      ${renderBarChart('PTO Submitted', chartData.map(m => m.ptoSubmitted), 'text-orange-400', 'bg-orange-500/70')}
+      ${renderBarChart('PTO Approved', chartData.map(m => m.ptoApproved), 'text-cyan-400', 'bg-cyan-500/70')}
+    </div>
+    
+    <!-- Charts Grid - Row 3 -->
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+      ${renderBarChart('ICF Submitted', chartData.map(m => m.icfSubmitted), 'text-blue-400', 'bg-blue-500/70')}
+      ${renderBarChart('ICF Approved', chartData.map(m => m.icfApproved), 'text-green-400', 'bg-green-500/70')}
     </div>
     
     <!-- Monthly Table -->
@@ -1600,7 +1556,7 @@ function renderIcfMonthlyStats() {
         </tbody>
       </table>
     </div>
-    <p class="text-xs text-slate-500 mt-4">Installs = Installation completed date • Inspections = Inspection date (SGIP) • PTO Submitted = PTO submission date • PTO Approved = PTO complete date • ICF Submitted/Resubmitted/Approved = From SGIP export</p>
+    <p class="text-xs text-slate-500 mt-4">Installs = Installation completed date • Inspections = Inspection passed date (HubSpot) • PTO Submitted = PTO submission date • PTO Approved = PTO complete date • ICF Submitted/Resubmitted/Approved = From SGIP export</p>
   `;
 }
 
@@ -1618,6 +1574,41 @@ function formatWeekLabel(weekStart) {
   return `${formatDate(weekStart)} - ${formatDate(weekEnd)}`;
 }
 
+function parseAnyDateWeekly(dateStr) {
+  if (!dateStr || dateStr === 'None' || dateStr === '(No value)') return null;
+  try {
+    let d;
+    const str = String(dateStr).trim();
+    // Handle MM/DD/YY or MM/DD/YYYY format
+    if (str.includes('/')) {
+      const parts = str.split('/');
+      if (parts.length === 3) {
+        let year = parseInt(parts[2]);
+        if (year < 100) year += 2000;
+        d = new Date(year, parseInt(parts[0]) - 1, parseInt(parts[1]));
+      }
+    } 
+    // Handle ISO format (YYYY-MM-DD) or other standard formats
+    else if (str.includes('-') || str.includes('T')) {
+      // For ISO dates, parse and adjust for timezone
+      const parsed = new Date(str);
+      if (!isNaN(parsed.getTime())) {
+        // If it's a date-only string, create date at midnight local time
+        if (str.match(/^\d{4}-\d{2}-\d{2}$/)) {
+          const [y, m, day] = str.split('-').map(Number);
+          d = new Date(y, m - 1, day);
+        } else {
+          d = parsed;
+        }
+      }
+    }
+    else {
+      d = new Date(str);
+    }
+    return (d && !isNaN(d.getTime())) ? d : null;
+  } catch { return null; }
+}
+
 function getWeeklyStats() {
   // Get last 10 weeks of data
   const now = new Date();
@@ -1633,6 +1624,7 @@ function getWeeklyStats() {
       weekKey: weekStart.toISOString().slice(0, 10),
       weekLabel: formatWeekLabel(weekStart),
       installs: 0,
+      inspections: 0,
       ptoSubmitted: 0,
       ptoApproved: 0,
       icfSubmitted: 0,
@@ -1641,34 +1633,52 @@ function getWeeklyStats() {
     });
   }
   
-  // Create a map for quick lookup
+  // Create a map for quick lookup - use local date string to avoid timezone issues
   const weekMap = {};
   weeks.forEach(w => {
-    weekMap[w.weekKey] = w;
+    // Use a consistent local date format
+    const localKey = `${w.weekStart.getFullYear()}-${String(w.weekStart.getMonth() + 1).padStart(2, '0')}-${String(w.weekStart.getDate()).padStart(2, '0')}`;
+    w.localKey = localKey;
+    weekMap[localKey] = w;
   });
   
-  // Get all installed deals for installs and PTOs
+  // Helper to get week key from a date
+  const getWeekKey = (date) => {
+    const weekStart = getWeekStartMonday(date);
+    return `${weekStart.getFullYear()}-${String(weekStart.getMonth() + 1).padStart(2, '0')}-${String(weekStart.getDate()).padStart(2, '0')}`;
+  };
+  
+  // Get all installed deals for installs, inspections, and PTOs
   const allDeals = getAllInstalled();
   
   allDeals.forEach(d => {
     // Installs - use installDate
     if (d.installDate) {
-      const date = parseDate(d.installDate);
+      const date = parseAnyDateWeekly(d.installDate);
       if (date) {
-        const weekStart = getWeekStartMonday(date);
-        const weekKey = weekStart.toISOString().slice(0, 10);
+        const weekKey = getWeekKey(date);
         if (weekMap[weekKey]) {
           weekMap[weekKey].installs++;
         }
       }
     }
     
+    // Inspections - use inspectionPassDate from HubSpot
+    if (d.inspectionPassDate) {
+      const date = parseAnyDateWeekly(d.inspectionPassDate);
+      if (date) {
+        const weekKey = getWeekKey(date);
+        if (weekMap[weekKey]) {
+          weekMap[weekKey].inspections++;
+        }
+      }
+    }
+    
     // PTO Submitted - use ptoSubmittedDate from HubSpot
     if (d.ptoSubmittedDate) {
-      const date = parseDate(d.ptoSubmittedDate);
+      const date = parseAnyDateWeekly(d.ptoSubmittedDate);
       if (date) {
-        const weekStart = getWeekStartMonday(date);
-        const weekKey = weekStart.toISOString().slice(0, 10);
+        const weekKey = getWeekKey(date);
         if (weekMap[weekKey]) {
           weekMap[weekKey].ptoSubmitted++;
         }
@@ -1677,10 +1687,9 @@ function getWeeklyStats() {
     
     // PTO Approved - use ptoDate (PTO complete date)
     if (d.ptoDate && d.ptoDate !== '(No value)' && d.ptoDate !== 'None') {
-      const date = parseDate(d.ptoDate);
+      const date = parseAnyDateWeekly(d.ptoDate);
       if (date) {
-        const weekStart = getWeekStartMonday(date);
-        const weekKey = weekStart.toISOString().slice(0, 10);
+        const weekKey = getWeekKey(date);
         if (weekMap[weekKey]) {
           weekMap[weekKey].ptoApproved++;
         }
@@ -1692,10 +1701,9 @@ function getWeeklyStats() {
   SGIP_DATA.forEach(d => {
     // ICF Submitted
     if (d.icfSubmittedDate) {
-      const date = parseDate(d.icfSubmittedDate);
+      const date = parseAnyDateWeekly(d.icfSubmittedDate);
       if (date) {
-        const weekStart = getWeekStartMonday(date);
-        const weekKey = weekStart.toISOString().slice(0, 10);
+        const weekKey = getWeekKey(date);
         if (weekMap[weekKey]) {
           weekMap[weekKey].icfSubmitted++;
         }
@@ -1704,10 +1712,9 @@ function getWeeklyStats() {
     
     // ICF Resubmitted
     if (d.icfResubmittedDate) {
-      const date = parseDate(d.icfResubmittedDate);
+      const date = parseAnyDateWeekly(d.icfResubmittedDate);
       if (date) {
-        const weekStart = getWeekStartMonday(date);
-        const weekKey = weekStart.toISOString().slice(0, 10);
+        const weekKey = getWeekKey(date);
         if (weekMap[weekKey]) {
           weekMap[weekKey].icfResubmitted++;
         }
@@ -1716,10 +1723,9 @@ function getWeeklyStats() {
     
     // ICF Approved
     if (d.icfPendingPaymentDate) {
-      const date = parseDate(d.icfPendingPaymentDate);
+      const date = parseAnyDateWeekly(d.icfPendingPaymentDate);
       if (date) {
-        const weekStart = getWeekStartMonday(date);
-        const weekKey = weekStart.toISOString().slice(0, 10);
+        const weekKey = getWeekKey(date);
         if (weekMap[weekKey]) {
           weekMap[weekKey].icfApproved++;
         }
@@ -1736,17 +1742,18 @@ function renderIcfWeeklyStats() {
   // Calculate totals
   const totals = weeklyData.reduce((acc, w) => ({
     installs: acc.installs + w.installs,
+    inspections: acc.inspections + w.inspections,
     ptoSubmitted: acc.ptoSubmitted + w.ptoSubmitted,
     ptoApproved: acc.ptoApproved + w.ptoApproved,
     icfSubmitted: acc.icfSubmitted + w.icfSubmitted,
     icfResubmitted: acc.icfResubmitted + w.icfResubmitted,
     icfApproved: acc.icfApproved + w.icfApproved
-  }), { installs: 0, ptoSubmitted: 0, ptoApproved: 0, icfSubmitted: 0, icfResubmitted: 0, icfApproved: 0 });
+  }), { installs: 0, inspections: 0, ptoSubmitted: 0, ptoApproved: 0, icfSubmitted: 0, icfResubmitted: 0, icfApproved: 0 });
   
   return `
     <div class="bg-orange-500/10 border border-orange-500/30 rounded-lg p-4 mb-4">
       <h3 class="font-semibold text-orange-400">📆 Weekly Activity Summary</h3>
-      <p class="text-sm text-slate-400 mt-1">Installs, PTOs, and ICF activity for the last 10 weeks (weeks start on Monday)</p>
+      <p class="text-sm text-slate-400 mt-1">Installs, inspections, PTOs, and ICF activity for the last 10 weeks (weeks start on Monday)</p>
     </div>
     
     <!-- Weekly Table -->
@@ -1755,42 +1762,216 @@ function renderIcfWeeklyStats() {
         <thead>
           <tr class="border-b border-slate-700 bg-slate-900/50">
             <th class="px-4 py-3 text-left text-xs font-semibold text-slate-400 uppercase">Week</th>
-            <th class="px-3 py-3 text-center text-xs font-semibold text-emerald-400 uppercase border-r border-slate-600">Installs</th>
-            <th class="px-3 py-3 text-center text-xs font-semibold text-cyan-400 uppercase">PTO Submitted</th>
-            <th class="px-3 py-3 text-center text-xs font-semibold text-green-400 uppercase border-r border-slate-600">PTO Approved</th>
+            <th class="px-3 py-3 text-center text-xs font-semibold text-emerald-400 uppercase">Installs</th>
+            <th class="px-3 py-3 text-center text-xs font-semibold text-pink-400 uppercase border-r border-slate-600">Inspections</th>
+            <th class="px-3 py-3 text-center text-xs font-semibold text-orange-400 uppercase">PTO Submitted</th>
+            <th class="px-3 py-3 text-center text-xs font-semibold text-cyan-400 uppercase border-r border-slate-600">PTO Approved</th>
             <th class="px-3 py-3 text-center text-xs font-semibold text-blue-400 uppercase">ICF Submitted</th>
             <th class="px-3 py-3 text-center text-xs font-semibold text-amber-400 uppercase">ICF Resubmitted</th>
-            <th class="px-3 py-3 text-center text-xs font-semibold text-purple-400 uppercase">ICF Approved</th>
+            <th class="px-3 py-3 text-center text-xs font-semibold text-green-400 uppercase">ICF Approved</th>
           </tr>
         </thead>
         <tbody class="divide-y divide-slate-700/30">
           ${weeklyData.length === 0 ? `
-            <tr><td colspan="7" class="px-4 py-8 text-center text-slate-500">No data available.</td></tr>
+            <tr><td colspan="8" class="px-4 py-8 text-center text-slate-500">No data available.</td></tr>
           ` : weeklyData.map((w, i) => `
               <tr class="hover:bg-slate-800/50 ${i === 0 ? 'bg-orange-500/5' : ''}">
                 <td class="px-4 py-3 font-medium text-slate-300">${w.weekLabel}${i === 0 ? ' <span class="text-orange-400 text-xs">(current)</span>' : ''}</td>
-                <td class="px-3 py-3 text-center text-xl font-bold text-emerald-400 border-r border-slate-600">${w.installs}</td>
-                <td class="px-3 py-3 text-center text-xl font-bold text-cyan-400">${w.ptoSubmitted}</td>
-                <td class="px-3 py-3 text-center text-xl font-bold text-green-400 border-r border-slate-600">${w.ptoApproved}</td>
+                <td class="px-3 py-3 text-center text-xl font-bold text-emerald-400">${w.installs}</td>
+                <td class="px-3 py-3 text-center text-xl font-bold text-pink-400 border-r border-slate-600">${w.inspections}</td>
+                <td class="px-3 py-3 text-center text-xl font-bold text-orange-400">${w.ptoSubmitted}</td>
+                <td class="px-3 py-3 text-center text-xl font-bold text-cyan-400 border-r border-slate-600">${w.ptoApproved}</td>
                 <td class="px-3 py-3 text-center text-xl font-bold text-blue-400">${w.icfSubmitted}</td>
                 <td class="px-3 py-3 text-center text-xl font-bold text-amber-400">${w.icfResubmitted}</td>
-                <td class="px-3 py-3 text-center text-xl font-bold text-purple-400">${w.icfApproved}</td>
+                <td class="px-3 py-3 text-center text-xl font-bold text-green-400">${w.icfApproved}</td>
               </tr>
             `).join('')}
           <!-- Totals Row -->
           <tr class="border-t-2 border-slate-600 bg-slate-900/50 font-bold">
             <td class="px-4 py-3 text-slate-300">TOTAL (10 weeks)</td>
-            <td class="px-3 py-3 text-center text-xl text-emerald-400 border-r border-slate-600">${totals.installs}</td>
-            <td class="px-3 py-3 text-center text-xl text-cyan-400">${totals.ptoSubmitted}</td>
-            <td class="px-3 py-3 text-center text-xl text-green-400 border-r border-slate-600">${totals.ptoApproved}</td>
+            <td class="px-3 py-3 text-center text-xl text-emerald-400">${totals.installs}</td>
+            <td class="px-3 py-3 text-center text-xl text-pink-400 border-r border-slate-600">${totals.inspections}</td>
+            <td class="px-3 py-3 text-center text-xl text-orange-400">${totals.ptoSubmitted}</td>
+            <td class="px-3 py-3 text-center text-xl text-cyan-400 border-r border-slate-600">${totals.ptoApproved}</td>
             <td class="px-3 py-3 text-center text-xl text-blue-400">${totals.icfSubmitted}</td>
             <td class="px-3 py-3 text-center text-xl text-amber-400">${totals.icfResubmitted}</td>
-            <td class="px-3 py-3 text-center text-xl text-purple-400">${totals.icfApproved}</td>
+            <td class="px-3 py-3 text-center text-xl text-green-400">${totals.icfApproved}</td>
           </tr>
         </tbody>
       </table>
     </div>
-    <p class="text-xs text-slate-500 mt-4">Installs = Installation completed date • PTO Submitted = PTO submission date • PTO Approved = PTO complete date • ICF Submitted/Resubmitted/Approved = From SGIP export</p>
+    <p class="text-xs text-slate-500 mt-4">Installs = Installation completed date • Inspections = Inspection passed date (HubSpot) • PTO Submitted = PTO submission date • PTO Approved = PTO complete date • ICF Submitted/Resubmitted/Approved = From SGIP export</p>
+  `;
+}
+
+function renderPipelineValue() {
+  const ptoData = getPtoFunnelData();
+  const icfData = getIcfDeepDiveData();
+  
+  const calcIncentive = (deals) => deals.reduce((sum, d) => sum + parseNum(d.currentIncentive || d.finalIncentive), 0);
+  const calcPayment = (deals) => deals.reduce((sum, d) => sum + parseNum(d.paymentAmount), 0);
+  
+  // PTO Funnel buckets
+  const ptoBuckets = [
+    { label: 'Permit Pending', count: ptoData.permitPending.length, amount: calcIncentive(ptoData.permitPending), color: 'blue', section: 'PTO Funnel' },
+    { label: 'Need to Submit Permit', count: ptoData.needToSubmitPermit.length, amount: calcIncentive(ptoData.needToSubmitPermit), color: 'red', section: 'PTO Funnel' },
+    { label: 'Inspection Scheduled', count: ptoData.inspectionScheduled.length, amount: calcIncentive(ptoData.inspectionScheduled), color: 'purple', section: 'PTO Funnel' },
+    { label: 'Inspection Not Complete', count: ptoData.inspectionNotComplete.length, amount: calcIncentive(ptoData.inspectionNotComplete), color: 'amber', section: 'PTO Funnel' },
+    { label: 'Meter Collar Needed', count: ptoData.meterCollarNeeded.length, amount: calcIncentive(ptoData.meterCollarNeeded), color: 'orange', section: 'PTO Funnel' },
+    { label: 'PTO Submitted', count: ptoData.ptoSubmitted.length, amount: calcIncentive(ptoData.ptoSubmitted), color: 'cyan', section: 'PTO Funnel' },
+    { label: 'PTO Not Submitted', count: ptoData.ptoNotSubmitted.length, amount: calcIncentive(ptoData.ptoNotSubmitted), color: 'yellow', section: 'PTO Funnel' },
+    { label: 'Uncategorized', count: ptoData.uncategorized.length, amount: calcIncentive(ptoData.uncategorized), color: 'slate', section: 'PTO Funnel' }
+  ];
+  
+  // ICF Deep Dive buckets
+  const icfBuckets = [
+    { label: "PTO'd, No ICF", count: icfData.ptoNoIcf.length, amount: calcIncentive(icfData.ptoNoIcf), color: 'amber', section: 'ICF Pipeline' },
+    { label: 'Revisions Required', count: icfData.revisions.length, amount: calcIncentive(icfData.revisions), color: 'red', section: 'ICF Pipeline' },
+    { label: 'ICF Submitted', count: icfData.icfSubmitted.length, amount: calcIncentive(icfData.icfSubmitted), color: 'blue', section: 'ICF Pipeline' },
+    { label: 'ICF Review', count: icfData.icfReview.length, amount: calcIncentive(icfData.icfReview), color: 'purple', section: 'ICF Pipeline' },
+    { label: 'ICF Inspection', count: icfData.icfInspection.length, amount: calcIncentive(icfData.icfInspection), color: 'cyan', section: 'ICF Pipeline' },
+    { label: 'Pending Payment', count: icfData.pendingPayment.length, amount: calcIncentive(icfData.pendingPayment), color: 'emerald', section: 'ICF Pipeline' },
+    { label: 'ICF Uncategorized', count: icfData.icfUncategorized.length, amount: calcIncentive(icfData.icfUncategorized), color: 'slate', section: 'ICF Pipeline' },
+    { label: 'Payment Complete', count: icfData.paymentComplete.length, amount: calcPayment(icfData.paymentComplete), color: 'green', section: 'ICF Pipeline', isPayment: true }
+  ];
+  
+  const ptoTotal = ptoBuckets.reduce((sum, b) => sum + b.amount, 0);
+  const ptoCount = ptoBuckets.reduce((sum, b) => sum + b.count, 0);
+  const icfPipelineTotal = icfBuckets.filter(b => !b.isPayment).reduce((sum, b) => sum + b.amount, 0);
+  const icfPipelineCount = icfBuckets.filter(b => !b.isPayment).reduce((sum, b) => sum + b.count, 0);
+  const paymentCompleteAmount = icfBuckets.find(b => b.isPayment)?.amount || 0;
+  const paymentCompleteCount = icfBuckets.find(b => b.isPayment)?.count || 0;
+  
+  return `
+    <div class="bg-purple-500/10 border border-purple-500/30 rounded-lg p-4 mb-4">
+      <h3 class="font-semibold text-purple-400">💰 Pipeline Value by Stage</h3>
+      <p class="text-sm text-slate-400 mt-1">Incentive value breakdown across all PTO Funnel and ICF Pipeline stages</p>
+    </div>
+    
+    <!-- Summary Cards -->
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+      <div class="bg-slate-800/50 rounded-lg p-4 border border-slate-700/50">
+        <p class="text-slate-400 text-xs uppercase mb-1">PTO Funnel Total</p>
+        <p class="text-2xl font-bold text-cyan-400">${fmtCurrency(ptoTotal)}</p>
+        <p class="text-xs text-slate-500 mt-1">${ptoCount} projects</p>
+      </div>
+      <div class="bg-slate-800/50 rounded-lg p-4 border border-slate-700/50">
+        <p class="text-slate-400 text-xs uppercase mb-1">ICF Pipeline Total</p>
+        <p class="text-2xl font-bold text-purple-400">${fmtCurrency(icfPipelineTotal)}</p>
+        <p class="text-xs text-slate-500 mt-1">${icfPipelineCount} projects</p>
+      </div>
+      <div class="bg-slate-800/50 rounded-lg p-4 border border-slate-700/50">
+        <p class="text-slate-400 text-xs uppercase mb-1">Payment Complete</p>
+        <p class="text-2xl font-bold text-green-400">${fmtCurrency(paymentCompleteAmount)}</p>
+        <p class="text-xs text-slate-500 mt-1">${paymentCompleteCount} projects</p>
+      </div>
+      <div class="bg-slate-700/50 rounded-lg p-4 border border-slate-500/50">
+        <p class="text-slate-400 text-xs uppercase mb-1">Grand Total Pipeline</p>
+        <p class="text-2xl font-bold text-white">${fmtCurrency(ptoTotal + icfPipelineTotal)}</p>
+        <p class="text-xs text-slate-500 mt-1">${ptoCount + icfPipelineCount} projects</p>
+      </div>
+    </div>
+    
+    <!-- PTO Funnel Table -->
+    <div class="bg-slate-800/50 rounded-lg border border-slate-700/50 overflow-hidden mb-6">
+      <div class="px-4 py-3 border-b border-slate-700/50 bg-cyan-500/10">
+        <h4 class="font-semibold text-cyan-400">🎯 PTO Funnel Stages</h4>
+      </div>
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="border-b border-slate-700 bg-slate-900/50">
+            <th class="px-4 py-3 text-left text-xs font-semibold text-slate-400 uppercase">Stage</th>
+            <th class="px-4 py-3 text-center text-xs font-semibold text-slate-400 uppercase">Projects</th>
+            <th class="px-4 py-3 text-right text-xs font-semibold text-slate-400 uppercase">Incentive Value</th>
+            <th class="px-4 py-3 text-center text-xs font-semibold text-slate-400 uppercase">% of Total</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-700/30">
+          ${ptoBuckets.map(b => {
+            const pct = ptoTotal > 0 ? ((b.amount / ptoTotal) * 100).toFixed(1) : 0;
+            return `
+              <tr class="hover:bg-slate-800/50">
+                <td class="px-4 py-3">
+                  <span class="inline-flex items-center gap-2">
+                    <span class="w-3 h-3 rounded-full bg-${b.color}-500"></span>
+                    <span class="font-medium text-slate-300">${b.label}</span>
+                  </span>
+                </td>
+                <td class="px-4 py-3 text-center font-bold text-${b.color}-400">${b.count}</td>
+                <td class="px-4 py-3 text-right font-bold text-${b.color}-400">${fmtCurrency(b.amount)}</td>
+                <td class="px-4 py-3 text-center">
+                  <div class="flex items-center justify-center gap-2">
+                    <div class="w-16 h-2 bg-slate-700 rounded-full overflow-hidden">
+                      <div class="h-full bg-${b.color}-500 rounded-full" style="width: ${pct}%"></div>
+                    </div>
+                    <span class="text-xs text-slate-400">${pct}%</span>
+                  </div>
+                </td>
+              </tr>
+            `;
+          }).join('')}
+          <tr class="border-t-2 border-slate-600 bg-slate-900/50 font-bold">
+            <td class="px-4 py-3 text-slate-300">PTO Funnel Total</td>
+            <td class="px-4 py-3 text-center text-white">${ptoCount}</td>
+            <td class="px-4 py-3 text-right text-cyan-400">${fmtCurrency(ptoTotal)}</td>
+            <td class="px-4 py-3 text-center text-slate-400">100%</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    
+    <!-- ICF Pipeline Table -->
+    <div class="bg-slate-800/50 rounded-lg border border-slate-700/50 overflow-hidden">
+      <div class="px-4 py-3 border-b border-slate-700/50 bg-purple-500/10">
+        <h4 class="font-semibold text-purple-400">🔍 ICF Pipeline Stages</h4>
+      </div>
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="border-b border-slate-700 bg-slate-900/50">
+            <th class="px-4 py-3 text-left text-xs font-semibold text-slate-400 uppercase">Stage</th>
+            <th class="px-4 py-3 text-center text-xs font-semibold text-slate-400 uppercase">Projects</th>
+            <th class="px-4 py-3 text-right text-xs font-semibold text-slate-400 uppercase">Incentive Value</th>
+            <th class="px-4 py-3 text-center text-xs font-semibold text-slate-400 uppercase">% of Pipeline</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-700/30">
+          ${icfBuckets.map(b => {
+            const total = b.isPayment ? paymentCompleteAmount : icfPipelineTotal;
+            const pct = total > 0 ? ((b.amount / total) * 100).toFixed(1) : 0;
+            return `
+              <tr class="hover:bg-slate-800/50 ${b.isPayment ? 'border-t-2 border-slate-600' : ''}">
+                <td class="px-4 py-3">
+                  <span class="inline-flex items-center gap-2">
+                    <span class="w-3 h-3 rounded-full bg-${b.color}-500"></span>
+                    <span class="font-medium text-slate-300">${b.label}</span>
+                  </span>
+                </td>
+                <td class="px-4 py-3 text-center font-bold text-${b.color}-400">${b.count}</td>
+                <td class="px-4 py-3 text-right font-bold text-${b.color}-400">${fmtCurrency(b.amount)}</td>
+                <td class="px-4 py-3 text-center">
+                  ${b.isPayment ? '<span class="text-xs text-slate-500">—</span>' : `
+                  <div class="flex items-center justify-center gap-2">
+                    <div class="w-16 h-2 bg-slate-700 rounded-full overflow-hidden">
+                      <div class="h-full bg-${b.color}-500 rounded-full" style="width: ${pct}%"></div>
+                    </div>
+                    <span class="text-xs text-slate-400">${pct}%</span>
+                  </div>
+                  `}
+                </td>
+              </tr>
+            `;
+          }).join('')}
+          <tr class="border-t-2 border-slate-600 bg-slate-900/50 font-bold">
+            <td class="px-4 py-3 text-slate-300">ICF Pipeline Total (excl. paid)</td>
+            <td class="px-4 py-3 text-center text-white">${icfPipelineCount}</td>
+            <td class="px-4 py-3 text-right text-purple-400">${fmtCurrency(icfPipelineTotal)}</td>
+            <td class="px-4 py-3 text-center text-slate-400">100%</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    
+    <p class="text-xs text-slate-500 mt-4">Values based on current/final incentive amounts from SGIP data. Payment Complete shows actual payment amounts received.</p>
   `;
 }
 
@@ -1799,13 +1980,11 @@ function renderBudgetCategoryStats() {
   // Calculate totals
   const totals = budgetData.reduce((acc, m) => ({
     total: acc.total + m.total,
+    resStorage: acc.resStorage + m.resStorage,
+    equityResiliency: acc.equityResiliency + m.equityResiliency,
     rsse: acc.rsse + m.rsse,
-    er: acc.er + m.er,
-    equity: acc.equity + m.equity,
-    original: acc.original + m.original,
-    commercial: acc.commercial + m.commercial,
     other: acc.other + m.other
-  }), { total: 0, rsse: 0, er: 0, equity: 0, original: 0, commercial: 0, other: 0 });
+  }), { total: 0, resStorage: 0, equityResiliency: 0, rsse: 0, other: 0 });
   
   return `
     <div class="bg-emerald-500/10 border border-emerald-500/30 rounded-lg p-4 mb-4">
@@ -1817,42 +1996,36 @@ function renderBudgetCategoryStats() {
         <thead>
           <tr class="border-b border-slate-700">
             <th class="px-4 py-3 text-left text-sm font-semibold text-slate-300">Month</th>
-            <th class="px-4 py-3 text-center text-sm font-semibold text-slate-300">Total</th>
-            <th class="px-4 py-3 text-center text-sm font-semibold text-purple-400">RSSE</th>
-            <th class="px-4 py-3 text-center text-sm font-semibold text-amber-400">ER</th>
-            <th class="px-4 py-3 text-center text-sm font-semibold text-blue-400">Equity</th>
-            <th class="px-4 py-3 text-center text-sm font-semibold text-slate-300">Original</th>
-            <th class="px-4 py-3 text-center text-sm font-semibold text-cyan-400">Commercial</th>
-            <th class="px-4 py-3 text-center text-sm font-semibold text-slate-400">Other</th>
+            <th class="px-4 py-3 text-center text-sm font-semibold text-slate-300">Total Installs</th>
+            <th class="px-4 py-3 text-center text-sm font-semibold text-blue-400">Res Storage Equity</th>
+            <th class="px-4 py-3 text-center text-sm font-semibold text-purple-400">Equity Resiliency</th>
+            <th class="px-4 py-3 text-center text-sm font-semibold text-emerald-400">RSSE</th>
+            <th class="px-4 py-3 text-center text-sm font-semibold text-slate-400">Other/None</th>
           </tr>
         </thead>
         <tbody class="divide-y divide-slate-700/30">
           <tr class="bg-slate-700/30 font-bold">
             <td class="px-4 py-3 font-semibold">TOTAL</td>
             <td class="px-4 py-3 text-center text-xl">${totals.total}</td>
-            <td class="px-4 py-3 text-center text-xl text-purple-400">${totals.rsse}</td>
-            <td class="px-4 py-3 text-center text-xl text-amber-400">${totals.er}</td>
-            <td class="px-4 py-3 text-center text-xl text-blue-400">${totals.equity}</td>
-            <td class="px-4 py-3 text-center text-xl text-slate-300">${totals.original}</td>
-            <td class="px-4 py-3 text-center text-xl text-cyan-400">${totals.commercial}</td>
+            <td class="px-4 py-3 text-center text-xl text-blue-400">${totals.resStorage}</td>
+            <td class="px-4 py-3 text-center text-xl text-purple-400">${totals.equityResiliency}</td>
+            <td class="px-4 py-3 text-center text-xl text-emerald-400">${totals.rsse}</td>
             <td class="px-4 py-3 text-center text-xl text-slate-400">${totals.other}</td>
           </tr>
           ${budgetData.map(m => `
             <tr class="hover:bg-slate-800/50">
               <td class="px-4 py-3 font-medium">${formatMonthLabel(m.month)}</td>
               <td class="px-4 py-3 text-center text-xl font-bold">${m.total}</td>
-              <td class="px-4 py-3 text-center text-xl font-bold text-purple-400">${m.rsse}</td>
-              <td class="px-4 py-3 text-center text-xl font-bold text-amber-400">${m.er}</td>
-              <td class="px-4 py-3 text-center text-xl font-bold text-blue-400">${m.equity}</td>
-              <td class="px-4 py-3 text-center text-xl font-bold text-slate-300">${m.original}</td>
-              <td class="px-4 py-3 text-center text-xl font-bold text-cyan-400">${m.commercial}</td>
+              <td class="px-4 py-3 text-center text-xl font-bold text-blue-400">${m.resStorage}</td>
+              <td class="px-4 py-3 text-center text-xl font-bold text-purple-400">${m.equityResiliency}</td>
+              <td class="px-4 py-3 text-center text-xl font-bold text-emerald-400">${m.rsse}</td>
               <td class="px-4 py-3 text-center text-xl font-bold text-slate-400">${m.other}</td>
             </tr>
           `).join('')}
         </tbody>
       </table>
     </div>
-    <p class="text-xs text-slate-500 mt-4">RSSE = Residential Solar and Storage Equity • ER = Equity Resiliency • Equity = Residential Storage Equity • Original = Small Residential Storage • Commercial = Non-Residential Storage Equity</p>
+    <p class="text-xs text-slate-500 mt-4">RSSE = Residential Solar and Storage Equity • Categories determined from SGIP "Budget Category" field</p>
   `;
 }
 
@@ -2173,9 +2346,6 @@ function applyPtoFilters(deals) {
   if (state.ptoFilters.interconnectionStatus.length > 0) {
     filtered = filtered.filter(d => state.ptoFilters.interconnectionStatus.includes(d.interconnectionStatus || '(empty)'));
   }
-  if (state.ptoFilters.budgetCategory.length > 0) {
-    filtered = filtered.filter(d => state.ptoFilters.budgetCategory.includes(getBudgetCategoryGroup(d.budgetCategory)));
-  }
   return filtered;
 }
 
@@ -2201,9 +2371,6 @@ function applyIcfFilters(deals) {
   }
   if (state.icfFilters.demandResponseProgram.length > 0) {
     filtered = filtered.filter(d => state.icfFilters.demandResponseProgram.includes(d.demandResponseProgram || '(empty)'));
-  }
-  if (state.icfFilters.budgetCategory.length > 0) {
-    filtered = filtered.filter(d => state.icfFilters.budgetCategory.includes(getBudgetCategoryGroup(d.budgetCategory)));
   }
   return filtered;
 }
@@ -2344,54 +2511,95 @@ function getPtoFunnelData() {
   // Helper to check if PTO is submitted
   const hasPtoSubmitted = (d) => d.ptoSubmittedDate && d.ptoSubmittedDate !== '(No value)' && d.ptoSubmittedDate !== 'None';
   
-  // 1. Permit Pending (Submitted, Resubmitted, Revisions in progress)
-  const permitPendingStatuses = ['Submitted', 'Resubmitted', 'Revisions in progress'];
-  const permitPending = allDeals.filter(d => permitPendingStatuses.includes(d.permitStatus))
-    .map(d => ({ ...d, daysSinceInstall: daysSince(d.installDate) }));
-  
-  // 2. Need to Submit Permit (Rejected, or no status/empty)
-  const needToSubmitPermit = allDeals.filter(d => 
-    d.permitStatus !== 'Approved' && !permitPendingStatuses.includes(d.permitStatus)
-  ).map(d => ({ ...d, daysSinceInstall: daysSince(d.installDate) }));
-  
-  // 3. Inspection Scheduled/Requested
-  const inspectionScheduled = allDeals.filter(d => 
-    d.inspectionStatus === 'Scheduled' || d.inspectionStatus === 'Requested'
-  ).map(d => ({ ...d, daysSinceInstall: daysSince(d.installDate) }));
-  
-  // 4. Inspection Not Complete (Failed, Pending HO Action, Need to Request Inspection, or no status)
-  const inspectionNotComplete = allDeals.filter(d => {
-    const status = d.inspectionStatus;
-    return d.permitStatus === 'Approved' && 
-           (status === 'Failed' || status === 'Pending HO Action' || status === 'Need to Request Inspection' || !status || status === '(No value)');
-  }).map(d => ({ ...d, daysSinceInstall: daysSince(d.installDate) }));
-  
-  // 5. Meter Collar Needed
-  const meterCollarNeeded = allDeals.filter(d => 
-    d.inspectionStatus === 'Meter Collar Needed' || 
-    (d.inspectionStatus && d.inspectionStatus.toLowerCase().includes('meter collar'))
-  ).map(d => ({ ...d, daysSinceInstall: daysSince(d.installDate) }));
-  
-  // 6. PTO Status - Not yet approved, but permit approved AND inspection passed
-  const ptoNotApproved = allDeals.filter(d => 
-    !hasPto(d) && 
-    d.permitStatus === 'Approved' && 
-    d.inspectionStatus === 'Passed'
-  );
-  
   // Check if PTO is submitted via ptoSubmittedDate OR interconnection status contains "PTO Submitted"
-  const isPtoSubmitted = (d) => {
+  const isPtoSubmittedCheck = (d) => {
     if (hasPtoSubmitted(d)) return true;
     const interconnection = (d.interconnectionStatus || '').toLowerCase();
     return interconnection.includes('pto submitted');
   };
   
-  const ptoSubmitted = ptoNotApproved.filter(d => isPtoSubmitted(d))
-    .map(d => ({ ...d, daysSinceSubmitted: daysSince(d.ptoSubmittedDate), daysSinceInstall: daysSince(d.installDate) }));
-  const ptoNotSubmitted = ptoNotApproved.filter(d => !isPtoSubmitted(d))
-    .map(d => ({ ...d, daysSinceInstall: daysSince(d.installDate) }));
+  // IMPORTANT: All PTO Funnel buckets should ONLY include projects WITHOUT PTO
+  // Projects WITH PTO belong in ICF Pipeline
+  const dealsWithoutPto = allDeals.filter(d => !hasPto(d));
   
-  return { permitPending, needToSubmitPermit, inspectionScheduled, inspectionNotComplete, meterCollarNeeded, ptoSubmitted, ptoNotSubmitted };
+  // Initialize buckets
+  const permitPending = [];
+  const needToSubmitPermit = [];
+  const inspectionScheduled = [];
+  const inspectionNotComplete = [];
+  const meterCollarNeeded = [];
+  const ptoSubmitted = [];
+  const ptoNotSubmitted = [];
+  const uncategorized = [];
+  
+  const permitPendingStatuses = ['Submitted', 'Resubmitted', 'Revisions in progress'];
+  
+  // Helper to check if permit is approved (including "Plans approved, issuance must be in person")
+  const isPermitApproved = (d) => {
+    const status = (d.permitStatus || '').toLowerCase();
+    return status === 'approved' || status.includes('approved');
+  };
+  
+  // Categorize each deal into exactly ONE bucket based on priority
+  dealsWithoutPto.forEach(d => {
+    const dealWithDays = { ...d, daysSinceInstall: daysSince(d.installDate) };
+    
+    // Priority 1: If permit approved AND inspection passed → PTO Status
+    if (isPermitApproved(d) && d.inspectionStatus === 'Passed') {
+      if (isPtoSubmittedCheck(d)) {
+        ptoSubmitted.push({ ...dealWithDays, daysSinceSubmitted: daysSince(d.ptoSubmittedDate) });
+      } else {
+        ptoNotSubmitted.push(dealWithDays);
+      }
+      return;
+    }
+    
+    // Priority 2: Meter Collar Needed (specific inspection status)
+    if (d.inspectionStatus === 'Meter Collar Needed' || 
+        (d.inspectionStatus && d.inspectionStatus.toLowerCase().includes('meter collar'))) {
+      meterCollarNeeded.push(dealWithDays);
+      return;
+    }
+    
+    // Priority 3: Inspection Scheduled/Requested
+    if (d.inspectionStatus === 'Scheduled' || d.inspectionStatus === 'Requested') {
+      inspectionScheduled.push(dealWithDays);
+      return;
+    }
+    
+    // Priority 4: Permit Approved but inspection not complete
+    if (isPermitApproved(d)) {
+      // Inspection is not Passed, not Scheduled, not Meter Collar - so it's not complete
+      inspectionNotComplete.push(dealWithDays);
+      return;
+    }
+    
+    // Priority 5: Permit Pending (Submitted, Resubmitted, Revisions in progress)
+    if (permitPendingStatuses.includes(d.permitStatus)) {
+      permitPending.push(dealWithDays);
+      return;
+    }
+    
+    // Priority 6: Need to Submit Permit (permit not approved, not pending)
+    // But only if not at a later stage (inspection passed or ICF stage)
+    const sgip = (d.sgipProgress || '').toLowerCase();
+    const isAtLaterStage = d.inspectionStatus === 'Passed' || 
+                           sgip.includes('icf') || 
+                           sgip.includes('payment');
+    
+    if (!isAtLaterStage) {
+      needToSubmitPermit.push(dealWithDays);
+      return;
+    }
+    
+    // Everything else goes to uncategorized
+    uncategorized.push(dealWithDays);
+  });
+  
+  // PTO submitted > 90 days but not yet approved
+  const ptoOver90Days = ptoSubmitted.filter(d => d.daysSinceSubmitted !== null && d.daysSinceSubmitted > 90);
+  
+  return { permitPending, needToSubmitPermit, inspectionScheduled, inspectionNotComplete, meterCollarNeeded, ptoSubmitted, ptoNotSubmitted, ptoOver90Days, uncategorized };
 }
 
 function sortPtoData(deals, sortBy, sortDir) {
@@ -2420,7 +2628,7 @@ function ptoSortHeader(label, col) {
 
 function renderPtoFunnelTab() {
   const data = getPtoFunnelData();
-  const total = data.permitPending.length + data.needToSubmitPermit.length + data.inspectionScheduled.length + data.inspectionNotComplete.length + data.meterCollarNeeded.length + data.ptoSubmitted.length + data.ptoNotSubmitted.length;
+  const total = data.permitPending.length + data.needToSubmitPermit.length + data.inspectionScheduled.length + data.inspectionNotComplete.length + data.meterCollarNeeded.length + data.ptoSubmitted.length + data.ptoNotSubmitted.length + data.uncategorized.length;
   const tabs = [
     { key: 'summary', label: '📊 Summary', count: total, color: 'slate' },
     { key: 'permitPending', label: 'Permit Pending', count: data.permitPending.length, color: 'blue' },
@@ -2428,7 +2636,8 @@ function renderPtoFunnelTab() {
     { key: 'inspectionScheduled', label: 'Inspection Scheduled', count: data.inspectionScheduled.length, color: 'purple' },
     { key: 'inspectionNotComplete', label: 'Inspection Not Complete', count: data.inspectionNotComplete.length, color: 'amber' },
     { key: 'meterCollar', label: 'Meter Collar Needed', count: data.meterCollarNeeded.length, color: 'orange' },
-    { key: 'ptoStatus', label: 'PTO Status', count: data.ptoSubmitted.length + data.ptoNotSubmitted.length, color: 'cyan' }
+    { key: 'ptoStatus', label: 'PTO Status', count: data.ptoSubmitted.length + data.ptoNotSubmitted.length, color: 'cyan' },
+    { key: 'uncategorized', label: 'Uncategorized', count: data.uncategorized.length, color: 'slate' }
   ];
   
   // Search across all PTO data
@@ -2457,6 +2666,7 @@ function renderPtoFunnelTab() {
       state.ptoSubTab === 'inspectionScheduled' ? renderInspectionScheduled(data.inspectionScheduled) :
       state.ptoSubTab === 'inspectionNotComplete' ? renderInspectionNotComplete(data.inspectionNotComplete) :
       state.ptoSubTab === 'meterCollar' ? renderMeterCollarNeeded(data.meterCollarNeeded) :
+      state.ptoSubTab === 'uncategorized' ? renderUncategorized(data.uncategorized) :
       renderPtoStatus(data.ptoSubmitted, data.ptoNotSubmitted)}
   `;
 }
@@ -2470,8 +2680,9 @@ function renderPtoFunnelSummary(data) {
     { label: 'Inspection Scheduled', count: data.inspectionScheduled.length, amount: calcIncentive(data.inspectionScheduled), color: 'purple', key: 'inspectionScheduled' },
     { label: 'Inspection Not Complete', count: data.inspectionNotComplete.length, amount: calcIncentive(data.inspectionNotComplete), color: 'amber', key: 'inspectionNotComplete' },
     { label: 'Meter Collar Needed', count: data.meterCollarNeeded.length, amount: calcIncentive(data.meterCollarNeeded), color: 'orange', key: 'meterCollar' },
-    { label: 'PTO Submitted', count: data.ptoSubmitted.length, amount: calcIncentive(data.ptoSubmitted), color: 'blue', key: 'ptoStatus' },
-    { label: 'PTO Not Submitted', count: data.ptoNotSubmitted.length, amount: calcIncentive(data.ptoNotSubmitted), color: 'amber', key: 'ptoStatus' }
+    { label: 'PTO Submitted', count: data.ptoSubmitted.length, amount: calcIncentive(data.ptoSubmitted), color: 'cyan', key: 'ptoStatus' },
+    { label: 'PTO Not Submitted', count: data.ptoNotSubmitted.length, amount: calcIncentive(data.ptoNotSubmitted), color: 'yellow', key: 'ptoStatus' },
+    { label: 'Uncategorized', count: data.uncategorized.length, amount: calcIncentive(data.uncategorized), color: 'slate', key: 'uncategorized' }
   ];
   
   const total = categories.reduce((sum, c) => sum + c.count, 0);
@@ -2563,31 +2774,21 @@ function renderPtoFunnelSummary(data) {
 }
 
 function renderPermitPending(deals) {
-  // Get filter options
-  const utilityOpts = getFilterOptions(deals, 'utility', d => getUtility(d) || '(empty)');
-  const budgetCategoryOpts = getFilterOptions(deals, 'budgetCategory', d => getBudgetCategoryGroup(d.budgetCategory));
-  const installerOpts = getFilterOptions(deals, 'installer', d => d.installer || '(empty)');
-  
-  // Apply filters
-  const filtered = applyPtoFilters(deals);
-  const sorted = sortPtoData(filtered, state.ptoSortBy || 'daysSinceInstall', state.ptoSortDir);
-  const totalIncentive = filtered.reduce((sum, d) => sum + parseNum(d.currentIncentive || d.finalIncentive), 0);
-  const isFiltered = hasPtoFiltersActive();
-  
+  const sorted = sortPtoData(deals, state.ptoSortBy || 'daysSinceInstall', state.ptoSortDir);
+  const totalIncentive = deals.reduce((sum, d) => sum + parseNum(d.currentIncentive || d.finalIncentive), 0);
   return `
     <div class="bg-blue-500/10 border border-blue-500/30 rounded-lg p-4 mb-4">
       <h3 class="font-semibold text-blue-400">📋 Permit Pending</h3>
       <p class="text-sm text-slate-400 mt-1">Permits that have been submitted or resubmitted, awaiting approval</p>
       <div class="mt-3 flex gap-6">
         <div>
-          <div class="text-2xl font-bold text-blue-400">${filtered.length}${isFiltered ? '<span class="text-sm text-slate-400">/' + deals.length + '</span>' : ''}</div>
-          <div class="text-xs text-slate-400">projects${isFiltered ? ' (filtered)' : ''}</div>
+          <div class="text-2xl font-bold text-blue-400">${deals.length}</div>
+          <div class="text-xs text-slate-400">projects</div>
         </div>
         <div>
           <div class="text-2xl font-bold text-blue-400">${fmtCurrency(totalIncentive)}</div>
           <div class="text-xs text-slate-400">total incentive</div>
         </div>
-        ${isFiltered ? '<button onclick="clearPtoFilters()" class="ml-auto px-3 py-1 text-xs bg-slate-700 hover:bg-slate-600 rounded">Clear Filters</button>' : ''}
       </div>
     </div>
     <div class="bg-slate-800/50 rounded-lg border border-slate-700/50 overflow-hidden">
@@ -2595,19 +2796,17 @@ function renderPermitPending(deals) {
         <table class="w-full text-sm">
           <thead class="sticky-header"><tr>
             ${ptoSortHeader('Customer', 'customer')}
-            ${ptoFilterHeader('Utility', 'utility', utilityOpts, 'utility')}
-            ${ptoFilterHeader('Budget Category', 'budgetCategory', budgetCategoryOpts)}
+            ${ptoSortHeader('Utility', 'utility')}
             ${ptoSortHeader('Install Date', 'installDate')}
             ${ptoSortHeader('Days Since Install', 'daysSinceInstall')}
             ${ptoSortHeader('Permit Status', 'permitStatus')}
-            ${ptoFilterHeader('Installer', 'installer', installerOpts, 'installer')}
+            ${ptoSortHeader('Installer', 'installer')}
           </tr></thead>
           <tbody class="divide-y divide-slate-700/30">
-            ${sorted.length === 0 ? '<tr><td colspan="7" class="px-3 py-8 text-center text-slate-500">No projects in this category</td></tr>' : sorted.map(d => `
+            ${sorted.length === 0 ? '<tr><td colspan="6" class="px-3 py-8 text-center text-slate-500">No projects in this category</td></tr>' : sorted.map(d => `
               <tr class="hover:bg-slate-800/50">
                 <td class="px-3 py-2">${customerCell(d)}${d.applicationCode ? '<br><span class="text-xs text-slate-500 mono">'+d.applicationCode+'</span>' : ''}</td>
                 <td class="px-3 py-2"><span class="px-1.5 py-0.5 rounded text-xs border ${getUtilityStyle(getUtility(d))}">${getUtility(d) || '—'}</span></td>
-                <td class="px-3 py-2">${budgetCategoryCell(d)}</td>
                 <td class="px-3 py-2 text-xs mono">${d.installDate || '—'}</td>
                 <td class="px-3 py-2 font-bold ${d.daysSinceInstall > 30 ? 'text-red-400' : d.daysSinceInstall > 14 ? 'text-amber-400' : 'text-slate-300'}">${d.daysSinceInstall !== null ? d.daysSinceInstall + 'd' : '—'}</td>
                 <td class="px-3 py-2"><span class="px-1.5 py-0.5 rounded text-xs ${d.permitStatus === 'Resubmitted' ? 'bg-purple-900/50 text-purple-400 border border-purple-800' : d.permitStatus === 'Revisions in progress' ? 'bg-amber-900/50 text-amber-400 border border-amber-800' : 'bg-blue-900/50 text-blue-400 border border-blue-800'}">${d.permitStatus || 'Not Set'}</span></td>
@@ -2625,7 +2824,6 @@ function renderNeedToSubmitPermit(deals) {
   // Get filter options from the deals
   const utilityOpts = getFilterOptions(deals, 'utility', d => getUtility(d) || '(empty)');
   const installerOpts = getFilterOptions(deals, 'installer', d => d.installer || '(empty)');
-  const budgetCategoryOpts = getFilterOptions(deals, 'budgetCategory', d => getBudgetCategoryGroup(d.budgetCategory));
   
   // Apply filters
   const filtered = applyPtoFilters(deals);
@@ -2655,18 +2853,16 @@ function renderNeedToSubmitPermit(deals) {
           <thead class="sticky-header"><tr>
             ${ptoSortHeader('Customer', 'customer')}
             ${ptoFilterHeader('Utility', 'utility', utilityOpts, 'utility')}
-            ${ptoFilterHeader('Budget Category', 'budgetCategory', budgetCategoryOpts)}
             ${ptoSortHeader('Install Date', 'installDate')}
             ${ptoSortHeader('Days Since Install', 'daysSinceInstall')}
             ${ptoSortHeader('Permit Status', 'permitStatus')}
             ${ptoFilterHeader('Installer', 'installer', installerOpts, 'installer')}
           </tr></thead>
           <tbody class="divide-y divide-slate-700/30">
-            ${sorted.length === 0 ? '<tr><td colspan="7" class="px-3 py-8 text-center text-slate-500">No projects in this category</td></tr>' : sorted.map(d => `
+            ${sorted.length === 0 ? '<tr><td colspan="6" class="px-3 py-8 text-center text-slate-500">No projects in this category</td></tr>' : sorted.map(d => `
               <tr class="hover:bg-slate-800/50">
                 <td class="px-3 py-2">${customerCell(d)}${d.applicationCode ? '<br><span class="text-xs text-slate-500 mono">'+d.applicationCode+'</span>' : ''}</td>
                 <td class="px-3 py-2"><span class="px-1.5 py-0.5 rounded text-xs border ${getUtilityStyle(getUtility(d))}">${getUtility(d) || '—'}</span></td>
-                <td class="px-3 py-2">${budgetCategoryCell(d)}</td>
                 <td class="px-3 py-2 text-xs mono">${d.installDate || '—'}</td>
                 <td class="px-3 py-2 font-bold ${d.daysSinceInstall > 30 ? 'text-red-400' : d.daysSinceInstall > 14 ? 'text-amber-400' : 'text-slate-300'}">${d.daysSinceInstall !== null ? d.daysSinceInstall + 'd' : '—'}</td>
                 <td class="px-3 py-2"><span class="px-1.5 py-0.5 rounded text-xs bg-red-900/50 text-red-400 border border-red-800">${d.permitStatus || 'Not Set'}</span></td>
@@ -2681,17 +2877,8 @@ function renderNeedToSubmitPermit(deals) {
 }
 
 function renderInspectionScheduled(deals) {
-  // Get filter options
-  const utilityOpts = getFilterOptions(deals, 'utility', d => getUtility(d) || '(empty)');
-  const budgetCategoryOpts = getFilterOptions(deals, 'budgetCategory', d => getBudgetCategoryGroup(d.budgetCategory));
-  const installerOpts = getFilterOptions(deals, 'installer', d => d.installer || '(empty)');
-  
-  // Apply filters
-  const filtered = applyPtoFilters(deals);
-  const sorted = sortPtoData(filtered, state.ptoSortBy || 'daysSinceInstall', state.ptoSortDir);
-  const totalIncentive = filtered.reduce((sum, d) => sum + parseNum(d.currentIncentive || d.finalIncentive), 0);
-  const isFiltered = hasPtoFiltersActive();
-  
+  const sorted = sortPtoData(deals, state.ptoSortBy || 'daysSinceInstall', state.ptoSortDir);
+  const totalIncentive = deals.reduce((sum, d) => sum + parseNum(d.currentIncentive || d.finalIncentive), 0);
   return `
     <div class="bg-blue-500/10 border border-blue-500/30 rounded-lg p-4 mb-4">
       <h3 class="font-semibold text-blue-400">📅 Inspection Scheduled/Requested</h3>
@@ -2699,14 +2886,13 @@ function renderInspectionScheduled(deals) {
       <p class="text-xs text-slate-500 mt-1">Note: Inspection scheduled date not currently available from HubSpot</p>
       <div class="mt-3 flex gap-6">
         <div>
-          <div class="text-2xl font-bold text-blue-400">${filtered.length}${isFiltered ? '<span class="text-sm text-slate-400">/' + deals.length + '</span>' : ''}</div>
-          <div class="text-xs text-slate-400">projects${isFiltered ? ' (filtered)' : ''}</div>
+          <div class="text-2xl font-bold text-blue-400">${deals.length}</div>
+          <div class="text-xs text-slate-400">projects</div>
         </div>
         <div>
           <div class="text-2xl font-bold text-blue-400">${fmtCurrency(totalIncentive)}</div>
           <div class="text-xs text-slate-400">total incentive</div>
         </div>
-        ${isFiltered ? '<button onclick="clearPtoFilters()" class="ml-auto px-3 py-1 text-xs bg-slate-700 hover:bg-slate-600 rounded">Clear Filters</button>' : ''}
       </div>
     </div>
     <div class="bg-slate-800/50 rounded-lg border border-slate-700/50 overflow-hidden">
@@ -2714,19 +2900,17 @@ function renderInspectionScheduled(deals) {
         <table class="w-full text-sm">
           <thead class="sticky-header"><tr>
             ${ptoSortHeader('Customer', 'customer')}
-            ${ptoFilterHeader('Utility', 'utility', utilityOpts, 'utility')}
-            ${ptoFilterHeader('Budget Category', 'budgetCategory', budgetCategoryOpts)}
+            ${ptoSortHeader('Utility', 'utility')}
             ${ptoSortHeader('Install Date', 'installDate')}
             ${ptoSortHeader('Days Since Install', 'daysSinceInstall')}
             ${ptoSortHeader('Inspection Status', 'inspectionStatus')}
-            ${ptoFilterHeader('Installer', 'installer', installerOpts, 'installer')}
+            ${ptoSortHeader('Installer', 'installer')}
           </tr></thead>
           <tbody class="divide-y divide-slate-700/30">
-            ${sorted.length === 0 ? '<tr><td colspan="7" class="px-3 py-8 text-center text-slate-500">No projects in this category</td></tr>' : sorted.map(d => `
+            ${sorted.length === 0 ? '<tr><td colspan="6" class="px-3 py-8 text-center text-slate-500">No projects in this category</td></tr>' : sorted.map(d => `
               <tr class="hover:bg-slate-800/50">
                 <td class="px-3 py-2">${customerCell(d)}${d.applicationCode ? '<br><span class="text-xs text-slate-500 mono">'+d.applicationCode+'</span>' : ''}</td>
                 <td class="px-3 py-2"><span class="px-1.5 py-0.5 rounded text-xs border ${getUtilityStyle(getUtility(d))}">${getUtility(d) || '—'}</span></td>
-                <td class="px-3 py-2">${budgetCategoryCell(d)}</td>
                 <td class="px-3 py-2 text-xs mono">${d.installDate || '—'}</td>
                 <td class="px-3 py-2 font-bold ${d.daysSinceInstall > 30 ? 'text-red-400' : d.daysSinceInstall > 14 ? 'text-amber-400' : 'text-slate-300'}">${d.daysSinceInstall !== null ? d.daysSinceInstall + 'd' : '—'}</td>
                 <td class="px-3 py-2"><span class="px-1.5 py-0.5 rounded text-xs bg-blue-900/50 text-blue-400 border border-blue-800">${d.inspectionStatus}</span></td>
@@ -2745,7 +2929,6 @@ function renderInspectionNotComplete(deals) {
   const utilityOpts = getFilterOptions(deals, 'utility', d => getUtility(d) || '(empty)');
   const installerOpts = getFilterOptions(deals, 'installer', d => d.installer || '(empty)');
   const inspectionOpts = getFilterOptions(deals, 'inspectionStatus', d => d.inspectionStatus || '(empty)');
-  const budgetCategoryOpts = getFilterOptions(deals, 'budgetCategory', d => getBudgetCategoryGroup(d.budgetCategory));
   
   // Apply filters
   const filtered = applyPtoFilters(deals);
@@ -2775,18 +2958,16 @@ function renderInspectionNotComplete(deals) {
           <thead class="sticky-header"><tr>
             ${ptoSortHeader('Customer', 'customer')}
             ${ptoFilterHeader('Utility', 'utility', utilityOpts, 'utility')}
-            ${ptoFilterHeader('Budget Category', 'budgetCategory', budgetCategoryOpts)}
             ${ptoSortHeader('Install Date', 'installDate')}
             ${ptoSortHeader('Days Since Install', 'daysSinceInstall')}
             ${ptoFilterHeader('Inspection Status', 'inspectionStatus', inspectionOpts, 'inspectionStatus')}
             ${ptoFilterHeader('Installer', 'installer', installerOpts, 'installer')}
           </tr></thead>
           <tbody class="divide-y divide-slate-700/30">
-            ${sorted.length === 0 ? '<tr><td colspan="7" class="px-3 py-8 text-center text-slate-500">No projects in this category</td></tr>' : sorted.map(d => `
+            ${sorted.length === 0 ? '<tr><td colspan="6" class="px-3 py-8 text-center text-slate-500">No projects in this category</td></tr>' : sorted.map(d => `
               <tr class="hover:bg-slate-800/50">
                 <td class="px-3 py-2">${customerCell(d)}${d.applicationCode ? '<br><span class="text-xs text-slate-500 mono">'+d.applicationCode+'</span>' : ''}</td>
                 <td class="px-3 py-2"><span class="px-1.5 py-0.5 rounded text-xs border ${getUtilityStyle(getUtility(d))}">${getUtility(d) || '—'}</span></td>
-                <td class="px-3 py-2">${budgetCategoryCell(d)}</td>
                 <td class="px-3 py-2 text-xs mono">${d.installDate || '—'}</td>
                 <td class="px-3 py-2 font-bold ${d.daysSinceInstall > 30 ? 'text-red-400' : d.daysSinceInstall > 14 ? 'text-amber-400' : 'text-slate-300'}">${d.daysSinceInstall !== null ? d.daysSinceInstall + 'd' : '—'}</td>
                 <td class="px-3 py-2"><span class="px-1.5 py-0.5 rounded text-xs bg-amber-900/50 text-amber-400 border border-amber-800">${d.inspectionStatus || 'Not Set'}</span></td>
@@ -2801,31 +2982,21 @@ function renderInspectionNotComplete(deals) {
 }
 
 function renderMeterCollarNeeded(deals) {
-  // Get filter options
-  const utilityOpts = getFilterOptions(deals, 'utility', d => getUtility(d) || '(empty)');
-  const budgetCategoryOpts = getFilterOptions(deals, 'budgetCategory', d => getBudgetCategoryGroup(d.budgetCategory));
-  const installerOpts = getFilterOptions(deals, 'installer', d => d.installer || '(empty)');
-  
-  // Apply filters
-  const filtered = applyPtoFilters(deals);
-  const sorted = sortPtoData(filtered, state.ptoSortBy || 'daysSinceInstall', state.ptoSortDir);
-  const totalIncentive = filtered.reduce((sum, d) => sum + parseNum(d.currentIncentive || d.finalIncentive), 0);
-  const isFiltered = hasPtoFiltersActive();
-  
+  const sorted = sortPtoData(deals, state.ptoSortBy || 'daysSinceInstall', state.ptoSortDir);
+  const totalIncentive = deals.reduce((sum, d) => sum + parseNum(d.currentIncentive || d.finalIncentive), 0);
   return `
     <div class="bg-orange-500/10 border border-orange-500/30 rounded-lg p-4 mb-4">
       <h3 class="font-semibold text-orange-400">🔧 Meter Collar Needed</h3>
       <p class="text-sm text-slate-400 mt-1">Projects waiting for meter collar installation</p>
       <div class="mt-3 flex gap-6">
         <div>
-          <div class="text-2xl font-bold text-orange-400">${filtered.length}${isFiltered ? '<span class="text-sm text-slate-400">/' + deals.length + '</span>' : ''}</div>
-          <div class="text-xs text-slate-400">projects${isFiltered ? ' (filtered)' : ''}</div>
+          <div class="text-2xl font-bold text-orange-400">${deals.length}</div>
+          <div class="text-xs text-slate-400">projects</div>
         </div>
         <div>
           <div class="text-2xl font-bold text-orange-400">${fmtCurrency(totalIncentive)}</div>
           <div class="text-xs text-slate-400">total incentive</div>
         </div>
-        ${isFiltered ? '<button onclick="clearPtoFilters()" class="ml-auto px-3 py-1 text-xs bg-slate-700 hover:bg-slate-600 rounded">Clear Filters</button>' : ''}
       </div>
     </div>
     <div class="bg-slate-800/50 rounded-lg border border-slate-700/50 overflow-hidden">
@@ -2833,18 +3004,16 @@ function renderMeterCollarNeeded(deals) {
         <table class="w-full text-sm">
           <thead class="sticky-header"><tr>
             ${ptoSortHeader('Customer', 'customer')}
-            ${ptoFilterHeader('Utility', 'utility', utilityOpts, 'utility')}
-            ${ptoFilterHeader('Budget Category', 'budgetCategory', budgetCategoryOpts)}
+            ${ptoSortHeader('Utility', 'utility')}
             ${ptoSortHeader('Install Date', 'installDate')}
             ${ptoSortHeader('Days Since Install', 'daysSinceInstall')}
-            ${ptoFilterHeader('Installer', 'installer', installerOpts, 'installer')}
+            ${ptoSortHeader('Installer', 'installer')}
           </tr></thead>
           <tbody class="divide-y divide-slate-700/30">
-            ${sorted.length === 0 ? '<tr><td colspan="6" class="px-3 py-8 text-center text-slate-500">No projects in this category</td></tr>' : sorted.map(d => `
+            ${sorted.length === 0 ? '<tr><td colspan="5" class="px-3 py-8 text-center text-slate-500">No projects in this category</td></tr>' : sorted.map(d => `
               <tr class="hover:bg-slate-800/50">
                 <td class="px-3 py-2">${customerCell(d)}${d.applicationCode ? '<br><span class="text-xs text-slate-500 mono">'+d.applicationCode+'</span>' : ''}</td>
                 <td class="px-3 py-2"><span class="px-1.5 py-0.5 rounded text-xs border ${getUtilityStyle(getUtility(d))}">${getUtility(d) || '—'}</span></td>
-                <td class="px-3 py-2">${budgetCategoryCell(d)}</td>
                 <td class="px-3 py-2 text-xs mono">${d.installDate || '—'}</td>
                 <td class="px-3 py-2 font-bold ${d.daysSinceInstall > 30 ? 'text-red-400' : d.daysSinceInstall > 14 ? 'text-amber-400' : 'text-slate-300'}">${d.daysSinceInstall !== null ? d.daysSinceInstall + 'd' : '—'}</td>
                 <td class="px-3 py-2 text-xs">${d.installer || '—'}</td>
@@ -2863,7 +3032,6 @@ function renderPtoStatus(ptoSubmitted, ptoNotSubmitted) {
   const utilityOpts = getFilterOptions(allDeals, 'utility', d => getUtility(d) || '(empty)');
   const installerOpts = getFilterOptions(allDeals, 'installer', d => d.installer || '(empty)');
   const interconnectionOpts = getFilterOptions(allDeals, 'interconnectionStatus', d => d.interconnectionStatus || '(empty)');
-  const budgetCategoryOpts = getFilterOptions(allDeals, 'budgetCategory', d => getBudgetCategoryGroup(d.budgetCategory));
   
   // Apply filters
   const filteredSubmitted = applyPtoFilters(ptoSubmitted);
@@ -2900,7 +3068,6 @@ function renderPtoStatus(ptoSubmitted, ptoNotSubmitted) {
             <thead class="sticky-header"><tr>
               ${ptoSortHeader('Customer', 'customer')}
               ${ptoFilterHeader('Utility', 'utility', utilityOpts, 'utility')}
-              ${ptoFilterHeader('Budget Category', 'budgetCategory', budgetCategoryOpts)}
               ${ptoSortHeader('Install Date', 'installDate')}
               ${ptoSortHeader('PTO Submitted', 'ptoSubmittedDate')}
               ${ptoSortHeader('Days Waiting', 'daysSinceSubmitted')}
@@ -2908,11 +3075,10 @@ function renderPtoStatus(ptoSubmitted, ptoNotSubmitted) {
               ${ptoFilterHeader('Installer', 'installer', installerOpts, 'installer')}
             </tr></thead>
             <tbody class="divide-y divide-slate-700/30">
-              ${sortedSubmitted.length === 0 ? '<tr><td colspan="8" class="px-3 py-8 text-center text-slate-500">No projects in this category</td></tr>' : sortedSubmitted.map(d => `
+              ${sortedSubmitted.length === 0 ? '<tr><td colspan="7" class="px-3 py-8 text-center text-slate-500">No projects in this category</td></tr>' : sortedSubmitted.map(d => `
                 <tr class="hover:bg-slate-800/50">
                   <td class="px-3 py-2">${customerCell(d)}${d.applicationCode ? '<br><span class="text-xs text-slate-500 mono">'+d.applicationCode+'</span>' : ''}</td>
                   <td class="px-3 py-2"><span class="px-1.5 py-0.5 rounded text-xs border ${getUtilityStyle(getUtility(d))}">${getUtility(d) || '—'}</span></td>
-                  <td class="px-3 py-2">${budgetCategoryCell(d)}</td>
                   <td class="px-3 py-2 text-xs mono">${d.installDate || '—'}</td>
                   <td class="px-3 py-2 text-xs mono text-blue-400">${d.ptoSubmittedDate || '—'}</td>
                   <td class="px-3 py-2 font-bold ${d.daysSinceSubmitted > 30 ? 'text-red-400' : d.daysSinceSubmitted > 14 ? 'text-amber-400' : 'text-slate-300'}">${d.daysSinceSubmitted !== null ? d.daysSinceSubmitted + 'd' : '—'}</td>
@@ -2935,7 +3101,6 @@ function renderPtoStatus(ptoSubmitted, ptoNotSubmitted) {
             <thead class="sticky-header"><tr>
               ${ptoSortHeader('Customer', 'customer')}
               ${ptoFilterHeader('Utility', 'utility', utilityOpts, 'utility')}
-              ${ptoFilterHeader('Budget Category', 'budgetCategory', budgetCategoryOpts)}
               ${ptoSortHeader('Install Date', 'installDate')}
               ${ptoSortHeader('Days Since Install', 'daysSinceInstall')}
               ${ptoSortHeader('Inspection Status', 'inspectionStatus')}
@@ -2943,11 +3108,10 @@ function renderPtoStatus(ptoSubmitted, ptoNotSubmitted) {
               ${ptoFilterHeader('Installer', 'installer', installerOpts, 'installer')}
             </tr></thead>
             <tbody class="divide-y divide-slate-700/30">
-              ${sortedNotSubmitted.length === 0 ? '<tr><td colspan="8" class="px-3 py-8 text-center text-slate-500">No projects in this category</td></tr>' : sortedNotSubmitted.map(d => `
+              ${sortedNotSubmitted.length === 0 ? '<tr><td colspan="7" class="px-3 py-8 text-center text-slate-500">No projects in this category</td></tr>' : sortedNotSubmitted.map(d => `
                 <tr class="hover:bg-slate-800/50">
                   <td class="px-3 py-2">${customerCell(d)}${d.applicationCode ? '<br><span class="text-xs text-slate-500 mono">'+d.applicationCode+'</span>' : ''}</td>
                   <td class="px-3 py-2"><span class="px-1.5 py-0.5 rounded text-xs border ${getUtilityStyle(getUtility(d))}">${getUtility(d) || '—'}</span></td>
-                  <td class="px-3 py-2">${budgetCategoryCell(d)}</td>
                   <td class="px-3 py-2 text-xs mono">${d.installDate || '—'}</td>
                   <td class="px-3 py-2 font-bold ${d.daysSinceInstall > 30 ? 'text-red-400' : d.daysSinceInstall > 14 ? 'text-amber-400' : 'text-slate-300'}">${d.daysSinceInstall !== null ? d.daysSinceInstall + 'd' : '—'}</td>
                   <td class="px-3 py-2"><span class="px-1.5 py-0.5 rounded text-xs ${d.inspectionStatus === 'Passed' ? 'bg-green-900/50 text-green-400 border border-green-800' : 'bg-slate-700 text-slate-400 border border-slate-600'}">${d.inspectionStatus || 'Not Set'}</span></td>
@@ -2958,6 +3122,57 @@ function renderPtoStatus(ptoSubmitted, ptoNotSubmitted) {
             </tbody>
           </table>
         </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderUncategorized(deals) {
+  const sorted = sortPtoData(deals, state.ptoSortBy || 'daysSinceInstall', state.ptoSortDir);
+  const totalIncentive = deals.reduce((sum, d) => sum + parseNum(d.currentIncentive || d.finalIncentive), 0);
+  return `
+    <div class="bg-slate-500/10 border border-slate-500/30 rounded-lg p-4 mb-4">
+      <h3 class="font-semibold text-slate-400">❓ Uncategorized Projects</h3>
+      <p class="text-sm text-slate-400 mt-1">Projects that don't fit into other PTO Funnel categories - may need data cleanup</p>
+      <div class="mt-3 flex gap-6">
+        <div>
+          <div class="text-2xl font-bold text-slate-400">${deals.length}</div>
+          <div class="text-xs text-slate-400">projects</div>
+        </div>
+        <div>
+          <div class="text-2xl font-bold text-slate-400">${fmtCurrency(totalIncentive)}</div>
+          <div class="text-xs text-slate-400">total incentive</div>
+        </div>
+      </div>
+    </div>
+    <div class="bg-slate-800/50 rounded-lg border border-slate-700/50 overflow-hidden">
+      <div class="table-container overflow-x-auto" style="max-height: 600px;">
+        <table class="w-full text-sm">
+          <thead class="sticky-header"><tr>
+            ${ptoSortHeader('Customer', 'customer')}
+            ${ptoSortHeader('Utility', 'utility')}
+            ${ptoSortHeader('Install Date', 'installDate')}
+            ${ptoSortHeader('Days Since Install', 'daysSinceInstall')}
+            ${ptoSortHeader('Permit Status', 'permitStatus')}
+            ${ptoSortHeader('Inspection Status', 'inspectionStatus')}
+            <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">SGIP Progress</th>
+            ${ptoSortHeader('Installer', 'installer')}
+          </tr></thead>
+          <tbody class="divide-y divide-slate-700/30">
+            ${sorted.length === 0 ? '<tr><td colspan="8" class="px-3 py-8 text-center text-slate-500">No uncategorized projects - all accounted for!</td></tr>' : sorted.map(d => `
+              <tr class="hover:bg-slate-800/50">
+                <td class="px-3 py-2">${customerCell(d)}${d.applicationCode ? '<br><span class="text-xs text-slate-500 mono">'+d.applicationCode+'</span>' : ''}</td>
+                <td class="px-3 py-2"><span class="px-1.5 py-0.5 rounded text-xs border ${getUtilityStyle(getUtility(d))}">${getUtility(d) || '—'}</span></td>
+                <td class="px-3 py-2 text-xs mono">${d.installDate || '—'}</td>
+                <td class="px-3 py-2 font-bold ${d.daysSinceInstall > 30 ? 'text-red-400' : d.daysSinceInstall > 14 ? 'text-amber-400' : 'text-slate-300'}">${d.daysSinceInstall !== null ? d.daysSinceInstall + 'd' : '—'}</td>
+                <td class="px-3 py-2"><span class="px-1.5 py-0.5 rounded text-xs bg-slate-700 text-slate-400 border border-slate-600">${d.permitStatus || 'Not Set'}</span></td>
+                <td class="px-3 py-2"><span class="px-1.5 py-0.5 rounded text-xs ${d.inspectionStatus === 'Passed' ? 'bg-green-900/50 text-green-400 border border-green-800' : 'bg-slate-700 text-slate-400 border border-slate-600'}">${d.inspectionStatus || 'Not Set'}</span></td>
+                <td class="px-3 py-2 text-xs">${d.sgipProgress || '—'}</td>
+                <td class="px-3 py-2 text-xs">${d.installer || '—'}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
       </div>
     </div>
   `;
@@ -2982,15 +3197,21 @@ function getIcfDeepDiveData() {
     return Math.floor((now - d) / (1000 * 60 * 60 * 24));
   };
   
-  // 1. PTO'd but ICF not yet submitted (still in RRF statuses or ICF Draft)
-  const ptoNoIcf = allDeals.filter(d => {
-    if (!hasPto(d)) return false;
+  // ICF Pipeline should ONLY include projects WITH PTO
+  const dealsWithPto = allDeals.filter(d => hasPto(d));
+  
+  // 1. PTO'd but ICF not yet submitted (still in RRF statuses, ICF Draft, or no/unknown status)
+  const ptoNoIcf = dealsWithPto.filter(d => {
     const status = getStatus(d);
-    return status.includes('rrf') || status === 'icf: draft' || status.includes('icf draft');
+    // Include if in RRF stages or ICF Draft
+    if (status.includes('rrf') || status === 'icf: draft' || status.includes('icf draft')) return true;
+    // Also include if status is empty/unknown (has PTO but no ICF progress)
+    if (!status || status === '' || status === '(no value)' || status === 'none') return true;
+    return false;
   }).map(d => ({ ...d, daysSincePto: daysSince(d.ptoDate) }));
   
   // 2. Revisions required (ICF Suspended or ICF Inspection Suspended)
-  const revisions = allDeals.filter(d => {
+  const revisions = dealsWithPto.filter(d => {
     const status = getStatus(d);
     return status.includes('icf suspended') || status.includes('icf: suspended') || 
            status.includes('inspection suspended');
@@ -3001,7 +3222,7 @@ function getIcfDeepDiveData() {
   });
   
   // 3. ICF Submitted (ICF Submitted or ICF Resubmitted status)
-  const icfSubmitted = allDeals.filter(d => {
+  const icfSubmitted = dealsWithPto.filter(d => {
     const status = getStatus(d);
     return status === 'icf: submitted' || status === 'icf submitted' || 
            status === 'icf: resubmitted' || status === 'icf resubmitted';
@@ -3011,36 +3232,51 @@ function getIcfDeepDiveData() {
     return { ...d, daysPending: daysSince(effectiveDate) };
   });
   
-  // 4. ICF Review (ICF Review or ICF Technical Review)
-  const icfReview = allDeals.filter(d => {
+  // 4. ICF Review (ICF Review, ICF Technical Review, or ICF Equipment Review)
+  const icfReview = dealsWithPto.filter(d => {
     const status = getStatus(d);
     return status === 'icf: review' || status === 'icf review' || 
-           status === 'icf: technical review' || status === 'icf technical review';
+           status === 'icf: technical review' || status === 'icf technical review' ||
+           status === 'icf equipment review' || status === 'icf: equipment review';
   }).map(d => {
     const effectiveDate = d.icfResubmittedDate || d.icfSubmittedDate;
     return { ...d, daysSinceSubmitted: daysSince(effectiveDate) };
   });
   
   // 5. ICF Inspection
-  const icfInspection = allDeals.filter(d => {
+  const icfInspection = dealsWithPto.filter(d => {
     const status = getStatus(d);
     return (status === 'icf: inspection' || status === 'icf inspection') && 
            !status.includes('suspended');
   });
   
   // 6. Pending Payment (ICF Pending Payment)
-  const pendingPayment = allDeals.filter(d => {
+  const pendingPayment = dealsWithPto.filter(d => {
     const status = getStatus(d);
     return status === 'icf: pending payment' || status === 'icf pending payment';
   }).map(d => ({ ...d, daysSinceApproved: daysSince(d.icfPendingPaymentDate) }));
   
   // 7. Payment Complete
-  const paymentComplete = allDeals.filter(d => {
+  const paymentComplete = dealsWithPto.filter(d => {
     const status = getStatus(d);
     return status === 'payment: completed' || status === 'payment completed';
   });
   
-  return { ptoNoIcf, revisions, icfSubmitted, icfReview, icfInspection, pendingPayment, paymentComplete };
+  // Catch-all: Projects with PTO not in any other ICF bucket
+  const icfPipelineIds = new Set([
+    ...ptoNoIcf.map(d => d.dealId),
+    ...revisions.map(d => d.dealId),
+    ...icfSubmitted.map(d => d.dealId),
+    ...icfReview.map(d => d.dealId),
+    ...icfInspection.map(d => d.dealId),
+    ...pendingPayment.map(d => d.dealId),
+    ...paymentComplete.map(d => d.dealId)
+  ]);
+  
+  const icfUncategorized = dealsWithPto.filter(d => !icfPipelineIds.has(d.dealId))
+    .map(d => ({ ...d, daysSincePto: daysSince(d.ptoDate) }));
+  
+  return { ptoNoIcf, revisions, icfSubmitted, icfReview, icfInspection, pendingPayment, paymentComplete, icfUncategorized };
 }
 
 function sortIcfData(deals, sortBy, sortDir) {
@@ -3079,7 +3315,7 @@ function icfSortHeader(label, col) {
 
 function renderIcfDeepDiveTab() {
   const data = getIcfDeepDiveData();
-  const total = data.ptoNoIcf.length + data.revisions.length + data.icfSubmitted.length + data.icfReview.length + data.icfInspection.length + data.pendingPayment.length;
+  const total = data.ptoNoIcf.length + data.revisions.length + data.icfSubmitted.length + data.icfReview.length + data.icfInspection.length + data.pendingPayment.length + data.icfUncategorized.length;
   const tabs = [
     { key: 'summary', label: '📊 Summary', count: total, color: 'slate' },
     { key: 'ptoNoIcf', label: 'PTO\'d, No ICF', count: data.ptoNoIcf.length, color: 'amber' },
@@ -3088,7 +3324,8 @@ function renderIcfDeepDiveTab() {
     { key: 'icfReview', label: 'ICF Review', count: data.icfReview.length, color: 'purple' },
     { key: 'icfInspection', label: 'ICF Inspection', count: data.icfInspection.length, color: 'cyan' },
     { key: 'pendingPayment', label: 'Pending Payment', count: data.pendingPayment.length, color: 'emerald' },
-    { key: 'paymentComplete', label: 'Payment Complete', count: data.paymentComplete.length, color: 'green' }
+    { key: 'paymentComplete', label: 'Payment Complete', count: data.paymentComplete.length, color: 'green' },
+    { key: 'icfUncategorized', label: 'Uncategorized', count: data.icfUncategorized.length, color: 'slate' }
   ];
   
   // Search across all ICF data
@@ -3118,6 +3355,7 @@ function renderIcfDeepDiveTab() {
       state.icfSubTab === 'icfReview' ? renderIcfReview(data.icfReview) :
       state.icfSubTab === 'icfInspection' ? renderIcfInspection(data.icfInspection) :
       state.icfSubTab === 'pendingPayment' ? renderPendingPayment(data.pendingPayment) :
+      state.icfSubTab === 'icfUncategorized' ? renderIcfUncategorized(data.icfUncategorized) :
       renderPaymentComplete(data.paymentComplete)}
   `;
 }
@@ -3126,15 +3364,21 @@ function renderActionItemsTab() {
   const ptoData = getPtoFunnelData();
   const icfData = getIcfDeepDiveData();
   
-  const tabs = [
-    { key: 'needPermit', label: 'Need to Submit Permit', count: ptoData.needToSubmitPermit.length, color: 'red' },
-    { key: 'inspectionNotComplete', label: 'Inspection Not Complete', count: ptoData.inspectionNotComplete.length, color: 'amber' },
-    { key: 'ptoNotSubmitted', label: 'PTO Not Submitted', count: ptoData.ptoNotSubmitted.length, color: 'orange' },
-    { key: 'ptoNoIcf', label: "PTO'd, No ICF", count: icfData.ptoNoIcf.length, color: 'yellow' },
-    { key: 'revisions', label: 'Revisions Required', count: icfData.revisions.length, color: 'rose' }
+  const actionCategories = [
+    { key: 'needPermit', label: 'Need to Submit Permit', count: ptoData.needToSubmitPermit.length, color: 'red', data: ptoData.needToSubmitPermit },
+    { key: 'inspectionNotComplete', label: 'Inspection Not Complete', count: ptoData.inspectionNotComplete.length, color: 'amber', data: ptoData.inspectionNotComplete },
+    { key: 'ptoNotSubmitted', label: 'PTO Not Submitted', count: ptoData.ptoNotSubmitted.length, color: 'orange', data: ptoData.ptoNotSubmitted },
+    { key: 'ptoOver90Days', label: 'PTO Over 90 Days', count: ptoData.ptoOver90Days.length, color: 'pink', data: ptoData.ptoOver90Days },
+    { key: 'ptoNoIcf', label: "PTO'd, No ICF", count: icfData.ptoNoIcf.length, color: 'yellow', data: icfData.ptoNoIcf },
+    { key: 'revisions', label: 'Revisions Required', count: icfData.revisions.length, color: 'rose', data: icfData.revisions }
   ];
   
-  const totalActions = tabs.reduce((sum, t) => sum + t.count, 0);
+  const totalActions = actionCategories.reduce((sum, t) => sum + t.count, 0);
+  
+  const tabs = [
+    { key: 'summary', label: '📊 Summary', count: totalActions, color: 'slate' },
+    ...actionCategories
+  ];
   
   return `
     <div class="flex gap-2 mb-4 flex-wrap">
@@ -3143,15 +3387,98 @@ function renderActionItemsTab() {
           ${t.label} <span class="ml-1 px-1.5 py-0.5 rounded text-xs ${state.actionSubTab === t.key ? `bg-${t.color}-500/20` : 'bg-slate-700'}">${t.count}</span>
         </button>
       `).join('')}
-      <div class="ml-auto px-3 py-1.5 rounded-lg text-sm font-medium bg-slate-700/50 text-slate-300">
-        Total: <span class="font-bold text-orange-400">${totalActions}</span> action items
-      </div>
     </div>
-    ${state.actionSubTab === 'needPermit' ? renderNeedToSubmitPermit(ptoData.needToSubmitPermit) :
+    ${state.actionSubTab === 'summary' ? renderActionItemsSummary(actionCategories, totalActions) :
+      state.actionSubTab === 'needPermit' ? renderNeedToSubmitPermit(ptoData.needToSubmitPermit) :
       state.actionSubTab === 'inspectionNotComplete' ? renderInspectionNotComplete(ptoData.inspectionNotComplete) :
       state.actionSubTab === 'ptoNotSubmitted' ? renderActionPtoNotSubmitted(ptoData.ptoNotSubmitted) :
+      state.actionSubTab === 'ptoOver90Days' ? renderPtoOver90Days(ptoData.ptoOver90Days) :
       state.actionSubTab === 'ptoNoIcf' ? renderPtoNoIcf(icfData.ptoNoIcf) :
       renderRevisions(icfData.revisions)}
+  `;
+}
+
+function renderActionItemsSummary(categories, total) {
+  const calcIncentive = (deals) => deals.reduce((sum, d) => sum + parseNum(d.currentIncentive || d.finalIncentive), 0);
+  const totalIncentive = categories.reduce((sum, c) => sum + calcIncentive(c.data), 0);
+  
+  return `
+    <div class="bg-slate-500/10 border border-slate-500/30 rounded-lg p-4 mb-4">
+      <div class="flex justify-between items-start">
+        <div>
+          <h3 class="font-semibold text-slate-200">⚡ Action Items Summary</h3>
+          <p class="text-sm text-slate-400 mt-1">Projects requiring attention across all categories</p>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Summary Cards -->
+    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-7 gap-3 mb-6">
+      ${categories.map(c => `
+        <div class="bg-slate-800/50 rounded-lg p-4 border border-slate-700/50 cursor-pointer hover:border-${c.color}-500/50 transition-all" onclick="setActionSubTab('${c.key}')">
+          <p class="text-slate-400 text-xs uppercase mb-1 truncate" title="${c.label}">${c.label}</p>
+          <p class="text-2xl font-bold text-${c.color}-400">${c.count}</p>
+          <p class="text-xs text-${c.color}-400/70 mt-1">${fmtCurrency(calcIncentive(c.data))}</p>
+        </div>
+      `).join('')}
+      <div class="bg-slate-700/50 rounded-lg p-4 border border-slate-500/50">
+        <p class="text-slate-400 text-xs uppercase mb-1">Total Actions</p>
+        <p class="text-2xl font-bold text-white">${total}</p>
+        <p class="text-xs text-slate-300/70 mt-1">${fmtCurrency(totalIncentive)}</p>
+      </div>
+    </div>
+    
+    <!-- Category Details Table -->
+    <div class="bg-slate-800/50 rounded-lg border border-slate-700/50 overflow-hidden">
+      <div class="px-4 py-3 border-b border-slate-700/50">
+        <h4 class="font-semibold text-slate-300">📋 Action Items by Category</h4>
+        <p class="text-xs text-slate-500 mt-1">Click any row to view details</p>
+      </div>
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="border-b border-slate-700 bg-slate-900/50">
+              <th class="px-4 py-3 text-left text-xs font-semibold text-slate-400 uppercase">Category</th>
+              <th class="px-4 py-3 text-center text-xs font-semibold text-slate-400 uppercase">Count</th>
+              <th class="px-4 py-3 text-right text-xs font-semibold text-slate-400 uppercase">Total Incentive</th>
+              <th class="px-4 py-3 text-center text-xs font-semibold text-slate-400 uppercase">% of Total</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-700/30">
+            ${categories.map(c => {
+              const incentive = calcIncentive(c.data);
+              const pct = total > 0 ? ((c.count / total) * 100).toFixed(1) : 0;
+              return `
+                <tr class="hover:bg-slate-800/50 cursor-pointer" onclick="setActionSubTab('${c.key}')">
+                  <td class="px-4 py-3">
+                    <span class="inline-flex items-center gap-2">
+                      <span class="w-3 h-3 rounded-full bg-${c.color}-500"></span>
+                      <span class="font-medium text-${c.color}-400">${c.label}</span>
+                    </span>
+                  </td>
+                  <td class="px-4 py-3 text-center font-bold text-${c.color}-400">${c.count}</td>
+                  <td class="px-4 py-3 text-right text-slate-300">${fmtCurrency(incentive)}</td>
+                  <td class="px-4 py-3 text-center">
+                    <div class="flex items-center justify-center gap-2">
+                      <div class="w-16 h-2 bg-slate-700 rounded-full overflow-hidden">
+                        <div class="h-full bg-${c.color}-500 rounded-full" style="width: ${pct}%"></div>
+                      </div>
+                      <span class="text-xs text-slate-400">${pct}%</span>
+                    </div>
+                  </td>
+                </tr>
+              `;
+            }).join('')}
+            <tr class="border-t-2 border-slate-600 bg-slate-900/50 font-bold">
+              <td class="px-4 py-3 text-slate-300">Total</td>
+              <td class="px-4 py-3 text-center text-white">${total}</td>
+              <td class="px-4 py-3 text-right text-white">${fmtCurrency(totalIncentive)}</td>
+              <td class="px-4 py-3 text-center text-slate-400">100%</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
   `;
 }
 
@@ -3193,6 +3520,55 @@ function renderActionPtoNotSubmitted(deals) {
                 <td class="px-3 py-2 text-xs mono">${d.installDate || '—'}</td>
                 <td class="px-3 py-2 font-bold ${d.daysSinceInstall > 30 ? 'text-red-400' : d.daysSinceInstall > 14 ? 'text-amber-400' : 'text-slate-300'}">${d.daysSinceInstall !== null ? d.daysSinceInstall + 'd' : '—'}</td>
                 <td class="px-3 py-2"><span class="px-1.5 py-0.5 rounded text-xs ${d.inspectionStatus === 'Passed' ? 'bg-green-900/50 text-green-400 border border-green-800' : 'bg-slate-700 text-slate-400 border border-slate-600'}">${d.inspectionStatus || 'Not Set'}</span></td>
+                <td class="px-3 py-2 text-xs">${d.interconnectionStatus || '—'}</td>
+                <td class="px-3 py-2 text-xs">${d.installer || '—'}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
+
+function renderPtoOver90Days(deals) {
+  const sorted = sortPtoData(deals, state.ptoSortBy || 'daysSinceSubmitted', state.ptoSortDir);
+  const totalIncentive = deals.reduce((sum, d) => sum + parseNum(d.currentIncentive || d.finalIncentive), 0);
+  return `
+    <div class="bg-pink-500/10 border border-pink-500/30 rounded-lg p-4 mb-4">
+      <h3 class="font-semibold text-pink-400">⚠️ PTO Over 90 Days</h3>
+      <p class="text-sm text-slate-400 mt-1">Projects where PTO was submitted more than 90 days ago but still not approved</p>
+      <div class="mt-3 flex gap-6">
+        <div>
+          <div class="text-2xl font-bold text-pink-400">${deals.length}</div>
+          <div class="text-xs text-slate-400">projects</div>
+        </div>
+        <div>
+          <div class="text-2xl font-bold text-pink-400">${fmtCurrency(totalIncentive)}</div>
+          <div class="text-xs text-slate-400">total incentive</div>
+        </div>
+      </div>
+    </div>
+    <div class="bg-slate-800/50 rounded-lg border border-slate-700/50 overflow-hidden">
+      <div class="table-container overflow-x-auto" style="max-height: 600px;">
+        <table class="w-full text-sm">
+          <thead class="sticky-header"><tr>
+            ${ptoSortHeader('Customer', 'customer')}
+            ${ptoSortHeader('Utility', 'utility')}
+            ${ptoSortHeader('Install Date', 'installDate')}
+            <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">PTO Submitted</th>
+            ${ptoSortHeader('Days Waiting', 'daysSinceSubmitted')}
+            <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Interconnection</th>
+            ${ptoSortHeader('Installer', 'installer')}
+          </tr></thead>
+          <tbody class="divide-y divide-slate-700/30">
+            ${sorted.length === 0 ? '<tr><td colspan="7" class="px-3 py-8 text-center text-slate-500">No projects in this category</td></tr>' : sorted.map(d => `
+              <tr class="hover:bg-slate-800/50">
+                <td class="px-3 py-2">${customerCell(d)}${d.applicationCode ? '<br><span class="text-xs text-slate-500 mono">'+d.applicationCode+'</span>' : ''}</td>
+                <td class="px-3 py-2"><span class="px-1.5 py-0.5 rounded text-xs border ${getUtilityStyle(getUtility(d))}">${getUtility(d) || '—'}</span></td>
+                <td class="px-3 py-2 text-xs mono">${d.installDate || '—'}</td>
+                <td class="px-3 py-2 text-xs mono">${d.ptoSubmittedDate || '—'}</td>
+                <td class="px-3 py-2 font-bold ${d.daysSinceSubmitted > 120 ? 'text-red-400' : 'text-pink-400'}">${d.daysSinceSubmitted !== null ? d.daysSinceSubmitted + 'd' : '—'}</td>
                 <td class="px-3 py-2 text-xs">${d.interconnectionStatus || '—'}</td>
                 <td class="px-3 py-2 text-xs">${d.installer || '—'}</td>
               </tr>
@@ -3340,7 +3716,7 @@ async function saveCurrentPtoSnapshot() {
 }
 
 function renderIcfSummary(data) {
-  const total = data.ptoNoIcf.length + data.revisions.length + data.icfSubmitted.length + data.icfReview.length + data.icfInspection.length + data.pendingPayment.length;
+  const total = data.ptoNoIcf.length + data.revisions.length + data.icfSubmitted.length + data.icfReview.length + data.icfInspection.length + data.pendingPayment.length + data.icfUncategorized.length;
   
   const calcIncentive = (deals) => deals.reduce((sum, d) => sum + parseNum(d.currentIncentive || d.finalIncentive), 0);
   const calcPayment = (deals) => deals.reduce((sum, d) => sum + parseNum(d.paymentAmount), 0);
@@ -3351,7 +3727,8 @@ function renderIcfSummary(data) {
     { label: 'ICF Submitted', count: data.icfSubmitted.length, amount: calcIncentive(data.icfSubmitted), color: 'blue', key: 'icfSubmitted' },
     { label: 'ICF Review', count: data.icfReview.length, amount: calcIncentive(data.icfReview), color: 'purple', key: 'icfReview' },
     { label: 'ICF Inspection', count: data.icfInspection.length, amount: calcIncentive(data.icfInspection), color: 'cyan', key: 'icfInspection' },
-    { label: 'Pending Payment', count: data.pendingPayment.length, amount: calcIncentive(data.pendingPayment), color: 'emerald', key: 'pendingPayment' }
+    { label: 'Pending Payment', count: data.pendingPayment.length, amount: calcIncentive(data.pendingPayment), color: 'emerald', key: 'pendingPayment' },
+    { label: 'Uncategorized', count: data.icfUncategorized.length, amount: calcIncentive(data.icfUncategorized), color: 'slate', key: 'icfUncategorized' }
   ];
   
   const totalIncentive = pipelineCategories.reduce((sum, c) => sum + c.amount, 0);
@@ -3454,7 +3831,6 @@ function renderPtoNoIcf(deals) {
   const sgipRateOpts = getFilterOptions(deals, 'sgipRateStatus', d => d.sgipRateStatus || '(empty)');
   const icfStatusOpts = getFilterOptions(deals, 'sgipIcfStatus', d => d.sgipIcfStatus || '(empty)');
   const drProgramOpts = getFilterOptions(deals, 'demandResponseProgram', d => d.demandResponseProgram || '(empty)');
-  const budgetCategoryOpts = getFilterOptions(deals, 'budgetCategory', d => getBudgetCategoryGroup(d.budgetCategory));
   
   // Apply filters
   const filtered = applyIcfFilters(deals);
@@ -3484,24 +3860,26 @@ function renderPtoNoIcf(deals) {
           <thead class="sticky-header"><tr>
             ${icfSortHeader('Customer', 'customer')}
             ${icfFilterHeader('Utility', 'utility', utilityOpts, 'utility')}
-            ${icfFilterHeader('Budget Category', 'budgetCategory', budgetCategoryOpts)}
             ${icfSortHeader('Install Date', 'installDate')}
             ${icfSortHeader('PTO Date', 'ptoDate')}
             ${icfSortHeader('Days Since PTO', 'daysSincePto')}
             ${icfFilterHeader('Current Status', 'sgipProgress', sgipProgressOpts)}
+            ${icfFilterHeader('SGIP Rate', 'sgipRateStatus', sgipRateOpts)}
             ${icfFilterHeader('ICF Status', 'sgipIcfStatus', icfStatusOpts)}
+            ${icfFilterHeader('DR Program', 'demandResponseProgram', drProgramOpts)}
           </tr></thead>
           <tbody class="divide-y divide-slate-700/30">
-            ${sorted.length === 0 ? '<tr><td colspan="8" class="px-3 py-8 text-center text-slate-500">No projects in this category</td></tr>' : sorted.map(d => `
+            ${sorted.length === 0 ? '<tr><td colspan="9" class="px-3 py-8 text-center text-slate-500">No projects in this category</td></tr>' : sorted.map(d => `
               <tr class="hover:bg-slate-800/50">
                 <td class="px-3 py-2">${customerCell(d)}${d.applicationCode ? '<br><span class="text-xs text-slate-500 mono">'+d.applicationCode+'</span>' : ''}</td>
                 <td class="px-3 py-2"><span class="px-1.5 py-0.5 rounded text-xs border ${getUtilityStyle(getUtility(d))}">${getUtility(d) || '—'}</span></td>
-                <td class="px-3 py-2">${budgetCategoryCell(d)}</td>
                 <td class="px-3 py-2 text-xs mono">${d.installDate || '—'}</td>
                 <td class="px-3 py-2 text-xs mono text-green-400">${d.ptoDate || '—'}</td>
                 <td class="px-3 py-2 font-bold ${d.daysSincePto > 30 ? 'text-red-400' : d.daysSincePto > 14 ? 'text-amber-400' : 'text-slate-300'}">${d.daysSincePto !== null ? d.daysSincePto + 'd' : '—'}</td>
                 <td class="px-3 py-2"><span class="px-1.5 py-0.5 rounded text-xs bg-amber-900/50 text-amber-400 border border-amber-800">${d.sgipProgress || '—'}</span></td>
+                <td class="px-3 py-2 text-xs">${d.sgipRateStatus || '—'}</td>
                 <td class="px-3 py-2 text-xs">${d.sgipIcfStatus || '—'}</td>
+                <td class="px-3 py-2 text-xs">${d.demandResponseProgram || '—'}</td>
               </tr>
             `).join('')}
           </tbody>
@@ -3515,8 +3893,9 @@ function renderRevisions(deals) {
   // Get filter options for all filterable columns
   const utilityOpts = getFilterOptions(deals, 'utility', d => getUtility(d) || '(empty)');
   const suspendedTypeOpts = getFilterOptions(deals, 'suspendedType', d => d.suspendedType || '(empty)');
+  const sgipRateOpts = getFilterOptions(deals, 'sgipRateStatus', d => d.sgipRateStatus || '(empty)');
   const icfStatusOpts = getFilterOptions(deals, 'sgipIcfStatus', d => d.sgipIcfStatus || '(empty)');
-  const budgetCategoryOpts = getFilterOptions(deals, 'budgetCategory', d => getBudgetCategoryGroup(d.budgetCategory));
+  const drProgramOpts = getFilterOptions(deals, 'demandResponseProgram', d => d.demandResponseProgram || '(empty)');
   
   // Apply filters
   const filtered = applyIcfFilters(deals);
@@ -3546,26 +3925,28 @@ function renderRevisions(deals) {
           <thead class="sticky-header"><tr>
             ${icfSortHeader('Customer', 'customer')}
             ${icfFilterHeader('Utility', 'utility', utilityOpts, 'utility')}
-            ${icfFilterHeader('Budget Category', 'budgetCategory', budgetCategoryOpts)}
             ${icfSortHeader('Install Date', 'installDate')}
             ${icfFilterHeader('Suspended Type', 'suspendedType', suspendedTypeOpts)}
             ${icfSortHeader('Suspended Date', 'icfSuspendedDate')}
             ${icfSortHeader('Days Suspended', 'daysSinceSuspended')}
             ${icfSortHeader('Next Due Date', 'nextDueDate')}
+            ${icfFilterHeader('SGIP Rate', 'sgipRateStatus', sgipRateOpts)}
             ${icfFilterHeader('ICF Status', 'sgipIcfStatus', icfStatusOpts)}
+            ${icfFilterHeader('DR Program', 'demandResponseProgram', drProgramOpts)}
           </tr></thead>
           <tbody class="divide-y divide-slate-700/30">
-            ${sorted.length === 0 ? '<tr><td colspan="9" class="px-3 py-8 text-center text-slate-500">No projects in this category</td></tr>' : sorted.map(d => `
+            ${sorted.length === 0 ? '<tr><td colspan="10" class="px-3 py-8 text-center text-slate-500">No projects in this category</td></tr>' : sorted.map(d => `
               <tr class="hover:bg-slate-800/50">
                 <td class="px-3 py-2">${customerCell(d)}${d.applicationCode ? '<br><span class="text-xs text-slate-500 mono">'+d.applicationCode+'</span>' : ''}</td>
                 <td class="px-3 py-2"><span class="px-1.5 py-0.5 rounded text-xs border ${getUtilityStyle(getUtility(d))}">${getUtility(d) || '—'}</span></td>
-                <td class="px-3 py-2">${budgetCategoryCell(d)}</td>
                 <td class="px-3 py-2 text-xs mono">${d.installDate || '—'}</td>
                 <td class="px-3 py-2"><span class="px-1.5 py-0.5 rounded text-xs ${d.suspendedType.includes('Inspection') ? 'bg-orange-900/50 text-orange-400 border border-orange-800' : 'bg-red-900/50 text-red-400 border border-red-800'}">${d.suspendedType}</span></td>
                 <td class="px-3 py-2 text-xs mono">${d.icfSuspendedDate || '—'}</td>
                 <td class="px-3 py-2 font-bold ${d.daysSinceSuspended > 30 ? 'text-red-400' : d.daysSinceSuspended > 14 ? 'text-amber-400' : 'text-slate-300'}">${d.daysSinceSuspended !== null ? d.daysSinceSuspended + 'd' : '—'}</td>
                 <td class="px-3 py-2 text-xs mono text-amber-400">${d.nextDueDate || '—'}</td>
+                <td class="px-3 py-2 text-xs">${d.sgipRateStatus || '—'}</td>
                 <td class="px-3 py-2 text-xs">${d.sgipIcfStatus || '—'}</td>
+                <td class="px-3 py-2 text-xs">${d.demandResponseProgram || '—'}</td>
               </tr>
             `).join('')}
           </tbody>
@@ -3576,30 +3957,21 @@ function renderRevisions(deals) {
 }
 
 function renderIcfSubmittedDeep(deals) {
-  // Get filter options
-  const utilityOpts = getFilterOptions(deals, 'utility', d => getUtility(d) || '(empty)');
-  const budgetCategoryOpts = getFilterOptions(deals, 'budgetCategory', d => getBudgetCategoryGroup(d.budgetCategory));
-  
-  // Apply filters
-  const filtered = applyIcfFilters(deals);
-  const sorted = sortIcfData(filtered, state.icfSortBy || 'daysPending', state.icfSortDir);
-  const totalIncentive = filtered.reduce((sum, d) => sum + parseNum(d.currentIncentive || d.finalIncentive), 0);
-  const isFiltered = hasIcfFiltersActive();
-  
+  const sorted = sortIcfData(deals, state.icfSortBy || 'daysPending', state.icfSortDir);
+  const totalIncentive = deals.reduce((sum, d) => sum + parseNum(d.currentIncentive || d.finalIncentive), 0);
   return `
     <div class="bg-blue-500/10 border border-blue-500/30 rounded-lg p-4 mb-4">
       <h3 class="font-semibold text-blue-400">📤 ICF Submitted</h3>
       <p class="text-sm text-slate-400 mt-1">Projects with ICF Submitted or ICF Resubmitted status</p>
       <div class="mt-3 flex gap-6">
         <div>
-          <div class="text-2xl font-bold text-blue-400">${filtered.length}${isFiltered ? '<span class="text-sm text-slate-400">/' + deals.length + '</span>' : ''}</div>
-          <div class="text-xs text-slate-400">projects with ICF submitted${isFiltered ? ' (filtered)' : ''}</div>
+          <div class="text-2xl font-bold text-blue-400">${deals.length}</div>
+          <div class="text-xs text-slate-400">projects with ICF submitted</div>
         </div>
         <div>
           <div class="text-2xl font-bold text-blue-400">${fmtCurrency(totalIncentive)}</div>
           <div class="text-xs text-slate-400">total incentive</div>
         </div>
-        ${isFiltered ? '<button onclick="clearIcfFilters()" class="ml-auto px-3 py-1 text-xs bg-slate-700 hover:bg-slate-600 rounded">Clear Filters</button>' : ''}
       </div>
     </div>
     <div class="bg-slate-800/50 rounded-lg border border-slate-700/50 overflow-hidden">
@@ -3607,19 +3979,17 @@ function renderIcfSubmittedDeep(deals) {
         <table class="w-full text-sm">
           <thead class="sticky-header"><tr>
             ${icfSortHeader('Customer', 'customer')}
-            ${icfFilterHeader('Utility', 'utility', utilityOpts, 'utility')}
-            ${icfFilterHeader('Budget Category', 'budgetCategory', budgetCategoryOpts)}
+            ${icfSortHeader('Utility', 'utility')}
             ${icfSortHeader('Install Date', 'installDate')}
             ${icfSortHeader('ICF Submitted', 'icfSubmittedDate')}
             <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Resubmitted</th>
             ${icfSortHeader('Days Pending', 'daysPending')}
           </tr></thead>
           <tbody class="divide-y divide-slate-700/30">
-            ${sorted.length === 0 ? '<tr><td colspan="7" class="px-3 py-8 text-center text-slate-500">No projects in this category</td></tr>' : sorted.map(d => `
+            ${sorted.length === 0 ? '<tr><td colspan="6" class="px-3 py-8 text-center text-slate-500">No projects in this category</td></tr>' : sorted.map(d => `
               <tr class="hover:bg-slate-800/50">
                 <td class="px-3 py-2">${customerCell(d)}${d.applicationCode ? '<br><span class="text-xs text-slate-500 mono">'+d.applicationCode+'</span>' : ''}</td>
                 <td class="px-3 py-2"><span class="px-1.5 py-0.5 rounded text-xs border ${getUtilityStyle(getUtility(d))}">${getUtility(d) || '—'}</span></td>
-                <td class="px-3 py-2">${budgetCategoryCell(d)}</td>
                 <td class="px-3 py-2 text-xs mono">${d.installDate || '—'}</td>
                 <td class="px-3 py-2 text-xs mono">${d.icfSubmittedDate || '—'}</td>
                 <td class="px-3 py-2 text-xs mono">${d.icfResubmittedDate || '—'}</td>
@@ -3634,30 +4004,21 @@ function renderIcfSubmittedDeep(deals) {
 }
 
 function renderIcfReview(deals) {
-  // Get filter options
-  const utilityOpts = getFilterOptions(deals, 'utility', d => getUtility(d) || '(empty)');
-  const budgetCategoryOpts = getFilterOptions(deals, 'budgetCategory', d => getBudgetCategoryGroup(d.budgetCategory));
-  
-  // Apply filters
-  const filtered = applyIcfFilters(deals);
-  const sorted = sortIcfData(filtered, state.icfSortBy || 'daysSinceSubmitted', state.icfSortDir);
-  const totalIncentive = filtered.reduce((sum, d) => sum + parseNum(d.currentIncentive || d.finalIncentive), 0);
-  const isFiltered = hasIcfFiltersActive();
-  
+  const sorted = sortIcfData(deals, state.icfSortBy || 'daysSinceSubmitted', state.icfSortDir);
+  const totalIncentive = deals.reduce((sum, d) => sum + parseNum(d.currentIncentive || d.finalIncentive), 0);
   return `
     <div class="bg-purple-500/10 border border-purple-500/30 rounded-lg p-4 mb-4">
       <h3 class="font-semibold text-purple-400">🔍 ICF Review</h3>
       <p class="text-sm text-slate-400 mt-1">Projects in ICF Review or ICF Technical Review status</p>
       <div class="mt-3 flex gap-6">
         <div>
-          <div class="text-2xl font-bold text-purple-400">${filtered.length}${isFiltered ? '<span class="text-sm text-slate-400">/' + deals.length + '</span>' : ''}</div>
-          <div class="text-xs text-slate-400">projects under review${isFiltered ? ' (filtered)' : ''}</div>
+          <div class="text-2xl font-bold text-purple-400">${deals.length}</div>
+          <div class="text-xs text-slate-400">projects under review</div>
         </div>
         <div>
           <div class="text-2xl font-bold text-purple-400">${fmtCurrency(totalIncentive)}</div>
           <div class="text-xs text-slate-400">total incentive</div>
         </div>
-        ${isFiltered ? '<button onclick="clearIcfFilters()" class="ml-auto px-3 py-1 text-xs bg-slate-700 hover:bg-slate-600 rounded">Clear Filters</button>' : ''}
       </div>
     </div>
     <div class="bg-slate-800/50 rounded-lg border border-slate-700/50 overflow-hidden">
@@ -3665,11 +4026,11 @@ function renderIcfReview(deals) {
         <table class="w-full text-sm">
           <thead class="sticky-header"><tr>
             ${icfSortHeader('Customer', 'customer')}
-            ${icfFilterHeader('Utility', 'utility', utilityOpts, 'utility')}
-            ${icfFilterHeader('Budget Category', 'budgetCategory', budgetCategoryOpts)}
+            ${icfSortHeader('Utility', 'utility')}
             ${icfSortHeader('Install Date', 'installDate')}
             <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Review Type</th>
             ${icfSortHeader('ICF Submitted', 'icfSubmittedDate')}
+            ${icfSortHeader('Last Resubmitted', 'icfResubmittedDate')}
             ${icfSortHeader('Days Since Last Submitted', 'daysSinceSubmitted')}
           </tr></thead>
           <tbody class="divide-y divide-slate-700/30">
@@ -3677,10 +4038,10 @@ function renderIcfReview(deals) {
               <tr class="hover:bg-slate-800/50">
                 <td class="px-3 py-2">${customerCell(d)}${d.applicationCode ? '<br><span class="text-xs text-slate-500 mono">'+d.applicationCode+'</span>' : ''}</td>
                 <td class="px-3 py-2"><span class="px-1.5 py-0.5 rounded text-xs border ${getUtilityStyle(getUtility(d))}">${getUtility(d) || '—'}</span></td>
-                <td class="px-3 py-2">${budgetCategoryCell(d)}</td>
                 <td class="px-3 py-2 text-xs mono">${d.installDate || '—'}</td>
                 <td class="px-3 py-2"><span class="px-1.5 py-0.5 rounded text-xs ${(d.sgipProgress || '').toLowerCase().includes('technical') ? 'bg-violet-900/50 text-violet-400 border border-violet-800' : 'bg-purple-900/50 text-purple-400 border border-purple-800'}">${(d.sgipProgress || '').toLowerCase().includes('technical') ? 'Technical Review' : 'Review'}</span></td>
                 <td class="px-3 py-2 text-xs mono">${d.icfSubmittedDate || '—'}</td>
+                <td class="px-3 py-2 text-xs mono ${d.icfResubmittedDate ? 'text-amber-400' : 'text-slate-500'}">${d.icfResubmittedDate || '—'}</td>
                 <td class="px-3 py-2 font-bold ${d.daysSinceSubmitted > 45 ? 'text-red-400' : d.daysSinceSubmitted > 30 ? 'text-amber-400' : 'text-slate-300'}">${d.daysSinceSubmitted !== null ? d.daysSinceSubmitted + 'd' : '—'}</td>
               </tr>
             `).join('')}
@@ -3692,30 +4053,21 @@ function renderIcfReview(deals) {
 }
 
 function renderIcfInspection(deals) {
-  // Get filter options
-  const utilityOpts = getFilterOptions(deals, 'utility', d => getUtility(d) || '(empty)');
-  const budgetCategoryOpts = getFilterOptions(deals, 'budgetCategory', d => getBudgetCategoryGroup(d.budgetCategory));
-  
-  // Apply filters
-  const filtered = applyIcfFilters(deals);
-  const sorted = sortIcfData(filtered, state.icfSortBy || 'icfInspectionDate', state.icfSortDir);
-  const totalIncentive = filtered.reduce((sum, d) => sum + parseNum(d.currentIncentive || d.finalIncentive), 0);
-  const isFiltered = hasIcfFiltersActive();
-  
+  const sorted = sortIcfData(deals, state.icfSortBy || 'icfInspectionDate', state.icfSortDir);
+  const totalIncentive = deals.reduce((sum, d) => sum + parseNum(d.currentIncentive || d.finalIncentive), 0);
   return `
     <div class="bg-cyan-500/10 border border-cyan-500/30 rounded-lg p-4 mb-4">
       <h3 class="font-semibold text-cyan-400">🔎 ICF Inspection</h3>
       <p class="text-sm text-slate-400 mt-1">Projects in ICF Inspection status</p>
       <div class="mt-3 flex gap-6">
         <div>
-          <div class="text-2xl font-bold text-cyan-400">${filtered.length}${isFiltered ? '<span class="text-sm text-slate-400">/' + deals.length + '</span>' : ''}</div>
-          <div class="text-xs text-slate-400">projects awaiting inspection${isFiltered ? ' (filtered)' : ''}</div>
+          <div class="text-2xl font-bold text-cyan-400">${deals.length}</div>
+          <div class="text-xs text-slate-400">projects awaiting inspection</div>
         </div>
         <div>
           <div class="text-2xl font-bold text-cyan-400">${fmtCurrency(totalIncentive)}</div>
           <div class="text-xs text-slate-400">total incentive</div>
         </div>
-        ${isFiltered ? '<button onclick="clearIcfFilters()" class="ml-auto px-3 py-1 text-xs bg-slate-700 hover:bg-slate-600 rounded">Clear Filters</button>' : ''}
       </div>
     </div>
     <div class="bg-slate-800/50 rounded-lg border border-slate-700/50 overflow-hidden">
@@ -3723,18 +4075,16 @@ function renderIcfInspection(deals) {
         <table class="w-full text-sm">
           <thead class="sticky-header"><tr>
             ${icfSortHeader('Customer', 'customer')}
-            ${icfFilterHeader('Utility', 'utility', utilityOpts, 'utility')}
-            ${icfFilterHeader('Budget Category', 'budgetCategory', budgetCategoryOpts)}
+            ${icfSortHeader('Utility', 'utility')}
             ${icfSortHeader('Install Date', 'installDate')}
             ${icfSortHeader('ICF Inspection Date', 'icfInspectionDate')}
             ${icfSortHeader('Inspection Date', 'inspectionDate')}
           </tr></thead>
           <tbody class="divide-y divide-slate-700/30">
-            ${sorted.length === 0 ? '<tr><td colspan="6" class="px-3 py-8 text-center text-slate-500">No projects in this category</td></tr>' : sorted.map(d => `
+            ${sorted.length === 0 ? '<tr><td colspan="5" class="px-3 py-8 text-center text-slate-500">No projects in this category</td></tr>' : sorted.map(d => `
               <tr class="hover:bg-slate-800/50">
                 <td class="px-3 py-2">${customerCell(d)}${d.applicationCode ? '<br><span class="text-xs text-slate-500 mono">'+d.applicationCode+'</span>' : ''}</td>
                 <td class="px-3 py-2"><span class="px-1.5 py-0.5 rounded text-xs border ${getUtilityStyle(getUtility(d))}">${getUtility(d) || '—'}</span></td>
-                <td class="px-3 py-2">${budgetCategoryCell(d)}</td>
                 <td class="px-3 py-2 text-xs mono">${d.installDate || '—'}</td>
                 <td class="px-3 py-2 text-xs mono">${d.icfInspectionDate || '—'}</td>
                 <td class="px-3 py-2 text-xs mono text-cyan-400">${d.inspectionDate || '—'}</td>
@@ -3748,30 +4098,21 @@ function renderIcfInspection(deals) {
 }
 
 function renderPendingPayment(deals) {
-  // Get filter options
-  const utilityOpts = getFilterOptions(deals, 'utility', d => getUtility(d) || '(empty)');
-  const budgetCategoryOpts = getFilterOptions(deals, 'budgetCategory', d => getBudgetCategoryGroup(d.budgetCategory));
-  
-  // Apply filters
-  const filtered = applyIcfFilters(deals);
-  const sorted = sortIcfData(filtered, state.icfSortBy || 'daysSinceApproved', state.icfSortDir);
-  const totalIncentive = filtered.reduce((sum, d) => sum + parseNum(d.finalIncentive || d.currentIncentive), 0);
-  const isFiltered = hasIcfFiltersActive();
-  
+  const sorted = sortIcfData(deals, state.icfSortBy || 'daysSinceApproved', state.icfSortDir);
+  const totalIncentive = deals.reduce((sum, d) => sum + parseNum(d.finalIncentive || d.currentIncentive), 0);
   return `
     <div class="bg-emerald-500/10 border border-emerald-500/30 rounded-lg p-4 mb-4">
       <h3 class="font-semibold text-emerald-400">💰 Pending Payment</h3>
       <p class="text-sm text-slate-400 mt-1">Projects in ICF Pending Payment status</p>
       <div class="mt-3 flex gap-6">
         <div>
-          <div class="text-2xl font-bold text-emerald-400">${filtered.length}${isFiltered ? '<span class="text-sm text-slate-400">/' + deals.length + '</span>' : ''}</div>
-          <div class="text-xs text-slate-400">projects awaiting payment${isFiltered ? ' (filtered)' : ''}</div>
+          <div class="text-2xl font-bold text-emerald-400">${deals.length}</div>
+          <div class="text-xs text-slate-400">projects awaiting payment</div>
         </div>
         <div>
           <div class="text-2xl font-bold text-emerald-400">${fmtCurrency(totalIncentive)}</div>
           <div class="text-xs text-slate-400">total incentive</div>
         </div>
-        ${isFiltered ? '<button onclick="clearIcfFilters()" class="ml-auto px-3 py-1 text-xs bg-slate-700 hover:bg-slate-600 rounded">Clear Filters</button>' : ''}
       </div>
     </div>
     <div class="bg-slate-800/50 rounded-lg border border-slate-700/50 overflow-hidden">
@@ -3779,19 +4120,17 @@ function renderPendingPayment(deals) {
         <table class="w-full text-sm">
           <thead class="sticky-header"><tr>
             ${icfSortHeader('Customer', 'customer')}
-            ${icfFilterHeader('Utility', 'utility', utilityOpts, 'utility')}
-            ${icfFilterHeader('Budget Category', 'budgetCategory', budgetCategoryOpts)}
+            ${icfSortHeader('Utility', 'utility')}
             ${icfSortHeader('Install Date', 'installDate')}
             ${icfSortHeader('ICF Approved Date', 'icfPendingPaymentDate')}
             ${icfSortHeader('Days', 'daysSinceApproved')}
             ${icfSortHeader('Incentive', 'incentive')}
           </tr></thead>
           <tbody class="divide-y divide-slate-700/30">
-            ${sorted.length === 0 ? '<tr><td colspan="7" class="px-3 py-8 text-center text-slate-500">No projects in this category</td></tr>' : sorted.map(d => `
+            ${sorted.length === 0 ? '<tr><td colspan="6" class="px-3 py-8 text-center text-slate-500">No projects in this category</td></tr>' : sorted.map(d => `
               <tr class="hover:bg-slate-800/50">
                 <td class="px-3 py-2">${customerCell(d)}${d.applicationCode ? '<br><span class="text-xs text-slate-500 mono">'+d.applicationCode+'</span>' : ''}</td>
                 <td class="px-3 py-2"><span class="px-1.5 py-0.5 rounded text-xs border ${getUtilityStyle(getUtility(d))}">${getUtility(d) || '—'}</span></td>
-                <td class="px-3 py-2">${budgetCategoryCell(d)}</td>
                 <td class="px-3 py-2 text-xs mono">${d.installDate || '—'}</td>
                 <td class="px-3 py-2 text-xs mono">${d.icfPendingPaymentDate || '—'}</td>
                 <td class="px-3 py-2 font-bold ${d.daysSinceApproved > 60 ? 'text-red-400' : d.daysSinceApproved > 30 ? 'text-amber-400' : 'text-slate-300'}">${d.daysSinceApproved !== null ? d.daysSinceApproved + 'd' : '—'}</td>
@@ -3806,30 +4145,21 @@ function renderPendingPayment(deals) {
 }
 
 function renderPaymentComplete(deals) {
-  // Get filter options
-  const utilityOpts = getFilterOptions(deals, 'utility', d => getUtility(d) || '(empty)');
-  const budgetCategoryOpts = getFilterOptions(deals, 'budgetCategory', d => getBudgetCategoryGroup(d.budgetCategory));
-  
-  // Apply filters
-  const filtered = applyIcfFilters(deals);
-  const sorted = sortIcfData(filtered, state.icfSortBy || 'paymentCompletedDate', state.icfSortDir);
-  const totalPayment = filtered.reduce((sum, d) => sum + parseNum(d.paymentAmount), 0);
-  const isFiltered = hasIcfFiltersActive();
-  
+  const sorted = sortIcfData(deals, state.icfSortBy || 'paymentCompletedDate', state.icfSortDir);
+  const totalPayment = deals.reduce((sum, d) => sum + parseNum(d.paymentAmount), 0);
   return `
     <div class="bg-green-500/10 border border-green-500/30 rounded-lg p-4 mb-4">
       <h3 class="font-semibold text-green-400">✅ Payment Complete</h3>
       <p class="text-sm text-slate-400 mt-1">Projects with completed payments</p>
       <div class="mt-3 flex gap-6">
         <div>
-          <div class="text-2xl font-bold text-green-400">${filtered.length}${isFiltered ? '<span class="text-sm text-slate-400">/' + deals.length + '</span>' : ''}</div>
-          <div class="text-xs text-slate-400">projects paid${isFiltered ? ' (filtered)' : ''}</div>
+          <div class="text-2xl font-bold text-green-400">${deals.length}</div>
+          <div class="text-xs text-slate-400">projects paid</div>
         </div>
         <div>
           <div class="text-2xl font-bold text-green-400">${fmtCurrency(totalPayment)}</div>
           <div class="text-xs text-slate-400">total paid</div>
         </div>
-        ${isFiltered ? '<button onclick="clearIcfFilters()" class="ml-auto px-3 py-1 text-xs bg-slate-700 hover:bg-slate-600 rounded">Clear Filters</button>' : ''}
       </div>
     </div>
     <div class="bg-slate-800/50 rounded-lg border border-slate-700/50 overflow-hidden">
@@ -3837,23 +4167,70 @@ function renderPaymentComplete(deals) {
         <table class="w-full text-sm">
           <thead class="sticky-header"><tr>
             ${icfSortHeader('Customer', 'customer')}
-            ${icfFilterHeader('Utility', 'utility', utilityOpts, 'utility')}
-            ${icfFilterHeader('Budget Category', 'budgetCategory', budgetCategoryOpts)}
+            ${icfSortHeader('Utility', 'utility')}
             ${icfSortHeader('Install Date', 'installDate')}
             ${icfSortHeader('ICF Approved Date', 'icfPendingPaymentDate')}
             ${icfSortHeader('Payment Completed Date', 'paymentCompletedDate')}
             ${icfSortHeader('Payment Amount', 'paymentAmount')}
           </tr></thead>
           <tbody class="divide-y divide-slate-700/30">
-            ${sorted.length === 0 ? '<tr><td colspan="7" class="px-3 py-8 text-center text-slate-500">No projects in this category</td></tr>' : sorted.map(d => `
+            ${sorted.length === 0 ? '<tr><td colspan="6" class="px-3 py-8 text-center text-slate-500">No projects in this category</td></tr>' : sorted.map(d => `
               <tr class="hover:bg-slate-800/50">
                 <td class="px-3 py-2">${customerCell(d)}${d.applicationCode ? '<br><span class="text-xs text-slate-500 mono">'+d.applicationCode+'</span>' : ''}</td>
                 <td class="px-3 py-2"><span class="px-1.5 py-0.5 rounded text-xs border ${getUtilityStyle(getUtility(d))}">${getUtility(d) || '—'}</span></td>
-                <td class="px-3 py-2">${budgetCategoryCell(d)}</td>
                 <td class="px-3 py-2 text-xs mono">${d.installDate || '—'}</td>
                 <td class="px-3 py-2 text-xs mono">${d.icfPendingPaymentDate || '—'}</td>
                 <td class="px-3 py-2 text-xs mono text-green-400">${d.paymentCompletedDate || '—'}</td>
                 <td class="px-3 py-2 text-right font-bold text-green-400">${d.paymentAmount ? fmtCurrency(parseNum(d.paymentAmount)) : '—'}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
+
+function renderIcfUncategorized(deals) {
+  const sorted = sortIcfData(deals, state.icfSortBy || 'daysSincePto', state.icfSortDir);
+  const totalIncentive = deals.reduce((sum, d) => sum + parseNum(d.currentIncentive || d.finalIncentive), 0);
+  return `
+    <div class="bg-slate-500/10 border border-slate-500/30 rounded-lg p-4 mb-4">
+      <h3 class="font-semibold text-slate-400">❓ ICF Uncategorized Projects</h3>
+      <p class="text-sm text-slate-400 mt-1">Projects with PTO but SGIP status doesn't match any known ICF stage - may need data cleanup</p>
+      <div class="mt-3 flex gap-6">
+        <div>
+          <div class="text-2xl font-bold text-slate-400">${deals.length}</div>
+          <div class="text-xs text-slate-400">projects</div>
+        </div>
+        <div>
+          <div class="text-2xl font-bold text-slate-400">${fmtCurrency(totalIncentive)}</div>
+          <div class="text-xs text-slate-400">total incentive</div>
+        </div>
+      </div>
+    </div>
+    <div class="bg-slate-800/50 rounded-lg border border-slate-700/50 overflow-hidden">
+      <div class="table-container overflow-x-auto" style="max-height: 600px;">
+        <table class="w-full text-sm">
+          <thead class="sticky-header"><tr>
+            ${icfSortHeader('Customer', 'customer')}
+            ${icfSortHeader('Utility', 'utility')}
+            ${icfSortHeader('PTO Date', 'ptoDate')}
+            ${icfSortHeader('Days Since PTO', 'daysSincePto')}
+            <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">SGIP Progress</th>
+            <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">ICF Status</th>
+            ${icfSortHeader('Incentive', 'incentive')}
+          </tr></thead>
+          <tbody class="divide-y divide-slate-700/30">
+            ${sorted.length === 0 ? '<tr><td colspan="7" class="px-3 py-8 text-center text-slate-500">No uncategorized ICF projects - all accounted for!</td></tr>' : sorted.map(d => `
+              <tr class="hover:bg-slate-800/50">
+                <td class="px-3 py-2">${customerCell(d)}${d.applicationCode ? '<br><span class="text-xs text-slate-500 mono">'+d.applicationCode+'</span>' : ''}</td>
+                <td class="px-3 py-2"><span class="px-1.5 py-0.5 rounded text-xs border ${getUtilityStyle(getUtility(d))}">${getUtility(d) || '—'}</span></td>
+                <td class="px-3 py-2 text-xs mono">${d.ptoDate || '—'}</td>
+                <td class="px-3 py-2 font-bold text-slate-400">${d.daysSincePto !== null ? d.daysSincePto + 'd' : '—'}</td>
+                <td class="px-3 py-2 text-xs">${d.sgipProgress || '—'}</td>
+                <td class="px-3 py-2 text-xs">${d.sgipIcfStatus || '—'}</td>
+                <td class="px-3 py-2 text-right">${d.currentIncentive || d.finalIncentive ? fmtCurrency(parseNum(d.currentIncentive || d.finalIncentive)) : '—'}</td>
               </tr>
             `).join('')}
           </tbody>
