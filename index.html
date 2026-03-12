@@ -1356,6 +1356,7 @@ function getIcfStatsByMonth() {
   // Get ICF data from SGIP_DATA grouped by month
   // Start from October 2025
   const startDate = new Date('2025-10-01');
+  const startMonth = '2025-10';
   
   const byMonth = {};
   
@@ -1367,38 +1368,46 @@ function getIcfStatsByMonth() {
       const date = parseDate(d.installDate);
       if (date && date >= startDate) {
         const month = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-        if (!byMonth[month]) byMonth[month] = { installs: 0, inspections: 0, ptoSubmitted: 0, ptoApproved: 0, icfSubmitted: 0, icfResubmitted: 0, icfApproved: 0 };
-        byMonth[month].installs++;
+        if (month >= startMonth) {
+          if (!byMonth[month]) byMonth[month] = { installs: 0, inspections: 0, ptoSubmitted: 0, ptoApproved: 0, icfSubmitted: 0, icfResubmitted: 0, icfApproved: 0 };
+          byMonth[month].installs++;
+        }
       }
     }
     
-    // Inspections passed - use inspectionPassedDate from HubSpot
-    if (d.inspectionPassedDate) {
-      const date = parseDate(d.inspectionPassedDate);
+    // Inspections passed - use inspectionDate from SGIP data (merged into record)
+    if (d.inspectionDate && d.inspectionDate !== '(No value)' && d.inspectionDate !== 'None') {
+      const date = parseDate(d.inspectionDate);
       if (date && date >= startDate) {
         const month = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-        if (!byMonth[month]) byMonth[month] = { installs: 0, inspections: 0, ptoSubmitted: 0, ptoApproved: 0, icfSubmitted: 0, icfResubmitted: 0, icfApproved: 0 };
-        byMonth[month].inspections++;
+        if (month >= startMonth) {
+          if (!byMonth[month]) byMonth[month] = { installs: 0, inspections: 0, ptoSubmitted: 0, ptoApproved: 0, icfSubmitted: 0, icfResubmitted: 0, icfApproved: 0 };
+          byMonth[month].inspections++;
+        }
       }
     }
     
-    // PTO Submitted
-    if (d.ptoSubmittedDate) {
+    // PTO Submitted - use ptoSubmittedDate from HubSpot
+    if (d.ptoSubmittedDate && d.ptoSubmittedDate !== '(No value)' && d.ptoSubmittedDate !== 'None') {
       const date = parseDate(d.ptoSubmittedDate);
       if (date && date >= startDate) {
         const month = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-        if (!byMonth[month]) byMonth[month] = { installs: 0, inspections: 0, ptoSubmitted: 0, ptoApproved: 0, icfSubmitted: 0, icfResubmitted: 0, icfApproved: 0 };
-        byMonth[month].ptoSubmitted++;
+        if (month >= startMonth) {
+          if (!byMonth[month]) byMonth[month] = { installs: 0, inspections: 0, ptoSubmitted: 0, ptoApproved: 0, icfSubmitted: 0, icfResubmitted: 0, icfApproved: 0 };
+          byMonth[month].ptoSubmitted++;
+        }
       }
     }
     
     // PTO Approved
-    if (d.ptoDate) {
+    if (d.ptoDate && d.ptoDate !== '(No value)' && d.ptoDate !== 'None') {
       const date = parseDate(d.ptoDate);
       if (date && date >= startDate) {
         const month = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-        if (!byMonth[month]) byMonth[month] = { installs: 0, inspections: 0, ptoSubmitted: 0, ptoApproved: 0, icfSubmitted: 0, icfResubmitted: 0, icfApproved: 0 };
-        byMonth[month].ptoApproved++;
+        if (month >= startMonth) {
+          if (!byMonth[month]) byMonth[month] = { installs: 0, inspections: 0, ptoSubmitted: 0, ptoApproved: 0, icfSubmitted: 0, icfResubmitted: 0, icfApproved: 0 };
+          byMonth[month].ptoApproved++;
+        }
       }
     }
   });
@@ -1410,8 +1419,10 @@ function getIcfStatsByMonth() {
       const date = parseDate(d.icfSubmittedDate);
       if (date && date >= startDate) {
         const month = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-        if (!byMonth[month]) byMonth[month] = { installs: 0, inspections: 0, ptoSubmitted: 0, ptoApproved: 0, icfSubmitted: 0, icfResubmitted: 0, icfApproved: 0 };
-        byMonth[month].icfSubmitted++;
+        if (month >= startMonth) {
+          if (!byMonth[month]) byMonth[month] = { installs: 0, inspections: 0, ptoSubmitted: 0, ptoApproved: 0, icfSubmitted: 0, icfResubmitted: 0, icfApproved: 0 };
+          byMonth[month].icfSubmitted++;
+        }
       }
     }
     
@@ -1420,8 +1431,10 @@ function getIcfStatsByMonth() {
       const date = parseDate(d.icfResubmittedDate);
       if (date && date >= startDate) {
         const month = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-        if (!byMonth[month]) byMonth[month] = { installs: 0, inspections: 0, ptoSubmitted: 0, ptoApproved: 0, icfSubmitted: 0, icfResubmitted: 0, icfApproved: 0 };
-        byMonth[month].icfResubmitted++;
+        if (month >= startMonth) {
+          if (!byMonth[month]) byMonth[month] = { installs: 0, inspections: 0, ptoSubmitted: 0, ptoApproved: 0, icfSubmitted: 0, icfResubmitted: 0, icfApproved: 0 };
+          byMonth[month].icfResubmitted++;
+        }
       }
     }
     
@@ -1430,14 +1443,17 @@ function getIcfStatsByMonth() {
       const date = parseDate(d.icfPendingPaymentDate);
       if (date && date >= startDate) {
         const month = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-        if (!byMonth[month]) byMonth[month] = { installs: 0, inspections: 0, ptoSubmitted: 0, ptoApproved: 0, icfSubmitted: 0, icfResubmitted: 0, icfApproved: 0 };
-        byMonth[month].icfApproved++;
+        if (month >= startMonth) {
+          if (!byMonth[month]) byMonth[month] = { installs: 0, inspections: 0, ptoSubmitted: 0, ptoApproved: 0, icfSubmitted: 0, icfResubmitted: 0, icfApproved: 0 };
+          byMonth[month].icfApproved++;
+        }
       }
     }
   });
   
-  // Sort by month descending and format
+  // Sort by month descending and format, filter to only Oct 2025+
   return Object.entries(byMonth)
+    .filter(([month]) => month >= startMonth)
     .sort((a, b) => b[0].localeCompare(a[0]))
     .map(([month, data]) => ({ 
       month, 
@@ -1471,7 +1487,7 @@ function renderIcfMonthlyStats() {
     const yMax = Math.ceil(max / 20) * 20 || 20;
     const ySteps = 5;
     const yIncrement = yMax / ySteps;
-    const chartHeight = 160; // pixels for the bar area
+    const chartHeight = 140; // pixels for the bar area
     
     // Map Tailwind color classes to actual colors for inline styles
     const colorMap = {
@@ -1485,11 +1501,11 @@ function renderIcfMonthlyStats() {
     const barColor = colorMap[bgColor] || '#6b7280';
     
     return `
-      <div class="bg-slate-800/50 rounded-lg border border-slate-700/50 p-5">
-        <h4 class="text-base font-semibold ${color} mb-4">${title}</h4>
-        <div class="flex" style="height: 200px;">
+      <div class="bg-slate-800/50 rounded-lg border border-slate-700/50 p-4">
+        <h4 class="text-sm font-semibold ${color} mb-3">${title}</h4>
+        <div class="flex" style="height: 180px;">
           <!-- Y-axis labels -->
-          <div class="flex flex-col justify-between text-right pr-3 text-xs text-slate-500" style="width: 35px;">
+          <div class="flex flex-col justify-between text-right pr-2 text-xs text-slate-500" style="width: 30px;">
             ${Array.from({length: ySteps + 1}, (_, i) => `<span>${Math.round(yMax - (i * yIncrement))}</span>`).join('')}
           </div>
           <!-- Chart area -->
@@ -1499,13 +1515,13 @@ function renderIcfMonthlyStats() {
               ${Array.from({length: ySteps + 1}, () => `<div class="border-t border-slate-700/50 w-full"></div>`).join('')}
             </div>
             <!-- Bars container -->
-            <div class="absolute bottom-0 left-0 right-0 flex justify-around px-2" style="height: ${chartHeight}px;">
+            <div class="absolute bottom-0 left-0 right-0 flex items-end justify-between gap-2 px-1" style="height: ${chartHeight}px;">
               ${data.map((val, i) => {
                 const heightPx = yMax > 0 ? Math.round((val / yMax) * chartHeight) : 0;
                 return `
-                  <div class="flex flex-col items-center justify-end" style="width: 14%; height: 100%;">
-                    <span class="text-sm ${color} font-bold mb-1">${val}</span>
-                    <div class="w-full rounded-t" style="height: ${heightPx}px; background-color: ${barColor}; opacity: 0.7;"></div>
+                  <div class="flex-1 flex flex-col items-center justify-end" style="height: 100%;">
+                    <span class="text-xs ${color} font-bold mb-1">${val}</span>
+                    <div class="w-4/5 rounded-t" style="height: ${heightPx}px; background-color: ${barColor}; opacity: 0.8;"></div>
                   </div>
                 `;
               }).join('')}
@@ -1513,8 +1529,8 @@ function renderIcfMonthlyStats() {
           </div>
         </div>
         <!-- X-axis labels -->
-        <div class="flex pl-10 mt-2">
-          ${data.map((_, i) => `<div class="flex-1 text-center text-xs text-slate-400">${chartLabels[i]}</div>`).join('')}
+        <div class="flex ml-8 mt-1">
+          ${data.map((_, i) => `<div class="flex-1 text-center text-[10px] text-slate-400">${chartLabels[i].split("'")[0]}</div>`).join('')}
         </div>
       </div>
     `;
@@ -1527,19 +1543,15 @@ function renderIcfMonthlyStats() {
     </div>
     
     <!-- Charts Grid - Row 1 -->
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
       ${renderBarChart('Installs', chartData.map(m => m.installs), 'text-emerald-400', 'bg-emerald-500')}
       ${renderBarChart('Inspections', chartData.map(m => m.inspections), 'text-pink-400', 'bg-pink-500')}
+      ${renderBarChart('PTO Submitted', chartData.map(m => m.ptoSubmitted), 'text-orange-400', 'bg-orange-500')}
     </div>
     
     <!-- Charts Grid - Row 2 -->
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-      ${renderBarChart('PTO Submitted', chartData.map(m => m.ptoSubmitted), 'text-orange-400', 'bg-orange-500')}
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
       ${renderBarChart('PTO Approved', chartData.map(m => m.ptoApproved), 'text-cyan-400', 'bg-cyan-500')}
-    </div>
-    
-    <!-- Charts Grid - Row 3 -->
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
       ${renderBarChart('ICF Submitted', chartData.map(m => m.icfSubmitted), 'text-blue-400', 'bg-blue-500')}
       ${renderBarChart('ICF Approved', chartData.map(m => m.icfApproved), 'text-green-400', 'bg-green-500')}
     </div>
@@ -1588,7 +1600,7 @@ function renderIcfMonthlyStats() {
         </tbody>
       </table>
     </div>
-    <p class="text-xs text-slate-500 mt-4">Installs = Installation completed date • Inspections = Inspection passed date (HubSpot) • PTO Submitted = PTO submission date • PTO Approved = PTO complete date • ICF Submitted/Resubmitted/Approved = From SGIP export</p>
+    <p class="text-xs text-slate-500 mt-4">Installs = Installation completed date • Inspections = Inspection date (SGIP) • PTO Submitted = PTO submission date • PTO Approved = PTO complete date • ICF Submitted/Resubmitted/Approved = From SGIP export</p>
   `;
 }
 
