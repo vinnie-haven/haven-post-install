@@ -142,7 +142,7 @@ let state = {
   icfSearch: '',
   filters: { permitStatus: [], inspectionStatus: [], ptoStatus: [], sgipStage: [], sgipStatus: [], sgipProgress: [], installer: [], installMonth: [], utility: [], cca: [] },
   ptoFilters: { utility: [], installer: [], inspectionStatus: [], interconnectionStatus: [], budgetCategory: [] },
-  icfFilters: { utility: [], installer: [], sgipProgress: [], suspendedType: [], sgipRateStatus: [], sgipIcfStatus: [], demandResponseProgram: [], budgetCategory: [] },
+  icfFilters: { utility: [], installer: [], sgipProgress: [], suspendedType: [], sgipRateStatus: [], sgipIcfStatus: [], demandResponseProgram: [], budgetCategory: [], icfSubmittedDate: [], icfResubmittedDate: [] },
   sortBy: 'daysSinceInstall', 
   sortDir: 'desc', 
   editingDeal: null, 
@@ -2407,6 +2407,12 @@ function applyIcfFilters(deals) {
   if (state.icfFilters.budgetCategory.length > 0) {
     filtered = filtered.filter(d => state.icfFilters.budgetCategory.includes(getBudgetCategoryGroup(d.budgetCategory)));
   }
+  if (state.icfFilters.icfSubmittedDate.length > 0) {
+    filtered = filtered.filter(d => state.icfFilters.icfSubmittedDate.includes(d.icfSubmittedDate || '(empty)'));
+  }
+  if (state.icfFilters.icfResubmittedDate.length > 0) {
+    filtered = filtered.filter(d => state.icfFilters.icfResubmittedDate.includes(d.icfResubmittedDate || '(empty)'));
+  }
   return filtered;
 }
 
@@ -3945,6 +3951,8 @@ function renderRevisions(deals) {
   const sgipRateOpts = getFilterOptions(deals, 'sgipRateStatus', d => d.sgipRateStatus || '(empty)');
   const icfStatusOpts = getFilterOptions(deals, 'sgipIcfStatus', d => d.sgipIcfStatus || '(empty)');
   const drProgramOpts = getFilterOptions(deals, 'demandResponseProgram', d => d.demandResponseProgram || '(empty)');
+  const icfSubmittedOpts = getFilterOptions(deals, 'icfSubmittedDate', d => d.icfSubmittedDate || '(empty)');
+  const icfResubmittedOpts = getFilterOptions(deals, 'icfResubmittedDate', d => d.icfResubmittedDate || '(empty)');
   
   // Apply filters
   const filtered = applyIcfFilters(deals);
@@ -3976,8 +3984,8 @@ function renderRevisions(deals) {
             ${icfFilterHeader('Utility', 'utility', utilityOpts, 'utility')}
             ${icfFilterHeader('Budget Cat', 'budgetCategory', getFilterOptions(deals, 'budgetCategory', d => getBudgetCategoryGroup(d.budgetCategory)))}
             ${icfSortHeader('Incentive', 'incentive')}
-            ${icfSortHeader('ICF Submitted', 'icfSubmittedDate')}
-            <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Resubmitted</th>
+            ${icfFilterHeader('ICF Submitted', 'icfSubmittedDate', icfSubmittedOpts)}
+            ${icfFilterHeader('Resubmitted', 'icfResubmittedDate', icfResubmittedOpts)}
             ${icfFilterHeader('Suspended Type', 'suspendedType', suspendedTypeOpts)}
             ${icfSortHeader('Suspended Date', 'icfSuspendedDate')}
             ${icfSortHeader('Days Suspended', 'daysSinceSuspended')}
