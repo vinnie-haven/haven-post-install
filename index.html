@@ -4028,6 +4028,8 @@ function renderRevisions(deals) {
 
 function renderIcfSubmittedDeep(deals) {
   const budgetCatOpts = getFilterOptions(deals, 'budgetCategory', d => getBudgetCategoryGroup(d.budgetCategory));
+  const icfSubmittedOpts = getFilterOptions(deals, 'icfSubmittedDate', d => d.icfSubmittedDate || '(empty)');
+  const icfResubmittedOpts = getFilterOptions(deals, 'icfResubmittedDate', d => d.icfResubmittedDate || '(empty)');
   const filtered = applyIcfFilters(deals);
   const sorted = sortIcfData(filtered, state.icfSortBy || 'daysPending', state.icfSortDir);
   const totalIncentive = filtered.reduce((sum, d) => sum + parseNum(d.currentIncentive || d.finalIncentive), 0);
@@ -4056,8 +4058,8 @@ function renderIcfSubmittedDeep(deals) {
             ${icfSortHeader('Utility', 'utility')}
             ${icfFilterHeader('Budget Cat', 'budgetCategory', budgetCatOpts)}
             ${icfSortHeader('Incentive', 'incentive')}
-            ${icfSortHeader('ICF Submitted', 'icfSubmittedDate')}
-            <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Resubmitted</th>
+            ${icfFilterHeader('ICF Submitted', 'icfSubmittedDate', icfSubmittedOpts)}
+            ${icfFilterHeader('Resubmitted', 'icfResubmittedDate', icfResubmittedOpts)}
             ${icfSortHeader('Days Pending', 'daysPending')}
           </tr></thead>
           <tbody class="divide-y divide-slate-700/30">
@@ -4081,6 +4083,8 @@ function renderIcfSubmittedDeep(deals) {
 
 function renderIcfReview(deals) {
   const budgetCatOpts = getFilterOptions(deals, 'budgetCategory', d => getBudgetCategoryGroup(d.budgetCategory));
+  const icfSubmittedOpts = getFilterOptions(deals, 'icfSubmittedDate', d => d.icfSubmittedDate || '(empty)');
+  const icfResubmittedOpts = getFilterOptions(deals, 'icfResubmittedDate', d => d.icfResubmittedDate || '(empty)');
   const filtered = applyIcfFilters(deals);
   const sorted = sortIcfData(filtered, state.icfSortBy || 'daysSinceSubmitted', state.icfSortDir);
   const totalIncentive = filtered.reduce((sum, d) => sum + parseNum(d.currentIncentive || d.finalIncentive), 0);
@@ -4110,8 +4114,8 @@ function renderIcfReview(deals) {
             ${icfFilterHeader('Budget Cat', 'budgetCategory', budgetCatOpts)}
             ${icfSortHeader('Incentive', 'incentive')}
             <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Review Type</th>
-            ${icfSortHeader('ICF Submitted', 'icfSubmittedDate')}
-            <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Resubmitted</th>
+            ${icfFilterHeader('ICF Submitted', 'icfSubmittedDate', icfSubmittedOpts)}
+            ${icfFilterHeader('Resubmitted', 'icfResubmittedDate', icfResubmittedOpts)}
             ${icfSortHeader('Days Since Submitted', 'daysSinceSubmitted')}
           </tr></thead>
           <tbody class="divide-y divide-slate-700/30">
