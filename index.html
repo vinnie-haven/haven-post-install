@@ -377,10 +377,16 @@ function mergeData() {
   });
   const matched = [], hubspotWithoutSgip = [];
   MATCH_STATS = { byEmail: 0, byAddress: 0, byManual: 0, noMatch: 0, excluded: 0 };
+  
+  // Test contacts to exclude by name pattern
+  const TEST_CONTACT_PATTERNS = [/^andres\s+sjceg/i, /^test\s+mctest/i, /^andres\s+other/i];
+  const isTestContact = (name) => TEST_CONTACT_PATTERNS.some(p => p.test(name || ''));
+  
   HUBSPOT_DATA.forEach(h => {
     const email = (h.email || '').toLowerCase().trim();
     const hubspotAddr = extractAddressFromDealName(h.dealName);
-    if (CORRECTIONS.notSgipProject.has(email)) { MATCH_STATS.excluded++; return; }
+    const customerName = h.customerName || h.dealName || '';
+    if (CORRECTIONS.notSgipProject.has(email) || isTestContact(customerName)) { MATCH_STATS.excluded++; return; }
     const isNotInPortal = CORRECTIONS.notInSgip.has(email);
     let sgip = null, matchType = null;
     if (CORRECTIONS.manualMatches[email]) { sgip = sgipByCode[CORRECTIONS.manualMatches[email]]; if (sgip) matchType = 'manual'; }
@@ -1548,9 +1554,10 @@ function renderIcfMonthlyStats() {
       ${renderBarChart('PTO Approved', chartData.map(m => m.ptoApproved), 'text-cyan-400', 'bg-cyan-500/70')}
     </div>
     
-    <!-- Charts Grid - Row 3 -->
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+    <!-- Charts Grid - Row 3: ICF Charts -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
       ${renderBarChart('ICF Submitted', chartData.map(m => m.icfSubmitted), 'text-blue-400', 'bg-blue-500/70')}
+      ${renderBarChart('ICF Resubmitted', chartData.map(m => m.icfResubmitted), 'text-amber-400', 'bg-amber-500/70')}
       ${renderBarChart('ICF Approved', chartData.map(m => m.icfApproved), 'text-green-400', 'bg-green-500/70')}
     </div>
     
