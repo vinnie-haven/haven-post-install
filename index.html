@@ -142,7 +142,7 @@ let state = {
   icfSearch: '',
   filters: { permitStatus: [], inspectionStatus: [], ptoStatus: [], sgipStage: [], sgipStatus: [], sgipProgress: [], installer: [], installMonth: [], utility: [], cca: [] },
   ptoFilters: { utility: [], installer: [], inspectionStatus: [], interconnectionStatus: [], budgetCategory: [] },
-  icfFilters: { utility: [], installer: [], sgipProgress: [], suspendedType: [], sgipRateStatus: [], sgipIcfStatus: [], demandResponseProgram: [], budgetCategory: [], icfSubmittedDate: [], icfResubmittedDate: [] },
+  icfFilters: { utility: [], installer: [], sgipProgress: [], suspendedType: [], sgipRateStatus: [], sgipIcfStatus: [], demandResponseProgram: [], budgetCategory: [], icfSubmittedDate: [], icfResubmittedDate: [], icfSuspendedDate: [], nextDueDate: [] },
   sortBy: 'daysSinceInstall', 
   sortDir: 'desc', 
   editingDeal: null, 
@@ -2433,6 +2433,12 @@ function applyIcfFilters(deals) {
   if (state.icfFilters.icfResubmittedDate.length > 0) {
     filtered = filtered.filter(d => state.icfFilters.icfResubmittedDate.includes(d.icfResubmittedDate || '(empty)'));
   }
+  if (state.icfFilters.icfSuspendedDate.length > 0) {
+    filtered = filtered.filter(d => state.icfFilters.icfSuspendedDate.includes(d.icfSuspendedDate || '(empty)'));
+  }
+  if (state.icfFilters.nextDueDate.length > 0) {
+    filtered = filtered.filter(d => state.icfFilters.nextDueDate.includes(d.nextDueDate || '(empty)'));
+  }
   return filtered;
 }
 
@@ -3973,6 +3979,8 @@ function renderRevisions(deals) {
   const drProgramOpts = getFilterOptions(deals, 'demandResponseProgram', d => d.demandResponseProgram || '(empty)');
   const icfSubmittedOpts = getFilterOptions(deals, 'icfSubmittedDate', d => d.icfSubmittedDate || '(empty)');
   const icfResubmittedOpts = getFilterOptions(deals, 'icfResubmittedDate', d => d.icfResubmittedDate || '(empty)');
+  const suspendedDateOpts = getFilterOptions(deals, 'icfSuspendedDate', d => d.icfSuspendedDate || '(empty)');
+  const nextDueDateOpts = getFilterOptions(deals, 'nextDueDate', d => d.nextDueDate || '(empty)');
   
   // Apply filters
   const filtered = applyIcfFilters(deals);
@@ -4007,9 +4015,9 @@ function renderRevisions(deals) {
             ${icfFilterHeader('ICF Submitted', 'icfSubmittedDate', icfSubmittedOpts)}
             ${icfFilterHeader('Resubmitted', 'icfResubmittedDate', icfResubmittedOpts)}
             ${icfFilterHeader('Suspended Type', 'suspendedType', suspendedTypeOpts)}
-            ${icfSortHeader('Suspended Date', 'icfSuspendedDate')}
+            ${icfFilterHeader('Suspended Date', 'icfSuspendedDate', suspendedDateOpts)}
             ${icfSortHeader('Days Suspended', 'daysSinceSuspended')}
-            ${icfSortHeader('Next Due Date', 'nextDueDate')}
+            ${icfFilterHeader('Next Due Date', 'nextDueDate', nextDueDateOpts)}
           </tr></thead>
           <tbody class="divide-y divide-slate-700/30">
             ${sorted.length === 0 ? '<tr><td colspan="10" class="px-3 py-8 text-center text-slate-500">No projects in this category</td></tr>' : sorted.map(d => `
