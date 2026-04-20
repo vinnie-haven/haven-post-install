@@ -379,7 +379,7 @@ function mergeData() {
   MATCH_STATS = { byEmail: 0, byAddress: 0, byManual: 0, noMatch: 0, excluded: 0 };
   
   // Test contacts to exclude by name pattern
-  const TEST_CONTACT_PATTERNS = [/^andres\s+sjceg/i, /^test\s+mctest/i, /^andres\s+other/i];
+  const TEST_CONTACT_PATTERNS = [/^andres\s+sjceg/i, /^test\s+mctest/i, /^andres\s+other/i, /^paige\s+pruitt/i, /^spongebob\s+squarepants/i];
   const isTestContact = (name) => TEST_CONTACT_PATTERNS.some(p => p.test(name || ''));
   
   HUBSPOT_DATA.forEach(h => {
