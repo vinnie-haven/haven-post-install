@@ -748,10 +748,11 @@ function getInstallsByMonth() {
   allDeals.forEach(d => {
     const month = getInstallMonth(d.installDate);
     if (!month) return;
-    if (!byMonth[month]) byMonth[month] = { total: 0, icfComplete: 0, icfPending: 0, inspectionComplete: 0, ptoComplete: 0 };
+    if (!byMonth[month]) byMonth[month] = { total: 0, icfComplete: 0, icfPending: 0, inspectionComplete: 0, ptoSubmitted: 0, ptoComplete: 0 };
     byMonth[month].total++;
     const sgipProgress = (d.sgipProgress || '').toLowerCase();
     const hasPto = d.ptoDate && d.ptoDate !== '(No value)' && d.ptoDate !== 'None';
+    const hasPtoSubmitted = d.ptoSubmittedDate && d.ptoSubmittedDate !== '(No value)' && d.ptoSubmittedDate !== 'None';
     
     // ICF Complete = Pending Payment or Payment Completed (any variation)
     // Fix operator precedence with parentheses
@@ -764,6 +765,11 @@ function getInstallsByMonth() {
     // Inspection complete = Passed OR has PTO (since PTO implies inspection passed)
     if (d.inspectionStatus === 'Passed' || hasPto) {
       byMonth[month].inspectionComplete++;
+    }
+    
+    // PTO Submitted = has a valid PTO submitted date
+    if (hasPtoSubmitted || hasPto) {
+      byMonth[month].ptoSubmitted++;
     }
     
     // PTO complete = has a valid PTO date
@@ -1300,6 +1306,7 @@ function renderMonthlyStats() {
             <th class="px-4 py-3 text-left text-sm font-semibold text-slate-300">Month</th>
             <th class="px-4 py-3 text-center text-sm font-semibold text-slate-300">Total Installs</th>
             <th class="px-4 py-3 text-center text-sm font-semibold text-blue-400">Inspection Complete</th>
+            <th class="px-4 py-3 text-center text-sm font-semibold text-orange-400">PTO Submitted</th>
             <th class="px-4 py-3 text-center text-sm font-semibold text-cyan-400">PTO Complete</th>
             <th class="px-4 py-3 text-center text-sm font-semibold text-green-400">ICF Complete</th>
             <th class="px-4 py-3 text-center text-sm font-semibold text-amber-400">ICF Pending</th>
@@ -1312,6 +1319,7 @@ function renderMonthlyStats() {
               <td class="px-4 py-3 font-medium">${formatMonthLabel(m.month)}</td>
               <td class="px-4 py-3 text-center text-xl font-bold">${m.total}</td>
               <td class="px-4 py-3 text-center text-xl font-bold text-blue-400">${m.inspectionComplete}</td>
+              <td class="px-4 py-3 text-center text-xl font-bold text-orange-400">${m.ptoSubmitted}</td>
               <td class="px-4 py-3 text-center text-xl font-bold text-cyan-400">${m.ptoComplete}</td>
               <td class="px-4 py-3 text-center text-xl font-bold text-green-400">${m.icfComplete}</td>
               <td class="px-4 py-3 text-center text-xl font-bold text-amber-400">${m.icfPending}</td>
@@ -1328,7 +1336,7 @@ function renderMonthlyStats() {
         </tbody>
       </table>
     </div>
-    <p class="text-xs text-slate-500 mt-4">Inspection Complete = Passed or has PTO • PTO Complete = Has PTO date • ICF Complete = ICF: Pending Payment or Payment: Completed</p>
+    <p class="text-xs text-slate-500 mt-4">Inspection Complete = Passed or has PTO • PTO Submitted = Has PTO submitted date or PTO complete • PTO Complete = Has PTO date • ICF Complete = ICF: Pending Payment or Payment: Completed</p>
   `;
 }
 
