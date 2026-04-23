@@ -140,6 +140,7 @@ let state = {
   search: '', 
   ptoSearch: '',
   icfSearch: '',
+  pipelineBudgetFilter: 'all',
   filters: { permitStatus: [], inspectionStatus: [], ptoStatus: [], sgipStage: [], sgipStatus: [], sgipProgress: [], installer: [], installMonth: [], utility: [], cca: [] },
   ptoFilters: { utility: [], installer: [], inspectionStatus: [], interconnectionStatus: [], budgetCategory: [] },
   icfFilters: { utility: [], installer: [], sgipProgress: [], suspendedType: [], sgipRateStatus: [], sgipIcfStatus: [], demandResponseProgram: [], budgetCategory: [], icfSubmittedDate: [], icfResubmittedDate: [], icfSuspendedDate: [], nextDueDate: [] },
@@ -836,6 +837,7 @@ function setStatsSubTab(t) { state.statsSubTab = t; render(); }
 function setIcfSubTab(t) { state.icfSubTab = t; state.icfSortBy = null; state.icfSortDir = 'desc'; render(); }
 function setActionSubTab(t) { state.actionSubTab = t; state.ptoSortBy = null; state.icfSortBy = null; render(); }
 function setIcfSort(col) { if (state.icfSortBy === col) state.icfSortDir = state.icfSortDir === 'asc' ? 'desc' : 'asc'; else { state.icfSortBy = col; state.icfSortDir = 'desc'; } render(); }
+function setPipelineBudgetFilter(filter) { state.pipelineBudgetFilter = filter; render(); }
 let lastSearchValue = '';
 let lastSearchResults = null;
 
@@ -1865,31 +1867,38 @@ function renderPipelineValue() {
   const ptoData = getPtoFunnelData();
   const icfData = getIcfDeepDiveData();
   
-  const calcIncentive = (deals) => deals.reduce((sum, d) => sum + parseNum(d.currentIncentive || d.finalIncentive), 0);
-  const calcPayment = (deals) => deals.reduce((sum, d) => sum + parseNum(d.paymentAmount), 0);
+  // Filter function based on budget category
+  const filterByBudget = (deals) => {
+    if (state.pipelineBudgetFilter === 'all') return deals;
+    return deals.filter(d => getBudgetCategoryGroup(d.budgetCategory) === state.pipelineBudgetFilter);
+  };
+  
+  const calcIncentive = (deals) => filterByBudget(deals).reduce((sum, d) => sum + parseNum(d.currentIncentive || d.finalIncentive), 0);
+  const calcPayment = (deals) => filterByBudget(deals).reduce((sum, d) => sum + parseNum(d.paymentAmount), 0);
+  const countFiltered = (deals) => filterByBudget(deals).length;
   
   // PTO Funnel buckets
   const ptoBuckets = [
-    { label: 'Permit Pending', count: ptoData.permitPending.length, amount: calcIncentive(ptoData.permitPending), color: 'blue', section: 'PTO Funnel' },
-    { label: 'Need to Submit Permit', count: ptoData.needToSubmitPermit.length, amount: calcIncentive(ptoData.needToSubmitPermit), color: 'red', section: 'PTO Funnel' },
-    { label: 'Inspection Scheduled', count: ptoData.inspectionScheduled.length, amount: calcIncentive(ptoData.inspectionScheduled), color: 'purple', section: 'PTO Funnel' },
-    { label: 'Inspection Not Complete', count: ptoData.inspectionNotComplete.length, amount: calcIncentive(ptoData.inspectionNotComplete), color: 'amber', section: 'PTO Funnel' },
-    { label: 'Meter Collar Needed', count: ptoData.meterCollarNeeded.length, amount: calcIncentive(ptoData.meterCollarNeeded), color: 'orange', section: 'PTO Funnel' },
-    { label: 'PTO Submitted', count: ptoData.ptoSubmitted.length, amount: calcIncentive(ptoData.ptoSubmitted), color: 'cyan', section: 'PTO Funnel' },
-    { label: 'PTO Not Submitted', count: ptoData.ptoNotSubmitted.length, amount: calcIncentive(ptoData.ptoNotSubmitted), color: 'yellow', section: 'PTO Funnel' },
-    { label: 'Uncategorized', count: ptoData.uncategorized.length, amount: calcIncentive(ptoData.uncategorized), color: 'slate', section: 'PTO Funnel' }
+    { label: 'Permit Pending', count: countFiltered(ptoData.permitPending), amount: calcIncentive(ptoData.permitPending), color: 'blue', section: 'PTO Funnel' },
+    { label: 'Need to Submit Permit', count: countFiltered(ptoData.needToSubmitPermit), amount: calcIncentive(ptoData.needToSubmitPermit), color: 'red', section: 'PTO Funnel' },
+    { label: 'Inspection Scheduled', count: countFiltered(ptoData.inspectionScheduled), amount: calcIncentive(ptoData.inspectionScheduled), color: 'purple', section: 'PTO Funnel' },
+    { label: 'Inspection Not Complete', count: countFiltered(ptoData.inspectionNotComplete), amount: calcIncentive(ptoData.inspectionNotComplete), color: 'amber', section: 'PTO Funnel' },
+    { label: 'Meter Collar Needed', count: countFiltered(ptoData.meterCollarNeeded), amount: calcIncentive(ptoData.meterCollarNeeded), color: 'orange', section: 'PTO Funnel' },
+    { label: 'PTO Submitted', count: countFiltered(ptoData.ptoSubmitted), amount: calcIncentive(ptoData.ptoSubmitted), color: 'cyan', section: 'PTO Funnel' },
+    { label: 'PTO Not Submitted', count: countFiltered(ptoData.ptoNotSubmitted), amount: calcIncentive(ptoData.ptoNotSubmitted), color: 'yellow', section: 'PTO Funnel' },
+    { label: 'Uncategorized', count: countFiltered(ptoData.uncategorized), amount: calcIncentive(ptoData.uncategorized), color: 'slate', section: 'PTO Funnel' }
   ];
   
   // ICF Deep Dive buckets
   const icfBuckets = [
-    { label: "PTO'd, No ICF", count: icfData.ptoNoIcf.length, amount: calcIncentive(icfData.ptoNoIcf), color: 'amber', section: 'ICF Pipeline' },
-    { label: 'Revisions Required', count: icfData.revisions.length, amount: calcIncentive(icfData.revisions), color: 'red', section: 'ICF Pipeline' },
-    { label: 'ICF Submitted', count: icfData.icfSubmitted.length, amount: calcIncentive(icfData.icfSubmitted), color: 'blue', section: 'ICF Pipeline' },
-    { label: 'ICF Review', count: icfData.icfReview.length, amount: calcIncentive(icfData.icfReview), color: 'purple', section: 'ICF Pipeline' },
-    { label: 'ICF Inspection', count: icfData.icfInspection.length, amount: calcIncentive(icfData.icfInspection), color: 'cyan', section: 'ICF Pipeline' },
-    { label: 'Pending Payment', count: icfData.pendingPayment.length, amount: calcIncentive(icfData.pendingPayment), color: 'emerald', section: 'ICF Pipeline' },
-    { label: 'ICF Uncategorized', count: icfData.icfUncategorized.length, amount: calcIncentive(icfData.icfUncategorized), color: 'slate', section: 'ICF Pipeline' },
-    { label: 'Payment Complete', count: icfData.paymentComplete.length, amount: calcPayment(icfData.paymentComplete), color: 'green', section: 'ICF Pipeline', isPayment: true }
+    { label: "PTO'd, No ICF", count: countFiltered(icfData.ptoNoIcf), amount: calcIncentive(icfData.ptoNoIcf), color: 'amber', section: 'ICF Pipeline' },
+    { label: 'Revisions Required', count: countFiltered(icfData.revisions), amount: calcIncentive(icfData.revisions), color: 'red', section: 'ICF Pipeline' },
+    { label: 'ICF Submitted', count: countFiltered(icfData.icfSubmitted), amount: calcIncentive(icfData.icfSubmitted), color: 'blue', section: 'ICF Pipeline' },
+    { label: 'ICF Review', count: countFiltered(icfData.icfReview), amount: calcIncentive(icfData.icfReview), color: 'purple', section: 'ICF Pipeline' },
+    { label: 'ICF Inspection', count: countFiltered(icfData.icfInspection), amount: calcIncentive(icfData.icfInspection), color: 'cyan', section: 'ICF Pipeline' },
+    { label: 'Pending Payment', count: countFiltered(icfData.pendingPayment), amount: calcIncentive(icfData.pendingPayment), color: 'emerald', section: 'ICF Pipeline' },
+    { label: 'ICF Uncategorized', count: countFiltered(icfData.icfUncategorized), amount: calcIncentive(icfData.icfUncategorized), color: 'slate', section: 'ICF Pipeline' },
+    { label: 'Payment Complete', count: countFiltered(icfData.paymentComplete), amount: calcPayment(icfData.paymentComplete), color: 'green', section: 'ICF Pipeline', isPayment: true }
   ];
   
   const ptoTotal = ptoBuckets.reduce((sum, b) => sum + b.amount, 0);
@@ -1899,10 +1908,23 @@ function renderPipelineValue() {
   const paymentCompleteAmount = icfBuckets.find(b => b.isPayment)?.amount || 0;
   const paymentCompleteCount = icfBuckets.find(b => b.isPayment)?.count || 0;
   
+  const filterLabel = state.pipelineBudgetFilter === 'all' ? 'All Projects' : state.pipelineBudgetFilter;
+  
   return `
     <div class="bg-purple-500/10 border border-purple-500/30 rounded-lg p-4 mb-4">
-      <h3 class="font-semibold text-purple-400">💰 Pipeline Value by Stage</h3>
-      <p class="text-sm text-slate-400 mt-1">Incentive value breakdown across all PTO Funnel and ICF Pipeline stages</p>
+      <div class="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h3 class="font-semibold text-purple-400">💰 Pipeline Value by Stage</h3>
+          <p class="text-sm text-slate-400 mt-1">Incentive value breakdown across all PTO Funnel and ICF Pipeline stages${state.pipelineBudgetFilter !== 'all' ? ' <span class="text-purple-400 font-medium">(' + filterLabel + ' only)</span>' : ''}</p>
+        </div>
+        <div class="flex items-center gap-2">
+          <span class="text-xs text-slate-500">Filter:</span>
+          <button onclick="setPipelineBudgetFilter('all')" class="px-3 py-1.5 rounded text-xs font-medium border ${state.pipelineBudgetFilter === 'all' ? 'bg-purple-500/20 border-purple-500/50 text-purple-400' : 'border-slate-600 text-slate-400 hover:border-slate-500'}">All</button>
+          <button onclick="setPipelineBudgetFilter('RSSE')" class="px-3 py-1.5 rounded text-xs font-medium border ${state.pipelineBudgetFilter === 'RSSE' ? 'bg-teal-500/20 border-teal-500/50 text-teal-400' : 'border-slate-600 text-slate-400 hover:border-slate-500'}">RSSE</button>
+          <button onclick="setPipelineBudgetFilter('ER')" class="px-3 py-1.5 rounded text-xs font-medium border ${state.pipelineBudgetFilter === 'ER' ? 'bg-blue-500/20 border-blue-500/50 text-blue-400' : 'border-slate-600 text-slate-400 hover:border-slate-500'}">ER</button>
+          <button onclick="setPipelineBudgetFilter('Equity')" class="px-3 py-1.5 rounded text-xs font-medium border ${state.pipelineBudgetFilter === 'Equity' ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-400' : 'border-slate-600 text-slate-400 hover:border-slate-500'}">Equity</button>
+        </div>
+      </div>
     </div>
     
     <!-- Summary Cards -->
