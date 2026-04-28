@@ -3339,7 +3339,12 @@ function getIcfDeepDiveData() {
       if (nextDue) {
         const calculated = new Date(nextDue);
         calculated.setDate(calculated.getDate() - 30);
-        effectiveSuspendedDate = calculated.toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: '2-digit' });
+        // Only use calculated date if it results in positive days suspended
+        const daysSinceCalculated = daysSince(calculated.toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: '2-digit' }));
+        if (daysSinceCalculated !== null && daysSinceCalculated >= 0) {
+          effectiveSuspendedDate = calculated.toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: '2-digit' });
+        }
+        // Otherwise keep the original icfSuspendedDate from the file
       }
     }
     
@@ -4057,7 +4062,7 @@ function renderRevisions(deals) {
             ${icfFilterHeader('ICF Submitted', 'icfSubmittedDate', icfSubmittedOpts)}
             ${icfFilterHeader('Resubmitted', 'icfResubmittedDate', icfResubmittedOpts)}
             ${icfFilterHeader('Suspended Type', 'suspendedType', suspendedTypeOpts)}
-            ${icfFilterHeader('Suspended Date', 'icfSuspendedDate', suspendedDateOpts)}
+            ${icfFilterHeader('Suspended Date', 'icfSuspendedDate', suspendedDateOpts, 'icfSuspendedDate')}
             ${icfSortHeader('Days Suspended', 'daysSinceSuspended')}
             ${icfFilterHeader('Next Due Date', 'nextDueDate', nextDueDateOpts)}
           </tr></thead>
