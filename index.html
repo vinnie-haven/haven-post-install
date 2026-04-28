@@ -3331,7 +3331,19 @@ function getIcfDeepDiveData() {
   }).map(d => {
     const status = getStatus(d);
     const suspendedType = status.includes('inspection suspended') ? 'ICF Inspection Suspended' : 'ICF Suspended';
-    return { ...d, suspendedType, daysSinceSuspended: daysSince(d.icfSuspendedDate) };
+    
+    // For ICF Suspended (not Inspection Suspended), calculate suspended date as 30 days before next due date
+    let effectiveSuspendedDate = d.icfSuspendedDate;
+    if (suspendedType === 'ICF Suspended' && d.nextDueDate) {
+      const nextDue = parseDate(d.nextDueDate);
+      if (nextDue) {
+        const calculated = new Date(nextDue);
+        calculated.setDate(calculated.getDate() - 30);
+        effectiveSuspendedDate = calculated.toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: '2-digit' });
+      }
+    }
+    
+    return { ...d, suspendedType, icfSuspendedDate: effectiveSuspendedDate, daysSinceSuspended: daysSince(effectiveSuspendedDate) };
   });
   
   // 3. ICF Submitted (ICF Submitted or ICF Resubmitted status)
