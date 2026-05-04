@@ -2821,14 +2821,14 @@ function renderPtoFunnelSummary(data) {
     <!-- Historical Data -->
     <div class="bg-slate-800/50 rounded-lg border border-slate-700/50 overflow-hidden">
       <div class="px-4 py-3 border-b border-slate-700/50">
-        <h4 class="font-semibold text-slate-300">📅 Daily Snapshots</h4>
-        <p class="text-xs text-slate-500 mt-1">Historical tracking at 11:59 PM PST daily</p>
+        <h4 class="font-semibold text-slate-300">📅 Weekly Snapshots</h4>
+        <p class="text-xs text-slate-500 mt-1">Week-over-week tracking (weeks start Monday)</p>
       </div>
       <div class="overflow-x-auto">
         <table class="w-full text-sm">
           <thead>
             <tr class="border-b border-slate-700 bg-slate-900/50">
-              <th class="px-4 py-3 text-left text-xs font-semibold text-slate-400 uppercase">Date</th>
+              <th class="px-4 py-3 text-left text-xs font-semibold text-slate-400 uppercase">Week Starting</th>
               <th class="px-4 py-3 text-center text-xs font-semibold text-blue-400 uppercase">Permit Pending</th>
               <th class="px-4 py-3 text-center text-xs font-semibold text-red-400 uppercase">Need Permit</th>
               <th class="px-4 py-3 text-center text-xs font-semibold text-purple-400 uppercase">Insp Sched</th>
@@ -2837,32 +2837,61 @@ function renderPtoFunnelSummary(data) {
               <th class="px-4 py-3 text-center text-xs font-semibold text-blue-400 uppercase">PTO Submitted</th>
               <th class="px-4 py-3 text-center text-xs font-semibold text-amber-400 uppercase">PTO Not Sub</th>
               <th class="px-4 py-3 text-center text-xs font-semibold text-slate-300 uppercase">Total</th>
-              <th class="px-4 py-3 text-center text-xs font-semibold text-slate-400 uppercase">Change</th>
+              <th class="px-4 py-3 text-center text-xs font-semibold text-slate-400 uppercase">WoW Change</th>
             </tr>
           </thead>
           <tbody class="divide-y divide-slate-700/30">
-            ${PTO_SNAPSHOTS.length === 0 ? `
-              <tr><td colspan="10" class="px-4 py-8 text-center text-slate-500">No snapshots yet. Snapshots are saved automatically at 11:59 PM PST daily.</td></tr>
-            ` : PTO_SNAPSHOTS.map((s, i) => {
-              const prev = PTO_SNAPSHOTS[i + 1];
-              const change = prev ? s.total - prev.total : null;
-              return `
-                <tr class="hover:bg-slate-800/30">
-                  <td class="px-4 py-3 text-slate-300 font-medium">${formatSnapshotDate(s.snapshot_date)}</td>
-                  <td class="px-4 py-3 text-center text-blue-400">${s.permit_pending ?? '—'}</td>
-                  <td class="px-4 py-3 text-center text-red-400">${s.need_to_submit_permit ?? '—'}</td>
-                  <td class="px-4 py-3 text-center text-purple-400">${s.inspection_scheduled}</td>
-                  <td class="px-4 py-3 text-center text-amber-400">${s.inspection_not_complete}</td>
-                  <td class="px-4 py-3 text-center text-orange-400">${s.meter_collar}</td>
-                  <td class="px-4 py-3 text-center text-blue-400">${s.pto_submitted}</td>
-                  <td class="px-4 py-3 text-center text-amber-400">${s.pto_not_submitted}</td>
-                  <td class="px-4 py-3 text-center font-bold text-white">${s.total}</td>
-                  <td class="px-4 py-3 text-center font-medium ${change === null ? 'text-slate-500' : change < 0 ? 'text-green-400' : change > 0 ? 'text-red-400' : 'text-slate-400'}">
-                    ${change === null ? '—' : (change > 0 ? '+' : '') + change}
-                  </td>
-                </tr>
-              `;
-            }).join('')}
+            ${(() => {
+              // Group snapshots by week (Monday start)
+              const getWeekStart = (dateStr) => {
+                const d = new Date(dateStr + 'T12:00:00');
+                const day = d.getDay();
+                const diff = d.getDate() - day + (day === 0 ? -6 : 1); // Adjust to Monday
+                const monday = new Date(d.setDate(diff));
+                return monday.toISOString().split('T')[0];
+              };
+              
+              // Group by week and take the latest snapshot for each week
+              const weeklyMap = {};
+              PTO_SNAPSHOTS.forEach(s => {
+                const weekStart = getWeekStart(s.snapshot_date);
+                if (!weeklyMap[weekStart] || s.snapshot_date > weeklyMap[weekStart].snapshot_date) {
+                  weeklyMap[weekStart] = s;
+                }
+              });
+              
+              // Sort weeks descending
+              const weeks = Object.entries(weeklyMap)
+                .sort((a, b) => b[0].localeCompare(a[0]))
+                .map(([weekStart, snapshot]) => ({ weekStart, ...snapshot }));
+              
+              if (weeks.length === 0) {
+                return '<tr><td colspan="10" class="px-4 py-8 text-center text-slate-500">No snapshots yet. Snapshots are saved automatically at 11:59 PM PST daily.</td></tr>';
+              }
+              
+              return weeks.map((w, i) => {
+                const prev = weeks[i + 1];
+                const change = prev ? w.total - prev.total : null;
+                const weekDate = new Date(w.weekStart + 'T12:00:00');
+                const weekLabel = weekDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                return `
+                  <tr class="hover:bg-slate-800/30">
+                    <td class="px-4 py-3 text-slate-300 font-medium">Mon, ${weekLabel}</td>
+                    <td class="px-4 py-3 text-center text-blue-400">${w.permit_pending ?? '—'}</td>
+                    <td class="px-4 py-3 text-center text-red-400">${w.need_to_submit_permit ?? '—'}</td>
+                    <td class="px-4 py-3 text-center text-purple-400">${w.inspection_scheduled}</td>
+                    <td class="px-4 py-3 text-center text-amber-400">${w.inspection_not_complete}</td>
+                    <td class="px-4 py-3 text-center text-orange-400">${w.meter_collar}</td>
+                    <td class="px-4 py-3 text-center text-blue-400">${w.pto_submitted}</td>
+                    <td class="px-4 py-3 text-center text-amber-400">${w.pto_not_submitted}</td>
+                    <td class="px-4 py-3 text-center font-bold text-white">${w.total}</td>
+                    <td class="px-4 py-3 text-center font-medium ${change === null ? 'text-slate-500' : change < 0 ? 'text-green-400' : change > 0 ? 'text-red-400' : 'text-slate-400'}">
+                      ${change === null ? '—' : (change > 0 ? '+' : '') + change}
+                    </td>
+                  </tr>
+                `;
+              }).join('');
+            })()}
           </tbody>
         </table>
       </div>
