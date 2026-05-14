@@ -3341,8 +3341,16 @@ function getIcfDeepDiveData() {
   // Helper to check if has PTO
   const hasPto = (d) => d.ptoDate && d.ptoDate !== '(No value)' && d.ptoDate !== 'None';
   
-  // Helper to get status from fullyQualifiedState/sgipProgress
-  const getStatus = (d) => (d.sgipProgress || '').toLowerCase();
+  // Helper to get status - use sgipProgress first, fall back to sgipIcfStatus for unmatched records
+  const getStatus = (d) => {
+    const sgipProgress = (d.sgipProgress || '').toLowerCase();
+    // If we have SGIP progress data, use it
+    if (sgipProgress && sgipProgress !== '' && sgipProgress !== '(no value)' && sgipProgress !== 'none') {
+      return sgipProgress;
+    }
+    // Fall back to HubSpot's sgipIcfStatus for unmatched records
+    return (d.sgipIcfStatus || '').toLowerCase();
+  };
   
   // Helper to calculate days since a date
   const daysSince = (dateStr) => {
@@ -3359,7 +3367,9 @@ function getIcfDeepDiveData() {
   const ptoNoIcf = dealsWithPto.filter(d => {
     const status = getStatus(d);
     // Include if in RRF stages or ICF Draft
-    if (status.includes('rrf') || status === 'icf: draft' || status.includes('icf draft')) return true;
+    if (status.includes('rrf') || status === 'icf: draft' || status.includes('icf draft') || status === 'draft') return true;
+    // Include "Not Started" status
+    if (status === 'not started' || status.includes('not started')) return true;
     // Also include if status is empty/unknown (has PTO but no ICF progress)
     if (!status || status === '' || status === '(no value)' || status === 'none') return true;
     return false;
@@ -3369,7 +3379,8 @@ function getIcfDeepDiveData() {
   const revisions = dealsWithPto.filter(d => {
     const status = getStatus(d);
     return status.includes('icf suspended') || status.includes('icf: suspended') || 
-           status.includes('inspection suspended');
+           status.includes('inspection suspended') || status.includes('revisions required') ||
+           status === 'suspended';
   }).map(d => {
     const status = getStatus(d);
     const suspendedType = status.includes('inspection suspended') ? 'ICF Inspection Suspended' : 'ICF Suspended';
@@ -3396,8 +3407,8 @@ function getIcfDeepDiveData() {
   // 3. ICF Submitted (ICF Submitted or ICF Resubmitted status)
   const icfSubmitted = dealsWithPto.filter(d => {
     const status = getStatus(d);
-    return status === 'icf: submitted' || status === 'icf submitted' || 
-           status === 'icf: resubmitted' || status === 'icf resubmitted';
+    return status === 'icf: submitted' || status === 'icf submitted' || status === 'submitted' ||
+           status === 'icf: resubmitted' || status === 'icf resubmitted' || status === 'resubmitted';
   }).map(d => {
     // Days is from resubmitted date if exists, otherwise from submitted date
     const effectiveDate = d.icfResubmittedDate || d.icfSubmittedDate;
@@ -3407,9 +3418,9 @@ function getIcfDeepDiveData() {
   // 4. ICF Review (ICF Review, ICF Technical Review, or ICF Equipment Review)
   const icfReview = dealsWithPto.filter(d => {
     const status = getStatus(d);
-    return status === 'icf: review' || status === 'icf review' || 
-           status === 'icf: technical review' || status === 'icf technical review' ||
-           status === 'icf equipment review' || status === 'icf: equipment review';
+    return status === 'icf: review' || status === 'icf review' || status === 'review' ||
+           status === 'icf: technical review' || status === 'icf technical review' || status === 'technical review' ||
+           status === 'icf equipment review' || status === 'icf: equipment review' || status === 'equipment review';
   }).map(d => {
     const effectiveDate = d.icfResubmittedDate || d.icfSubmittedDate;
     return { ...d, daysSinceSubmitted: daysSince(effectiveDate) };
@@ -3418,20 +3429,21 @@ function getIcfDeepDiveData() {
   // 5. ICF Inspection
   const icfInspection = dealsWithPto.filter(d => {
     const status = getStatus(d);
-    return (status === 'icf: inspection' || status === 'icf inspection') && 
-           !status.includes('suspended');
+    return ((status === 'icf: inspection' || status === 'icf inspection' || status === 'inspection') && 
+           !status.includes('suspended'));
   });
   
   // 6. Pending Payment (ICF Pending Payment)
   const pendingPayment = dealsWithPto.filter(d => {
     const status = getStatus(d);
-    return status === 'icf: pending payment' || status === 'icf pending payment';
+    return status === 'icf: pending payment' || status === 'icf pending payment' || status === 'pending payment';
   }).map(d => ({ ...d, daysSinceApproved: daysSince(d.icfPendingPaymentDate) }));
   
-  // 7. Payment Complete
+  // 7. Payment Complete (including SGIP Payment Received from HubSpot)
   const paymentComplete = dealsWithPto.filter(d => {
     const status = getStatus(d);
-    return status === 'payment: completed' || status === 'payment completed';
+    return status === 'payment: completed' || status === 'payment completed' || 
+           status === 'sgip payment received' || status.includes('payment received');
   });
   
   // Catch-all: Projects with PTO not in any other ICF bucket
