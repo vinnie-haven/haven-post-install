@@ -1148,12 +1148,14 @@ function renderStatsTab() {
       <button onclick="setStatsSubTab('icfMonthly')" class="subtab px-3 py-1.5 rounded-lg text-sm font-medium border ${state.statsSubTab === 'icfMonthly' ? 'active border-yellow-500/40 text-yellow-400' : 'border-slate-700/50 text-slate-400'}">📅 Monthly Report</button>
       <button onclick="setStatsSubTab('icfWeekly')" class="subtab px-3 py-1.5 rounded-lg text-sm font-medium border ${state.statsSubTab === 'icfWeekly' ? 'active border-orange-500/40 text-orange-400' : 'border-slate-700/50 text-slate-400'}">📆 Weekly Report</button>
       <button onclick="setStatsSubTab('pipeline')" class="subtab px-3 py-1.5 rounded-lg text-sm font-medium border ${state.statsSubTab === 'pipeline' ? 'active border-purple-500/40 text-purple-400' : 'border-slate-700/50 text-slate-400'}">💰 Pipeline Value</button>
+      <button onclick="setStatsSubTab('forecast')" class="subtab px-3 py-1.5 rounded-lg text-sm font-medium border ${state.statsSubTab === 'forecast' ? 'active border-pink-500/40 text-pink-400' : 'border-slate-700/50 text-slate-400'}">📈 Forecast vs Actual</button>
       <button onclick="setStatsSubTab('monthly')" class="subtab px-3 py-1.5 rounded-lg text-sm font-medium border ${state.statsSubTab === 'monthly' ? 'active border-cyan-500/40 text-cyan-400' : 'border-slate-700/50 text-slate-400'}">📊 Installs by Month</button>
       <button onclick="setStatsSubTab('budget')" class="subtab px-3 py-1.5 rounded-lg text-sm font-medium border ${state.statsSubTab === 'budget' ? 'active border-emerald-500/40 text-emerald-400' : 'border-slate-700/50 text-slate-400'}">🏷️ Budget Category</button>
     </div>
     ${state.statsSubTab === 'icfMonthly' ? renderIcfMonthlyStats() :
       state.statsSubTab === 'icfWeekly' ? renderIcfWeeklyStats() :
       state.statsSubTab === 'pipeline' ? renderPipelineValue() :
+      state.statsSubTab === 'forecast' ? renderForecastVsActual() :
       state.statsSubTab === 'monthly' ? renderMonthlyStats() : 
       renderBudgetCategoryStats()}
   `;
@@ -2051,6 +2053,148 @@ function renderPipelineValue() {
     </div>
     
     <p class="text-xs text-slate-500 mt-4">Values based on current/final incentive amounts from SGIP data. Payment Complete shows actual payment amounts received.</p>
+  `;
+}
+
+function renderForecastVsActual() {
+  // Forecast data from Volume Tracking spreadsheet (Monthly Summary tab)
+  const forecastData = {
+    sales: {
+      'Apr-26': { forecast: 70, caForecast: 70, maForecast: 0 },
+      'May-26': { forecast: 110, caForecast: 102, maForecast: 0 },
+      'Jun-26': { forecast: 120, caForecast: 102, maForecast: 10 },
+      'Jul-26': { forecast: 170, caForecast: 142, maForecast: 20 },
+      'Aug-26': { forecast: 190, caForecast: 147, maForecast: 25 },
+      'Sep-26': { forecast: 250, caForecast: 177, maForecast: 55 },
+      'Oct-26': { forecast: 275, caForecast: 200, maForecast: 55 },
+      'Nov-26': { forecast: 250, caForecast: 175, maForecast: 55 },
+      'Dec-26': { forecast: 240, caForecast: 165, maForecast: 55 }
+    },
+    installs: {
+      'Jan-26': { forecast: 106, caForecast: 106, maForecast: 0 },
+      'Feb-26': { forecast: 94, caForecast: 94, maForecast: 0 },
+      'Mar-26': { forecast: 11, caForecast: 11, maForecast: 0 },
+      'Apr-26': { forecast: 10, caForecast: 10, maForecast: 0 },
+      'May-26': { forecast: 60, caForecast: 60, maForecast: 0 },
+      'Jun-26': { forecast: 120, caForecast: 120, maForecast: 0 },
+      'Jul-26': { forecast: 200, caForecast: 200, maForecast: 0 },
+      'Aug-26': { forecast: 275, caForecast: 266, maForecast: 9 },
+      'Sep-26': { forecast: 290, caForecast: 265, maForecast: 25 },
+      'Oct-26': { forecast: 335, caForecast: 276, maForecast: 59 },
+      'Nov-26': { forecast: 365, caForecast: 300, maForecast: 65 },
+      'Dec-26': { forecast: 345, caForecast: 275, maForecast: 70 }
+    }
+  };
+  
+  // Get actual installs from dashboard data by month
+  const allDeals = [...DATA.matched, ...DATA.hubspotWithoutSgip];
+  const installsByMonth = {};
+  allDeals.forEach(d => {
+    const month = getInstallMonth(d.installDate);
+    if (!month) return;
+    // Convert YYYY-MM to Mon-YY format
+    const [year, monthNum] = month.split('-');
+    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const shortYear = year.slice(2);
+    const monthKey = monthNames[parseInt(monthNum) - 1] + '-' + shortYear;
+    installsByMonth[monthKey] = (installsByMonth[monthKey] || 0) + 1;
+  });
+  
+  // Months to display (starting from Jan-26)
+  const displayMonths = ['Jan-26', 'Feb-26', 'Mar-26', 'Apr-26', 'May-26', 'Jun-26', 'Jul-26', 'Aug-26', 'Sep-26', 'Oct-26', 'Nov-26', 'Dec-26'];
+  
+  // Calculate current month for highlighting
+  const now = new Date();
+  const currentMonthKey = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][now.getMonth()] + '-' + String(now.getFullYear()).slice(2);
+  
+  // Build chart data
+  const chartData = displayMonths.map(m => ({
+    month: m,
+    installForecast: forecastData.installs[m]?.forecast || 0,
+    installActual: installsByMonth[m] || null,
+    isCurrent: m === currentMonthKey,
+    isPast: displayMonths.indexOf(m) < displayMonths.indexOf(currentMonthKey)
+  }));
+  
+  // Find max value for chart scaling
+  const maxInstall = Math.max(...chartData.map(d => Math.max(d.installForecast, d.installActual || 0)));
+  
+  return `
+    <div class="bg-pink-500/10 border border-pink-500/30 rounded-lg p-4 mb-4">
+      <h3 class="font-semibold text-pink-400">📈 Forecast vs Actual</h3>
+      <p class="text-sm text-slate-400 mt-1">Comparing forecasted volumes to actual performance. Source: <a href="https://docs.google.com/spreadsheets/d/1mHkcmf1egm7jRgUHEQ1WZmwTEMS7C8221cxppyv2Xi4/edit?gid=2093872267#gid=2093872267" target="_blank" class="text-pink-400 hover:underline">Volume Tracking Sheet</a></p>
+    </div>
+    
+    <!-- Installs Chart -->
+    <div class="bg-slate-800/50 rounded-lg border border-slate-700/50 p-4 mb-4">
+      <h4 class="font-semibold text-cyan-400 mb-4">📦 Installs: Forecast vs Actual</h4>
+      <div class="flex items-end gap-1 h-48 mb-2">
+        ${chartData.map(d => {
+          const forecastHeight = maxInstall > 0 ? (d.installForecast / maxInstall * 100) : 0;
+          const actualHeight = d.installActual !== null && maxInstall > 0 ? (d.installActual / maxInstall * 100) : 0;
+          const variance = d.installActual !== null ? d.installActual - d.installForecast : null;
+          const varianceColor = variance === null ? '' : variance >= 0 ? 'text-green-400' : 'text-red-400';
+          const varianceText = variance === null ? '' : (variance >= 0 ? '+' : '') + variance;
+          return `
+            <div class="flex-1 flex flex-col items-center gap-1">
+              <div class="text-xs font-bold ${varianceColor}">${varianceText}</div>
+              <div class="w-full flex gap-0.5 items-end h-36">
+                <div class="flex-1 bg-slate-600/50 rounded-t" style="height: ${forecastHeight}%" title="Forecast: ${d.installForecast}"></div>
+                ${d.installActual !== null ? `<div class="flex-1 bg-cyan-500 rounded-t" style="height: ${actualHeight}%" title="Actual: ${d.installActual}"></div>` : '<div class="flex-1"></div>'}
+              </div>
+              <div class="text-xs text-slate-500 ${d.isCurrent ? 'font-bold text-pink-400' : ''}">${d.month.split('-')[0]}</div>
+            </div>
+          `;
+        }).join('')}
+      </div>
+      <div class="flex justify-center gap-6 mt-2">
+        <div class="flex items-center gap-2"><div class="w-4 h-3 bg-slate-600/50 rounded"></div><span class="text-xs text-slate-400">Forecast</span></div>
+        <div class="flex items-center gap-2"><div class="w-4 h-3 bg-cyan-500 rounded"></div><span class="text-xs text-slate-400">Actual</span></div>
+      </div>
+    </div>
+    
+    <!-- Data Table -->
+    <div class="bg-slate-800/50 rounded-lg border border-slate-700/50 overflow-hidden overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="border-b border-slate-700 bg-slate-900/50">
+            <th class="px-4 py-3 text-left text-xs font-semibold text-slate-400 uppercase">Month</th>
+            <th class="px-4 py-3 text-center text-xs font-semibold text-slate-500 uppercase">Install Forecast</th>
+            <th class="px-4 py-3 text-center text-xs font-semibold text-cyan-400 uppercase">Install Actual</th>
+            <th class="px-4 py-3 text-center text-xs font-semibold text-slate-400 uppercase">Variance</th>
+            <th class="px-4 py-3 text-center text-xs font-semibold text-slate-400 uppercase">% of Target</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-700/30">
+          ${chartData.map(d => {
+            const variance = d.installActual !== null ? d.installActual - d.installForecast : null;
+            const pct = d.installActual !== null && d.installForecast > 0 ? Math.round(d.installActual / d.installForecast * 100) : null;
+            const varianceColor = variance === null ? 'text-slate-500' : variance >= 0 ? 'text-green-400' : 'text-red-400';
+            const pctColor = pct === null ? 'text-slate-500' : pct >= 100 ? 'text-green-400' : pct >= 80 ? 'text-amber-400' : 'text-red-400';
+            return `
+              <tr class="hover:bg-slate-800/30 ${d.isCurrent ? 'bg-pink-500/10' : ''}">
+                <td class="px-4 py-3 font-medium ${d.isCurrent ? 'text-pink-400' : ''}">${d.month}${d.isCurrent ? ' (current)' : ''}</td>
+                <td class="px-4 py-3 text-center text-slate-400">${d.installForecast}</td>
+                <td class="px-4 py-3 text-center font-bold text-cyan-400">${d.installActual !== null ? d.installActual : '—'}</td>
+                <td class="px-4 py-3 text-center font-bold ${varianceColor}">${variance !== null ? (variance >= 0 ? '+' : '') + variance : '—'}</td>
+                <td class="px-4 py-3 text-center">
+                  ${pct !== null ? `
+                    <div class="flex items-center justify-center gap-2">
+                      <div class="w-16 h-2 bg-slate-700 rounded-full overflow-hidden">
+                        <div class="h-full ${pct >= 100 ? 'bg-green-500' : pct >= 80 ? 'bg-amber-500' : 'bg-red-500'} rounded-full" style="width: ${Math.min(pct, 100)}%"></div>
+                      </div>
+                      <span class="text-xs ${pctColor}">${pct}%</span>
+                    </div>
+                  ` : '<span class="text-slate-500">—</span>'}
+                </td>
+              </tr>
+            `;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>
+    
+    <p class="text-xs text-slate-500 mt-4">Forecast data from Volume Tracking spreadsheet (Monthly Summary tab). Actual installs pulled from dashboard data based on install date.</p>
   `;
 }
 
