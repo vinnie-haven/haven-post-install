@@ -2060,22 +2060,24 @@ function renderForecastVsActual() {
   // Forecast data from Volume Tracking spreadsheet (Monthly Summary tab)
   const forecastData = {
     sales: {
-      'Jan-26': { forecast: 27 }, 'Feb-26': { forecast: 3 }, 'Mar-26': { forecast: 23 },
-      'Apr-26': { forecast: 70 }, 'May-26': { forecast: 110 }, 'Jun-26': { forecast: 120 },
-      'Jul-26': { forecast: 170 }, 'Aug-26': { forecast: 190 }, 'Sep-26': { forecast: 250 },
-      'Oct-26': { forecast: 275 }, 'Nov-26': { forecast: 250 }, 'Dec-26': { forecast: 240 }
+      'Jan-26': { forecast: 27, ca: 27, ma: 0 }, 'Feb-26': { forecast: 3, ca: 3, ma: 0 }, 'Mar-26': { forecast: 23, ca: 16, ma: 7 },
+      'Apr-26': { forecast: 70, ca: 70, ma: 0 }, 'May-26': { forecast: 110, ca: 102, ma: 8 }, 'Jun-26': { forecast: 120, ca: 102, ma: 18 },
+      'Jul-26': { forecast: 170, ca: 142, ma: 28 }, 'Aug-26': { forecast: 190, ca: 147, ma: 43 }, 'Sep-26': { forecast: 250, ca: 177, ma: 73 },
+      'Oct-26': { forecast: 275, ca: 200, ma: 75 }, 'Nov-26': { forecast: 250, ca: 175, ma: 75 }, 'Dec-26': { forecast: 240, ca: 165, ma: 75 }
     },
     installs: {
-      'Jan-26': { forecast: 106 }, 'Feb-26': { forecast: 94 }, 'Mar-26': { forecast: 11 },
-      'Apr-26': { forecast: 10 }, 'May-26': { forecast: 60 }, 'Jun-26': { forecast: 120 },
-      'Jul-26': { forecast: 200 }, 'Aug-26': { forecast: 275 }, 'Sep-26': { forecast: 290 },
-      'Oct-26': { forecast: 335 }, 'Nov-26': { forecast: 365 }, 'Dec-26': { forecast: 345 }
+      'Jan-26': { forecast: 106, ca: 106, ma: 0 }, 'Feb-26': { forecast: 94, ca: 94, ma: 0 }, 'Mar-26': { forecast: 11, ca: 11, ma: 0 },
+      'Apr-26': { forecast: 10, ca: 10, ma: 0 }, 'May-26': { forecast: 60, ca: 60, ma: 0 }, 'Jun-26': { forecast: 120, ca: 120, ma: 0 },
+      'Jul-26': { forecast: 200, ca: 200, ma: 0 }, 'Aug-26': { forecast: 275, ca: 266, ma: 9 }, 'Sep-26': { forecast: 290, ca: 265, ma: 25 },
+      'Oct-26': { forecast: 335, ca: 276, ma: 59 }, 'Nov-26': { forecast: 365, ca: 300, ma: 65 }, 'Dec-26': { forecast: 345, ca: 275, ma: 70 }
     }
   };
   
-  // Get actual installs from dashboard data by month
+  // Get actual installs from dashboard data by month and state
   const allDeals = [...DATA.matched, ...DATA.hubspotWithoutSgip];
   const installsByMonth = {};
+  const installsByMonthCA = {};
+  const installsByMonthMA = {};
   allDeals.forEach(d => {
     const month = getInstallMonth(d.installDate);
     if (!month) return;
@@ -2084,11 +2086,24 @@ function renderForecastVsActual() {
     const shortYear = year.slice(2);
     const monthKey = monthNames[parseInt(monthNum) - 1] + '-' + shortYear;
     installsByMonth[monthKey] = (installsByMonth[monthKey] || 0) + 1;
+    
+    // Determine state from utility
+    const utility = getUtility(d) || '';
+    const isMA = utility.includes('National Grid') || utility.includes('Eversource') || utility.includes('MA');
+    if (isMA) {
+      installsByMonthMA[monthKey] = (installsByMonthMA[monthKey] || 0) + 1;
+    } else {
+      installsByMonthCA[monthKey] = (installsByMonthCA[monthKey] || 0) + 1;
+    }
   });
   
-  // Sales actuals (hardcoded for now since we don't have sales data in this dashboard)
+  // Sales actuals with CA/MA breakdown
   const salesActuals = {
-    'Jan-26': 27, 'Feb-26': 1, 'Mar-26': 7, 'Apr-26': 73, 'May-26': null
+    'Jan-26': { total: 27, ca: 27, ma: 0 }, 
+    'Feb-26': { total: 1, ca: 1, ma: 0 }, 
+    'Mar-26': { total: 7, ca: 7, ma: 0 }, 
+    'Apr-26': { total: 73, ca: 73, ma: 0 },
+    'May-26': null
   };
   
   const displayMonths = ['Jan-26', 'Feb-26', 'Mar-26', 'Apr-26', 'May-26', 'Jun-26', 'Jul-26', 'Aug-26', 'Sep-26', 'Oct-26', 'Nov-26', 'Dec-26'];
@@ -2102,7 +2117,11 @@ function renderForecastVsActual() {
     month: m,
     shortMonth: m.split('-')[0],
     forecast: forecastData.installs[m]?.forecast || 0,
+    forecastCA: forecastData.installs[m]?.ca || 0,
+    forecastMA: forecastData.installs[m]?.ma || 0,
     actual: installsByMonth[m] || null,
+    actualCA: installsByMonthCA[m] || 0,
+    actualMA: installsByMonthMA[m] || 0,
     isCurrent: m === currentMonthKey,
     isPast: idx < currentMonthIdx
   }));
@@ -2111,7 +2130,11 @@ function renderForecastVsActual() {
     month: m,
     shortMonth: m.split('-')[0],
     forecast: forecastData.sales[m]?.forecast || 0,
-    actual: salesActuals[m] !== undefined ? salesActuals[m] : null,
+    forecastCA: forecastData.sales[m]?.ca || 0,
+    forecastMA: forecastData.sales[m]?.ma || 0,
+    actual: salesActuals[m]?.total !== undefined ? salesActuals[m]?.total : null,
+    actualCA: salesActuals[m]?.ca || 0,
+    actualMA: salesActuals[m]?.ma || 0,
     isCurrent: m === currentMonthKey,
     isPast: idx < currentMonthIdx
   }));
@@ -2128,31 +2151,31 @@ function renderForecastVsActual() {
     const pct = forecast > 0 ? Math.round(actual / forecast * 100) : 0;
     const isPositive = variance >= 0;
     return `
-      <div class="bg-slate-800/80 rounded-xl p-5 border border-slate-700/50">
+      <div class="bg-slate-800/80 rounded-xl p-4 border border-slate-700/50">
         <div class="text-xs text-slate-500 uppercase tracking-wide mb-1">${title}</div>
-        <div class="flex items-end gap-3">
-          <div class="text-3xl font-bold text-${color}-400">${actual}</div>
-          <div class="text-sm text-slate-500 mb-1">/ ${forecast} target</div>
+        <div class="flex items-end gap-2">
+          <div class="text-2xl font-bold text-${color}-400">${actual}</div>
+          <div class="text-sm text-slate-500 mb-0.5">/ ${forecast}</div>
         </div>
-        <div class="mt-3 flex items-center gap-3">
-          <div class="flex-1 h-2 bg-slate-700 rounded-full overflow-hidden">
-            <div class="h-full bg-${color}-500 rounded-full transition-all" style="width: ${Math.min(pct, 100)}%"></div>
+        <div class="mt-2 flex items-center gap-2">
+          <div class="flex-1 h-1.5 bg-slate-700 rounded-full overflow-hidden">
+            <div class="h-full bg-${color}-500 rounded-full" style="width: ${Math.min(pct, 100)}%"></div>
           </div>
-          <div class="text-sm font-semibold ${isPositive ? 'text-green-400' : 'text-red-400'}">${isPositive ? '+' : ''}${variance}</div>
+          <div class="text-xs font-semibold ${isPositive ? 'text-green-400' : 'text-red-400'}">${isPositive ? '+' : ''}${variance}</div>
         </div>
       </div>
     `;
   };
   
-  // SVG Line Chart renderer
+  // SVG Line Chart renderer - compact version
   const renderLineChart = (data, color, title, icon) => {
-    const width = 600;
-    const height = 200;
-    const padding = { top: 30, right: 20, bottom: 40, left: 50 };
+    const width = 380;
+    const height = 160;
+    const padding = { top: 25, right: 15, bottom: 25, left: 35 };
     const chartWidth = width - padding.left - padding.right;
     const chartHeight = height - padding.top - padding.bottom;
     
-    const maxVal = Math.max(...data.map(d => Math.max(d.forecast, d.actual || 0))) * 1.1;
+    const maxVal = Math.max(...data.map(d => Math.max(d.forecast, d.actual || 0))) * 1.15;
     const xStep = chartWidth / (data.length - 1);
     
     const getX = (idx) => padding.left + idx * xStep;
@@ -2161,124 +2184,146 @@ function renderForecastVsActual() {
     // Build forecast line path
     const forecastPath = data.map((d, i) => `${i === 0 ? 'M' : 'L'} ${getX(i)} ${getY(d.forecast)}`).join(' ');
     
-    // Build actual line path (only for months with data)
-    const actualPoints = data.filter(d => d.actual !== null);
-    const actualPath = actualPoints.length > 0 ? 
-      data.slice(0, data.findIndex(d => d.actual === null) === -1 ? data.length : data.findIndex(d => d.actual === null))
-        .map((d, i) => `${i === 0 ? 'M' : 'L'} ${getX(i)} ${getY(d.actual)}`).join(' ') : '';
+    // Build actual line path
+    const actualMonths = data.filter(d => d.actual !== null);
+    const lastActualIdx = data.findIndex(d => d.actual === null);
+    const actualData = lastActualIdx === -1 ? data : data.slice(0, lastActualIdx);
+    const actualPath = actualData.length > 0 ? 
+      actualData.map((d, i) => `${i === 0 ? 'M' : 'L'} ${getX(i)} ${getY(d.actual)}`).join(' ') : '';
     
-    // Y-axis labels
-    const yTicks = [0, Math.round(maxVal/4), Math.round(maxVal/2), Math.round(maxVal*3/4), Math.round(maxVal)];
+    // Y-axis labels (fewer ticks)
+    const yTicks = [0, Math.round(maxVal/2), Math.round(maxVal)];
     
-    const colorMap = {
-      cyan: { line: '#22d3ee', fill: 'rgba(34, 211, 238, 0.1)', dot: '#22d3ee' },
-      amber: { line: '#fbbf24', fill: 'rgba(251, 191, 36, 0.1)', dot: '#fbbf24' }
-    };
-    const colors = colorMap[color];
+    const colorHex = color === 'cyan' ? '#22d3ee' : '#fbbf24';
     
     return `
-      <div class="bg-slate-800/50 rounded-xl border border-slate-700/50 p-5">
-        <div class="flex items-center justify-between mb-4">
-          <h4 class="font-semibold text-${color}-400">${icon} ${title}</h4>
-          <div class="flex items-center gap-4 text-xs">
-            <div class="flex items-center gap-1.5"><div class="w-4 h-0.5 bg-slate-500"></div><span class="text-slate-500">Forecast</span></div>
-            <div class="flex items-center gap-1.5"><div class="w-4 h-0.5 bg-${color}-400"></div><span class="text-slate-400">Actual</span></div>
+      <div class="bg-slate-800/50 rounded-xl border border-slate-700/50 p-4">
+        <div class="flex items-center justify-between mb-2">
+          <h4 class="font-semibold text-${color}-400 text-sm">${icon} ${title}</h4>
+          <div class="flex items-center gap-3 text-[10px]">
+            <div class="flex items-center gap-1"><div class="w-3 h-[2px] bg-slate-500"></div><span class="text-slate-500">Target</span></div>
+            <div class="flex items-center gap-1"><div class="w-3 h-[2px]" style="background:${colorHex}"></div><span class="text-slate-400">Actual</span></div>
           </div>
         </div>
-        <svg viewBox="0 0 ${width} ${height}" class="w-full">
+        <svg viewBox="0 0 ${width} ${height}" class="w-full" style="max-height: 160px;">
           <!-- Grid lines -->
           ${yTicks.map(tick => `
-            <line x1="${padding.left}" y1="${getY(tick)}" x2="${width - padding.right}" y2="${getY(tick)}" stroke="#334155" stroke-width="1" stroke-dasharray="4,4"/>
-            <text x="${padding.left - 10}" y="${getY(tick) + 4}" text-anchor="end" fill="#64748b" font-size="11">${tick}</text>
+            <line x1="${padding.left}" y1="${getY(tick)}" x2="${width - padding.right}" y2="${getY(tick)}" stroke="#334155" stroke-width="0.5"/>
+            <text x="${padding.left - 6}" y="${getY(tick) + 3}" text-anchor="end" fill="#64748b" font-size="9">${tick}</text>
           `).join('')}
           
           <!-- Forecast line -->
-          <path d="${forecastPath}" fill="none" stroke="#64748b" stroke-width="2" stroke-dasharray="6,4"/>
+          <path d="${forecastPath}" fill="none" stroke="#64748b" stroke-width="1.5" stroke-dasharray="4,3"/>
           
-          <!-- Forecast dots -->
-          ${data.map((d, i) => `<circle cx="${getX(i)}" cy="${getY(d.forecast)}" r="3" fill="#64748b"/>`).join('')}
+          <!-- Forecast data labels -->
+          ${data.map((d, i) => `
+            <text x="${getX(i)}" y="${getY(d.forecast) - 6}" text-anchor="middle" fill="#64748b" font-size="8">${d.forecast}</text>
+          `).join('')}
           
-          <!-- Actual line with gradient fill -->
+          <!-- Actual line with fill -->
           ${actualPath ? `
             <defs>
-              <linearGradient id="gradient-${color}" x1="0%" y1="0%" x2="0%" y2="100%">
-                <stop offset="0%" stop-color="${colors.line}" stop-opacity="0.3"/>
-                <stop offset="100%" stop-color="${colors.line}" stop-opacity="0"/>
+              <linearGradient id="grad-${color}" x1="0%" y1="0%" x2="0%" y2="100%">
+                <stop offset="0%" stop-color="${colorHex}" stop-opacity="0.2"/>
+                <stop offset="100%" stop-color="${colorHex}" stop-opacity="0"/>
               </linearGradient>
             </defs>
-            <path d="${actualPath} L ${getX(data.filter(d => d.actual !== null).length - 1)} ${getY(0)} L ${getX(0)} ${getY(0)} Z" fill="url(#gradient-${color})"/>
-            <path d="${actualPath}" fill="none" stroke="${colors.line}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="${actualPath} L ${getX(actualData.length - 1)} ${getY(0)} L ${getX(0)} ${getY(0)} Z" fill="url(#grad-${color})"/>
+            <path d="${actualPath}" fill="none" stroke="${colorHex}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
           ` : ''}
           
-          <!-- Actual dots -->
+          <!-- Actual dots and labels -->
           ${data.map((d, i) => d.actual !== null ? `
-            <circle cx="${getX(i)}" cy="${getY(d.actual)}" r="5" fill="${colors.dot}" stroke="#1e293b" stroke-width="2"/>
-            <text x="${getX(i)}" y="${getY(d.actual) - 12}" text-anchor="middle" fill="${d.actual >= d.forecast ? '#4ade80' : '#f87171'}" font-size="11" font-weight="600">${d.actual >= d.forecast ? '+' : ''}${d.actual - d.forecast}</text>
+            <circle cx="${getX(i)}" cy="${getY(d.actual)}" r="3" fill="${colorHex}" stroke="#1e293b" stroke-width="1.5"/>
+            <text x="${getX(i)}" y="${getY(d.actual) + 12}" text-anchor="middle" fill="${colorHex}" font-size="9" font-weight="600">${d.actual}</text>
           ` : '').join('')}
           
-          <!-- Current month indicator -->
-          ${data.findIndex(d => d.isCurrent) >= 0 ? `
-            <line x1="${getX(data.findIndex(d => d.isCurrent))}" y1="${padding.top}" x2="${getX(data.findIndex(d => d.isCurrent))}" y2="${height - padding.bottom}" stroke="#ec4899" stroke-width="2" stroke-dasharray="4,2"/>
+          <!-- Current month marker -->
+          ${currentMonthIdx >= 0 ? `
+            <line x1="${getX(currentMonthIdx)}" y1="${padding.top - 5}" x2="${getX(currentMonthIdx)}" y2="${height - padding.bottom}" stroke="#ec4899" stroke-width="1" stroke-dasharray="3,2" opacity="0.7"/>
           ` : ''}
           
           <!-- X-axis labels -->
           ${data.map((d, i) => `
-            <text x="${getX(i)}" y="${height - 15}" text-anchor="middle" fill="${d.isCurrent ? '#ec4899' : '#64748b'}" font-size="11" font-weight="${d.isCurrent ? '600' : '400'}">${d.shortMonth}</text>
+            <text x="${getX(i)}" y="${height - 8}" text-anchor="middle" fill="${d.isCurrent ? '#ec4899' : '#64748b'}" font-size="9" font-weight="${d.isCurrent ? '600' : '400'}">${d.shortMonth}</text>
           `).join('')}
         </svg>
       </div>
     `;
   };
   
+  // Generate unique IDs for expandable rows
+  const tableId = Date.now();
+  
   return `
-    <div class="bg-gradient-to-br from-pink-500/10 to-purple-500/10 border border-pink-500/20 rounded-xl p-5 mb-6">
+    <div class="bg-gradient-to-br from-pink-500/10 to-purple-500/10 border border-pink-500/20 rounded-xl p-4 mb-5">
       <div class="flex items-center justify-between">
         <div>
-          <h3 class="font-semibold text-lg text-white">📈 Forecast vs Actual</h3>
-          <p class="text-sm text-slate-400 mt-1">2026 performance tracking</p>
+          <h3 class="font-semibold text-white">📈 Forecast vs Actual</h3>
+          <p class="text-xs text-slate-400 mt-0.5">2026 performance tracking</p>
         </div>
-        <a href="https://docs.google.com/spreadsheets/d/1mHkcmf1egm7jRgUHEQ1WZmwTEMS7C8221cxppyv2Xi4/edit?gid=2093872267#gid=2093872267" target="_blank" class="px-3 py-1.5 text-xs bg-slate-700/50 hover:bg-slate-600/50 rounded-lg text-slate-300 transition-colors">View Source →</a>
+        <a href="https://docs.google.com/spreadsheets/d/1mHkcmf1egm7jRgUHEQ1WZmwTEMS7C8221cxppyv2Xi4/edit?gid=2093872267#gid=2093872267" target="_blank" class="px-2 py-1 text-xs bg-slate-700/50 hover:bg-slate-600/50 rounded text-slate-300">Source →</a>
       </div>
     </div>
     
     <!-- YTD Summary Cards -->
-    <div class="grid grid-cols-2 gap-4 mb-6">
+    <div class="grid grid-cols-2 gap-3 mb-5">
       ${renderMetricCard('Installs YTD', installYTDForecast, installYTD, 'cyan')}
       ${renderMetricCard('Sales YTD', salesYTDForecast, salesYTD, 'amber')}
     </div>
     
-    <!-- Line Charts -->
-    <div class="grid grid-cols-1 gap-6 mb-6">
+    <!-- Line Charts Side by Side -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-5">
       ${renderLineChart(installData, 'cyan', 'Installs', '📦')}
       ${renderLineChart(salesData, 'amber', 'Sales', '💰')}
     </div>
     
-    <!-- Detailed Tables -->
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+    <!-- Detailed Tables with Expandable Rows -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
       <!-- Installs Table -->
       <div class="bg-slate-800/50 rounded-xl border border-slate-700/50 overflow-hidden">
-        <div class="px-4 py-3 border-b border-slate-700/50 bg-cyan-500/5">
-          <h4 class="font-semibold text-cyan-400 text-sm">Installs Detail</h4>
+        <div class="px-3 py-2 border-b border-slate-700/50 bg-cyan-500/5">
+          <h4 class="font-semibold text-cyan-400 text-sm">📦 Installs Detail</h4>
         </div>
         <div class="overflow-x-auto">
           <table class="w-full text-sm">
             <thead>
-              <tr class="text-xs text-slate-500 border-b border-slate-700/50">
-                <th class="px-4 py-2 text-left font-medium">Month</th>
-                <th class="px-4 py-2 text-right font-medium">Target</th>
-                <th class="px-4 py-2 text-right font-medium">Actual</th>
-                <th class="px-4 py-2 text-right font-medium">Var</th>
+              <tr class="text-[10px] text-slate-500 border-b border-slate-700/50 uppercase">
+                <th class="px-3 py-2 text-left font-medium">Month</th>
+                <th class="px-3 py-2 text-right font-medium">Target</th>
+                <th class="px-3 py-2 text-right font-medium">Actual</th>
+                <th class="px-3 py-2 text-right font-medium">Var</th>
               </tr>
             </thead>
             <tbody>
-              ${installData.map(d => {
+              ${installData.map((d, idx) => {
                 const variance = d.actual !== null ? d.actual - d.forecast : null;
+                const hasData = d.actual !== null;
                 return `
-                  <tr class="${d.isCurrent ? 'bg-cyan-500/10' : 'hover:bg-slate-700/30'}">
-                    <td class="px-4 py-2 ${d.isCurrent ? 'text-cyan-400 font-semibold' : 'text-slate-300'}">${d.month}</td>
-                    <td class="px-4 py-2 text-right text-slate-500">${d.forecast}</td>
-                    <td class="px-4 py-2 text-right font-semibold ${d.actual !== null ? 'text-cyan-400' : 'text-slate-600'}">${d.actual !== null ? d.actual : '—'}</td>
-                    <td class="px-4 py-2 text-right font-semibold ${variance === null ? 'text-slate-600' : variance >= 0 ? 'text-green-400' : 'text-red-400'}">${variance !== null ? (variance >= 0 ? '+' : '') + variance : '—'}</td>
+                  <tr class="${d.isCurrent ? 'bg-cyan-500/10' : 'hover:bg-slate-700/30'} cursor-pointer" onclick="this.nextElementSibling.classList.toggle('hidden')">
+                    <td class="px-3 py-1.5 ${d.isCurrent ? 'text-cyan-400 font-semibold' : 'text-slate-300'}">
+                      <span class="flex items-center gap-1">
+                        ${hasData ? '<svg class="w-3 h-3 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>' : '<span class="w-3"></span>'}
+                        ${d.month}
+                      </span>
+                    </td>
+                    <td class="px-3 py-1.5 text-right text-slate-500">${d.forecast}</td>
+                    <td class="px-3 py-1.5 text-right font-semibold ${hasData ? 'text-cyan-400' : 'text-slate-600'}">${hasData ? d.actual : '—'}</td>
+                    <td class="px-3 py-1.5 text-right font-semibold ${variance === null ? 'text-slate-600' : variance >= 0 ? 'text-green-400' : 'text-red-400'}">${variance !== null ? (variance >= 0 ? '+' : '') + variance : '—'}</td>
+                  </tr>
+                  <tr class="hidden bg-slate-900/50">
+                    <td colspan="4" class="px-3 py-2">
+                      <div class="grid grid-cols-2 gap-4 text-xs">
+                        <div class="flex justify-between items-center px-2 py-1 bg-slate-800/50 rounded">
+                          <span class="text-slate-400">🌴 California</span>
+                          <span><span class="text-slate-500">${d.forecastCA} →</span> <span class="font-semibold text-cyan-400">${hasData ? d.actualCA : '—'}</span></span>
+                        </div>
+                        <div class="flex justify-between items-center px-2 py-1 bg-slate-800/50 rounded">
+                          <span class="text-slate-400">🦞 Massachusetts</span>
+                          <span><span class="text-slate-500">${d.forecastMA} →</span> <span class="font-semibold text-cyan-400">${hasData ? d.actualMA : '—'}</span></span>
+                        </div>
+                      </div>
+                    </td>
                   </tr>
                 `;
               }).join('')}
@@ -2289,28 +2334,48 @@ function renderForecastVsActual() {
       
       <!-- Sales Table -->
       <div class="bg-slate-800/50 rounded-xl border border-slate-700/50 overflow-hidden">
-        <div class="px-4 py-3 border-b border-slate-700/50 bg-amber-500/5">
-          <h4 class="font-semibold text-amber-400 text-sm">Sales Detail</h4>
+        <div class="px-3 py-2 border-b border-slate-700/50 bg-amber-500/5">
+          <h4 class="font-semibold text-amber-400 text-sm">💰 Sales Detail</h4>
         </div>
         <div class="overflow-x-auto">
           <table class="w-full text-sm">
             <thead>
-              <tr class="text-xs text-slate-500 border-b border-slate-700/50">
-                <th class="px-4 py-2 text-left font-medium">Month</th>
-                <th class="px-4 py-2 text-right font-medium">Target</th>
-                <th class="px-4 py-2 text-right font-medium">Actual</th>
-                <th class="px-4 py-2 text-right font-medium">Var</th>
+              <tr class="text-[10px] text-slate-500 border-b border-slate-700/50 uppercase">
+                <th class="px-3 py-2 text-left font-medium">Month</th>
+                <th class="px-3 py-2 text-right font-medium">Target</th>
+                <th class="px-3 py-2 text-right font-medium">Actual</th>
+                <th class="px-3 py-2 text-right font-medium">Var</th>
               </tr>
             </thead>
             <tbody>
-              ${salesData.map(d => {
+              ${salesData.map((d, idx) => {
                 const variance = d.actual !== null ? d.actual - d.forecast : null;
+                const hasData = d.actual !== null;
                 return `
-                  <tr class="${d.isCurrent ? 'bg-amber-500/10' : 'hover:bg-slate-700/30'}">
-                    <td class="px-4 py-2 ${d.isCurrent ? 'text-amber-400 font-semibold' : 'text-slate-300'}">${d.month}</td>
-                    <td class="px-4 py-2 text-right text-slate-500">${d.forecast}</td>
-                    <td class="px-4 py-2 text-right font-semibold ${d.actual !== null ? 'text-amber-400' : 'text-slate-600'}">${d.actual !== null ? d.actual : '—'}</td>
-                    <td class="px-4 py-2 text-right font-semibold ${variance === null ? 'text-slate-600' : variance >= 0 ? 'text-green-400' : 'text-red-400'}">${variance !== null ? (variance >= 0 ? '+' : '') + variance : '—'}</td>
+                  <tr class="${d.isCurrent ? 'bg-amber-500/10' : 'hover:bg-slate-700/30'} cursor-pointer" onclick="this.nextElementSibling.classList.toggle('hidden')">
+                    <td class="px-3 py-1.5 ${d.isCurrent ? 'text-amber-400 font-semibold' : 'text-slate-300'}">
+                      <span class="flex items-center gap-1">
+                        ${hasData ? '<svg class="w-3 h-3 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>' : '<span class="w-3"></span>'}
+                        ${d.month}
+                      </span>
+                    </td>
+                    <td class="px-3 py-1.5 text-right text-slate-500">${d.forecast}</td>
+                    <td class="px-3 py-1.5 text-right font-semibold ${hasData ? 'text-amber-400' : 'text-slate-600'}">${hasData ? d.actual : '—'}</td>
+                    <td class="px-3 py-1.5 text-right font-semibold ${variance === null ? 'text-slate-600' : variance >= 0 ? 'text-green-400' : 'text-red-400'}">${variance !== null ? (variance >= 0 ? '+' : '') + variance : '—'}</td>
+                  </tr>
+                  <tr class="hidden bg-slate-900/50">
+                    <td colspan="4" class="px-3 py-2">
+                      <div class="grid grid-cols-2 gap-4 text-xs">
+                        <div class="flex justify-between items-center px-2 py-1 bg-slate-800/50 rounded">
+                          <span class="text-slate-400">🌴 California</span>
+                          <span><span class="text-slate-500">${d.forecastCA} →</span> <span class="font-semibold text-amber-400">${hasData ? d.actualCA : '—'}</span></span>
+                        </div>
+                        <div class="flex justify-between items-center px-2 py-1 bg-slate-800/50 rounded">
+                          <span class="text-slate-400">🦞 Massachusetts</span>
+                          <span><span class="text-slate-500">${d.forecastMA} →</span> <span class="font-semibold text-amber-400">${hasData ? d.actualMA : '—'}</span></span>
+                        </div>
+                      </div>
+                    </td>
                   </tr>
                 `;
               }).join('')}
@@ -2320,7 +2385,7 @@ function renderForecastVsActual() {
       </div>
     </div>
     
-    <p class="text-xs text-slate-500 mt-4 text-center">Forecast data from Volume Tracking spreadsheet • Install actuals from dashboard data • Sales actuals updated manually</p>
+    <p class="text-xs text-slate-500 mt-3 text-center">Click any row to see CA/MA breakdown • Forecast from Volume Tracking sheet • Install actuals from dashboard</p>
   `;
 }
 
