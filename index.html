@@ -179,6 +179,7 @@ async function loadSgipFromSupabase() {
         sgipStage: a.stage || '',
         sgipStatus: a.status || '',
         fullyQualifiedState: a.fully_qualified_state || '',
+        rrfSubmitted: a.rrf_submitted || '',
         currentIncentive: a.current_incentive || '',
         finalIncentive: a.final_incentive || '',
         nextDueDate: a.next_due_date || '',
@@ -220,6 +221,9 @@ async function saveSgipToSupabase(sgipData) {
     payment_completed_date: s.paymentCompletedDate || null,
     budget_category: s.budgetCategory || null,
     application_id: s.applicationId || null,
+    // Optional: to persist RRF Submitted across page reloads, add a text column named
+    // `rrf_submitted` to the sgip_applications table in Supabase, then uncomment the next line.
+    // rrf_submitted: s.rrfSubmitted || null,
     updated_at: new Date().toISOString()
   })).filter(r => r.application_code);
   if (records.length === 0) return false;
@@ -474,6 +478,7 @@ async function handleSgipFile(file) {
         email: (row['Host Customer Email'] || '').toLowerCase().trim(),
         applicationCode: row['Application Code'] || '', sgipStage: row['Stage'] || '', sgipStatus: row['Status'] || '',
         fullyQualifiedState: row['Fully Qualified State'] || '',
+        rrfSubmitted: row['RRF Submitted'] || '',
         currentIncentive: row['Current Incentive ($)'] || '', finalIncentive: row['Final Incentive (ICF)'] || '',
         nextDueDate: row['Next Due Date'] || '', siteAddress: row['Site Address'] || '', utility: row['SGIP Administrator'] || '',
         icfSubmittedDate: row['ICF Submitted Date'] || '', icfResubmittedDate: row['Last ICF Resubmitted Date'] || '',
@@ -1088,9 +1093,10 @@ function render() {
         <button onclick="setTab('actionItems')" class="px-4 py-2 rounded-lg text-sm font-medium ${state.tab === 'actionItems' ? 'bg-orange-500/20 text-orange-400 border border-orange-500/40' : 'bg-slate-800/50 text-slate-400 border border-slate-700/50'}">⚡ Action Items</button>
         <button onclick="setTab('ptoFunnel')" class="px-4 py-2 rounded-lg text-sm font-medium ${state.tab === 'ptoFunnel' ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/40' : 'bg-slate-800/50 text-slate-400 border border-slate-700/50'}">🎯 PTO Funnel</button>
         <button onclick="setTab('icfDeepDive')" class="px-4 py-2 rounded-lg text-sm font-medium ${state.tab === 'icfDeepDive' ? 'bg-purple-500/20 text-purple-400 border border-purple-500/40' : 'bg-slate-800/50 text-slate-400 border border-slate-700/50'}">🔍 ICF Deep Dive</button>
+        <button onclick="setTab('rrfCharts')" class="px-4 py-2 rounded-lg text-sm font-medium ${state.tab === 'rrfCharts' ? 'bg-indigo-500/20 text-indigo-400 border border-indigo-500/40' : 'bg-slate-800/50 text-slate-400 border border-slate-700/50'}">📈 RRF Submitted</button>
         <button onclick="setTab('installed')" class="px-4 py-2 rounded-lg text-sm font-medium ${state.tab === 'installed' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40' : 'bg-slate-800/50 text-slate-400 border border-slate-700/50'}">Installed (${allInstalled.length})</button>
       </div>
-      ${state.tab === 'installed' ? renderInstalledTab(stats, filtered, activeStages, stageCounts, permitOpts, inspectOpts, ptoOpts, sgipStageOpts, sgipStatusOpts, icfOpts, installerOpts, utilityOpts, ccaOpts) : state.tab === 'ptoFunnel' ? renderPtoFunnelTab() : state.tab === 'icfDeepDive' ? renderIcfDeepDiveTab() : state.tab === 'actionItems' ? renderActionItemsTab() : renderStatsTab()}
+      ${state.tab === 'installed' ? renderInstalledTab(stats, filtered, activeStages, stageCounts, permitOpts, inspectOpts, ptoOpts, sgipStageOpts, sgipStatusOpts, icfOpts, installerOpts, utilityOpts, ccaOpts) : state.tab === 'ptoFunnel' ? renderPtoFunnelTab() : state.tab === 'icfDeepDive' ? renderIcfDeepDiveTab() : state.tab === 'rrfCharts' ? renderRrfChartsTab() : state.tab === 'actionItems' ? renderActionItemsTab() : renderStatsTab()}
     </div>
   `;
 }
@@ -1156,6 +1162,80 @@ function renderNoSgipTab() {
       </div>
     </div>
   `;
+}
+
+function renderRrfChartsTab() {
+  // SGIP projects with an RRF Submitted date on or after this cutoff.
+  // Change CUTOFF / CUTOFF_LABEL together to adjust the window.
+  const CUTOFF = new Date(2026, 1, 1); // Feb 1, 2026 (month is 0-indexed: 1 = February)
+  const CUTOFF_LABEL = "Feb 1, 2026";
+
+  if (!state.sgipLoaded || SGIP_DATA.length === 0) {
+    return `<div class="bg-slate-800/50 rounded-lg p-8 border border-slate-700/50 text-center text-slate-400">Upload the SGIP export to populate these charts.</div>`;
+  }
+
+  // RRF Submitted dates (M/D/YY) parsed with the dashboard's parseDate helper.
+  const rows = SGIP_DATA.filter(d => { const dt = parseDate(d.rrfSubmitted); return dt && dt >= CUTOFF; });
+
+  if (rows.length === 0) {
+    const anyRrf = SGIP_DATA.some(d => d.rrfSubmitted);
+    return `<div class="bg-slate-800/50 rounded-lg p-8 border border-slate-700/50 text-center text-slate-400">${anyRrf
+      ? 'No projects with an RRF Submitted date on or after ' + CUTOFF_LABEL + '.'
+      : 'No RRF Submitted dates found. Re-upload the SGIP export so the RRF Submitted column is captured (it is not stored in the database between reloads).'}</div>`;
+  }
+
+  // Breakdown 1: by month (chronological)
+  const monthMap = {};
+  const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  rows.forEach(d => {
+    const dt = parseDate(d.rrfSubmitted);
+    const key = dt.getFullYear() * 12 + dt.getMonth();
+    if (!monthMap[key]) monthMap[key] = { label: MON[dt.getMonth()] + " '" + String(dt.getFullYear()).slice(2), count: 0 };
+    monthMap[key].count++;
+  });
+  const byMonth = Object.keys(monthMap).sort((a, b) => a - b).map(k => monthMap[k]);
+
+  // Breakdown 2: by SGIP administrator (count desc)
+  const adminMap = {};
+  rows.forEach(d => { const k = d.utility || 'Unknown'; adminMap[k] = (adminMap[k] || 0) + 1; });
+  const byAdmin = Object.keys(adminMap).map(k => ({ label: k, count: adminMap[k] })).sort((a, b) => b.count - a.count);
+
+  // Breakdown 3: by fully qualified state (count desc)
+  const stateMap = {};
+  rows.forEach(d => { const k = d.fullyQualifiedState || '(blank)'; stateMap[k] = (stateMap[k] || 0) + 1; });
+  const byState = Object.keys(stateMap).map(k => ({ label: k, count: stateMap[k] })).sort((a, b) => b.count - a.count);
+
+  const bars = (data, color) => {
+    const max = Math.max(...data.map(d => d.count), 1);
+    return data.map(d => {
+      const pct = Math.round(d.count / max * 100);
+      return `
+        <div class="flex items-center gap-3 py-1.5">
+          <div class="w-44 shrink-0 text-sm text-slate-300 truncate" title="${d.label}">${d.label}</div>
+          <div class="flex-1 h-3 bg-slate-700/60 rounded-full overflow-hidden">
+            <div class="h-full bg-${color}-500 rounded-full" style="width: ${pct}%"></div>
+          </div>
+          <div class="w-10 shrink-0 text-right text-sm font-semibold text-${color}-400">${d.count}</div>
+        </div>`;
+    }).join('');
+  };
+
+  const card = (title, emoji, color, data) => `
+    <div class="bg-slate-800/50 rounded-lg p-5 border border-slate-700/50">
+      <h3 class="font-semibold text-${color}-400 mb-4">${emoji} ${title}</h3>
+      ${bars(data, color)}
+    </div>`;
+
+  return `
+    <div class="bg-indigo-500/10 border border-indigo-500/30 rounded-lg p-4 mb-4">
+      <h3 class="font-semibold text-indigo-400">📈 RRF Submitted — ${CUTOFF_LABEL} and later</h3>
+      <p class="text-sm text-slate-400 mt-1">${rows.length} projects with an RRF Submitted date on or after ${CUTOFF_LABEL}.</p>
+    </div>
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      ${card('By month', '📅', 'blue', byMonth)}
+      ${card('By SGIP administrator', '🏢', 'emerald', byAdmin)}
+      ${card('By fully qualified state', '🔖', 'purple', byState)}
+    </div>`;
 }
 
 function renderStatsTab() {
