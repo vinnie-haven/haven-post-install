@@ -130,6 +130,7 @@ let MATCH_STATS = { byEmail: 0, byAddress: 0, byManual: 0, noMatch: 0, excluded:
 let state = { 
   tab: 'stats', 
   statsSubTab: 'icfMonthly',
+  rrfMonths: 4,
   icfSubTab: 'summary',
   icfSortBy: 'daysSincePto',
   icfSortDir: 'desc',
@@ -180,6 +181,8 @@ async function loadSgipFromSupabase() {
         sgipStatus: a.status || '',
         fullyQualifiedState: a.fully_qualified_state || '',
         rrfSubmitted: a.rrf_submitted || '',
+        rrfConfirmed: a.rrf_confirmed_date || '',
+        dateReceived: a.date_received || '',
         currentIncentive: a.current_incentive || '',
         finalIncentive: a.final_incentive || '',
         nextDueDate: a.next_due_date || '',
@@ -221,9 +224,11 @@ async function saveSgipToSupabase(sgipData) {
     payment_completed_date: s.paymentCompletedDate || null,
     budget_category: s.budgetCategory || null,
     application_id: s.applicationId || null,
-    // Optional: to persist RRF Submitted across page reloads, add a text column named
-    // `rrf_submitted` to the sgip_applications table in Supabase, then uncomment the next line.
-    // rrf_submitted: s.rrfSubmitted || null,
+    // These three feed the RRF Pipeline tab. They require text columns named
+    // rrf_submitted, rrf_confirmed_date and date_received on sgip_applications.
+    rrf_submitted: s.rrfSubmitted || null,
+    rrf_confirmed_date: s.rrfConfirmed || null,
+    date_received: s.dateReceived || null,
     updated_at: new Date().toISOString()
   })).filter(r => r.application_code);
   if (records.length === 0) return false;
@@ -479,6 +484,8 @@ async function handleSgipFile(file) {
         applicationCode: row['Application Code'] || '', sgipStage: row['Stage'] || '', sgipStatus: row['Status'] || '',
         fullyQualifiedState: row['Fully Qualified State'] || '',
         rrfSubmitted: row['RRF Submitted'] || '',
+        rrfConfirmed: row['RRF Confirmed Date (2-step)'] || '',
+        dateReceived: row['Date Received'] || '',
         currentIncentive: row['Current Incentive ($)'] || '', finalIncentive: row['Final Incentive (ICF)'] || '',
         nextDueDate: row['Next Due Date'] || '', siteAddress: row['Site Address'] || '', utility: row['SGIP Administrator'] || '',
         icfSubmittedDate: row['ICF Submitted Date'] || '', icfResubmittedDate: row['Last ICF Resubmitted Date'] || '',
@@ -1093,7 +1100,7 @@ function render() {
         <button onclick="setTab('actionItems')" class="px-4 py-2 rounded-lg text-sm font-medium ${state.tab === 'actionItems' ? 'bg-orange-500/20 text-orange-400 border border-orange-500/40' : 'bg-slate-800/50 text-slate-400 border border-slate-700/50'}">⚡ Action Items</button>
         <button onclick="setTab('ptoFunnel')" class="px-4 py-2 rounded-lg text-sm font-medium ${state.tab === 'ptoFunnel' ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/40' : 'bg-slate-800/50 text-slate-400 border border-slate-700/50'}">🎯 PTO Funnel</button>
         <button onclick="setTab('icfDeepDive')" class="px-4 py-2 rounded-lg text-sm font-medium ${state.tab === 'icfDeepDive' ? 'bg-purple-500/20 text-purple-400 border border-purple-500/40' : 'bg-slate-800/50 text-slate-400 border border-slate-700/50'}">🔍 ICF Deep Dive</button>
-        <button onclick="setTab('rrfCharts')" class="px-4 py-2 rounded-lg text-sm font-medium ${state.tab === 'rrfCharts' ? 'bg-indigo-500/20 text-indigo-400 border border-indigo-500/40' : 'bg-slate-800/50 text-slate-400 border border-slate-700/50'}">📈 RRF Submitted</button>
+        <button onclick="setTab('rrfCharts')" class="px-4 py-2 rounded-lg text-sm font-medium ${state.tab === 'rrfCharts' ? 'bg-indigo-500/20 text-indigo-400 border border-indigo-500/40' : 'bg-slate-800/50 text-slate-400 border border-slate-700/50'}">📈 RRF Pipeline</button>
         <button onclick="setTab('installed')" class="px-4 py-2 rounded-lg text-sm font-medium ${state.tab === 'installed' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40' : 'bg-slate-800/50 text-slate-400 border border-slate-700/50'}">Installed (${allInstalled.length})</button>
       </div>
       ${state.tab === 'installed' ? renderInstalledTab(stats, filtered, activeStages, stageCounts, permitOpts, inspectOpts, ptoOpts, sgipStageOpts, sgipStatusOpts, icfOpts, installerOpts, utilityOpts, ccaOpts) : state.tab === 'ptoFunnel' ? renderPtoFunnelTab() : state.tab === 'icfDeepDive' ? renderIcfDeepDiveTab() : state.tab === 'rrfCharts' ? renderRrfChartsTab() : state.tab === 'actionItems' ? renderActionItemsTab() : renderStatsTab()}
@@ -1164,79 +1171,214 @@ function renderNoSgipTab() {
   `;
 }
 
+function setRrfMonths(n) { state.rrfMonths = parseInt(n, 10) || 4; render(); }
+
 function renderRrfChartsTab() {
-  // SGIP projects with an RRF Submitted date on or after this cutoff.
-  // Change CUTOFF / CUTOFF_LABEL together to adjust the window.
-  const CUTOFF = new Date(2026, 1, 1); // Feb 1, 2026 (month is 0-indexed: 1 = February)
-  const CUTOFF_LABEL = "Feb 1, 2026";
+  const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const monthKey = s => { const d = parseDate(s); return d ? d.getFullYear() * 12 + d.getMonth() : null; };
+  const mLabel = k => MON[k % 12] + " '" + String(Math.floor(k / 12)).slice(2);
+  const mLong = k => MON[k % 12] + ' ' + Math.floor(k / 12);
+  const months = state.rrfMonths || 4;
+
+  const windowPicker = [4, 6, 12].map(n => `<button onclick="setRrfMonths(${n})" class="px-3 py-1.5 rounded-lg text-sm font-medium border ${months === n ? 'bg-indigo-500/20 text-indigo-400 border-indigo-500/40' : 'bg-slate-800/50 text-slate-400 border-slate-700/50'}">Last ${n} months</button>`).join('');
 
   if (!state.sgipLoaded || SGIP_DATA.length === 0) {
     return `<div class="bg-slate-800/50 rounded-lg p-8 border border-slate-700/50 text-center text-slate-400">Upload the SGIP export to populate these charts.</div>`;
   }
 
-  // RRF Submitted dates (M/D/YY) parsed with the dashboard's parseDate helper.
-  const rows = SGIP_DATA.filter(d => { const dt = parseDate(d.rrfSubmitted); return dt && dt >= CUTOFF; });
+  const rows = SGIP_DATA.map(d => ({
+    sk: monthKey(d.rrfSubmitted),
+    ck: monthKey(d.rrfConfirmed),
+    rk: monthKey(d.dateReceived),
+    stage: (d.sgipStage || '').trim(),
+    status: (d.sgipStatus || '').trim()
+  }));
 
-  if (rows.length === 0) {
-    const anyRrf = SGIP_DATA.some(d => d.rrfSubmitted);
-    return `<div class="bg-slate-800/50 rounded-lg p-8 border border-slate-700/50 text-center text-slate-400">${anyRrf
-      ? 'No projects with an RRF Submitted date on or after ' + CUTOFF_LABEL + '.'
-      : 'No RRF Submitted dates found. Re-upload the SGIP export so the RRF Submitted column is captured (it is not stored in the database between reloads).'}</div>`;
+  let maxK = null;
+  rows.forEach(r => [r.sk, r.ck, r.rk].forEach(k => { if (k !== null && (maxK === null || k > maxK)) maxK = k; }));
+
+  if (maxK === null) {
+    return `<div class="bg-slate-800/50 rounded-lg p-8 border border-slate-700/50 text-center text-slate-400">No RRF or received dates found. Re-upload the SGIP export so the RRF Submitted, RRF Confirmed and Date Received columns are captured.</div>`;
   }
 
-  // Breakdown 1: by month (chronological)
-  const monthMap = {};
-  const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  rows.forEach(d => {
-    const dt = parseDate(d.rrfSubmitted);
-    const key = dt.getFullYear() * 12 + dt.getMonth();
-    if (!monthMap[key]) monthMap[key] = { label: MON[dt.getMonth()] + " '" + String(dt.getFullYear()).slice(2), count: 0 };
-    monthMap[key].count++;
+  const win = [];
+  for (let i = months - 1; i >= 0; i--) win.push(maxK - i);
+  const minK = win[0];
+
+  const sub = {}, coh = {}, thr = {};
+  win.forEach(k => { sub[k] = 0; coh[k] = 0; thr[k] = 0; });
+  const recC = {}, recS = {}, recF = {};
+
+  rows.forEach(r => {
+    if (r.sk !== null && sub[r.sk] !== undefined) { sub[r.sk]++; if (r.ck !== null) coh[r.sk]++; }
+    if (r.ck !== null && thr[r.ck] !== undefined) thr[r.ck]++;
+    if (r.rk !== null && r.rk >= minK && r.rk <= maxK) {
+      recC[r.rk] = (recC[r.rk] || 0) + 1;
+      recS[r.rk] = (recS[r.rk] || 0) + (r.sk !== null ? 1 : 0);
+      recF[r.rk] = (recF[r.rk] || 0) + (r.ck !== null ? 1 : 0);
+    }
   });
-  const byMonth = Object.keys(monthMap).sort((a, b) => a - b).map(k => monthMap[k]);
 
-  // Breakdown 2: by SGIP administrator (count desc)
-  const adminMap = {};
-  rows.forEach(d => { const k = d.utility || 'Unknown'; adminMap[k] = (adminMap[k] || 0) + 1; });
-  const byAdmin = Object.keys(adminMap).map(k => ({ label: k, count: adminMap[k] })).sort((a, b) => b.count - a.count);
+  let totalSub = 0, totalCoh = 0, totalThr = 0;
+  win.forEach(k => { totalSub += sub[k]; totalCoh += coh[k]; totalThr += thr[k]; });
 
-  // Breakdown 3: by fully qualified state (count desc)
-  const stateMap = {};
-  rows.forEach(d => { const k = d.fullyQualifiedState || '(blank)'; stateMap[k] = (stateMap[k] || 0) + 1; });
-  const byState = Object.keys(stateMap).map(k => ({ label: k, count: stateMap[k] })).sort((a, b) => b.count - a.count);
+  const atRrf = rows.filter(r => r.stage.toLowerCase() === 'rrf');
+  const statusCounts = {};
+  atRrf.forEach(r => { const s = r.status || 'Unknown'; statusCounts[s] = (statusCounts[s] || 0) + 1; });
+  const statusKeys = Object.keys(statusCounts).sort((a, b) => statusCounts[b] - statusCounts[a]);
+  const STALLED = ['waitlist', 'draft', 'suspended'];
+  let stalled = 0, draftSusp = 0;
+  statusKeys.forEach(s => {
+    const l = s.toLowerCase();
+    if (STALLED.indexOf(l) > -1) stalled += statusCounts[s];
+    if (l === 'draft' || l === 'suspended') draftSusp += statusCounts[s];
+  });
 
-  const bars = (data, color) => {
-    const max = Math.max(...data.map(d => d.count), 1);
-    return data.map(d => {
-      const pct = Math.round(d.count / max * 100);
-      return `
-        <div class="flex items-center gap-3 py-1.5">
-          <div class="w-44 shrink-0 text-sm text-slate-300 truncate" title="${d.label}">${d.label}</div>
-          <div class="flex-1 h-3 bg-slate-700/60 rounded-full overflow-hidden">
-            <div class="h-full bg-${color}-500 rounded-full" style="width: ${pct}%"></div>
+  const H = 200;
+  const colChart = (labels, series, mode) => {
+    const peaks = labels.map((_, i) => mode === 'stack'
+      ? series.reduce((a, s) => a + (s.data[i] || 0), 0)
+      : Math.max(...series.map(s => s.data[i] || 0)));
+    const rawMax = Math.max(...peaks, 1);
+    const step = Math.max(1, Math.ceil(rawMax / 4 / 5) * 5);
+    const yMax = step * 4;
+    const slotW = Math.max(8, Math.floor(88 / Math.max(labels.length, 1)));
+    const px = v => Math.round((v / yMax) * H);
+    return `
+      <div class="flex">
+        <div class="flex flex-col justify-between text-right pr-3 text-xs text-slate-500" style="height:${H}px;width:38px">
+          ${[4,3,2,1,0].map(i => `<span>${i * step}</span>`).join('')}
+        </div>
+        <div class="flex-1 relative" style="height:${H}px">
+          <div class="absolute inset-0 flex flex-col justify-between pointer-events-none">
+            ${[0,1,2,3,4].map(() => `<div class="border-t border-slate-700/50 w-full"></div>`).join('')}
           </div>
-          <div class="w-10 shrink-0 text-right text-sm font-semibold text-${color}-400">${d.count}</div>
-        </div>`;
-    }).join('');
+          <div class="absolute inset-0 flex items-end justify-around px-2">
+            ${labels.map((lab, i) => {
+              if (mode === 'stack') {
+                const segs = series.map(s => ({ v: s.data[i] || 0, cls: s.cls })).filter(x => x.v > 0);
+                const tot = segs.reduce((a, x) => a + x.v, 0);
+                return `
+                  <div class="flex flex-col items-center" style="width:${slotW}%">
+                    <span class="text-xs text-slate-200 font-bold mb-1">${tot}</span>
+                    <div class="w-full flex flex-col justify-end">
+                      ${segs.map((x, j) => {
+                        const h = Math.max(px(x.v), 2);
+                        return `<div class="w-full ${x.cls} ${j === 0 ? 'rounded-t' : ''} flex items-center justify-center overflow-hidden" style="height:${h}px" title="${x.v}">${h >= 16 ? `<span class="text-[10px] font-bold text-slate-900">${x.v}</span>` : ''}</div>`;
+                      }).join('')}
+                    </div>
+                  </div>`;
+              }
+              return `
+                <div class="flex items-end justify-center gap-1" style="width:${slotW}%;height:${H}px">
+                  ${series.map(s => {
+                    const v = s.data[i] || 0;
+                    return `<div class="flex-1 flex flex-col items-center justify-end h-full" title="${s.name}: ${v}">
+                      <span class="text-[10px] text-slate-400 font-bold mb-0.5">${v}</span>
+                      <div class="w-full ${s.cls} rounded-t" style="height:${v ? Math.max(px(v), 2) : 0}px"></div>
+                    </div>`;
+                  }).join('')}
+                </div>`;
+            }).join('')}
+          </div>
+        </div>
+      </div>
+      <div class="flex" style="margin-top:6px">
+        <div style="width:38px"></div>
+        <div class="flex-1 flex justify-around px-2">
+          ${labels.map(l => `<span class="text-xs text-slate-500 text-center" style="width:${slotW}%">${l}</span>`).join('')}
+        </div>
+      </div>`;
   };
 
-  const card = (title, emoji, color, data) => `
+  const legend = items => `<div class="flex flex-wrap gap-4 mb-3">${items.map(it => `<span class="flex items-center gap-1.5 text-xs text-slate-400"><span class="w-2.5 h-2.5 rounded-sm ${it.cls}"></span>${it.name}</span>`).join('')}</div>`;
+
+  const hBars = data => {
+    const max = Math.max(...data.map(d => d.count), 1);
+    return data.map(d => `
+      <div class="flex items-center gap-3 py-1.5">
+        <div class="w-40 shrink-0 text-sm text-slate-300 truncate" title="${d.label}">${d.label}</div>
+        <div class="flex-1 h-3 bg-slate-700/60 rounded-full overflow-hidden">
+          <div class="h-full ${d.cls} rounded-full" style="width:${Math.round(d.count / max * 100)}%"></div>
+        </div>
+        <div class="w-12 shrink-0 text-right text-sm font-semibold text-slate-200">${d.count.toLocaleString()}</div>
+      </div>`).join('');
+  };
+
+  const statusRows = statusKeys.map(s => {
+    const l = s.toLowerCase();
+    const cls = l === 'confirmed' ? 'bg-emerald-500' : (STALLED.indexOf(l) > -1 ? 'bg-amber-500' : 'bg-blue-500');
+    return { label: s, count: statusCounts[s], cls: cls };
+  });
+
+  const recKeys = Object.keys(recC).map(Number).sort((a, b) => a - b);
+  const hiddenMonths = months - recKeys.length;
+
+  const kpi = (label, value, sub2, color) => `
+    <div class="bg-slate-800/50 rounded-lg p-4 border border-slate-700/50">
+      <p class="text-slate-500 text-xs uppercase">${label}</p>
+      <p class="text-2xl font-bold ${color}">${value}</p>
+      <p class="text-xs text-slate-400 mt-1">${sub2}</p>
+    </div>`;
+
+  const card = (title, emoji, color, body, note) => `
     <div class="bg-slate-800/50 rounded-lg p-5 border border-slate-700/50">
-      <h3 class="font-semibold text-${color}-400 mb-4">${emoji} ${title}</h3>
-      ${bars(data, color)}
+      <h3 class="font-semibold ${color} mb-4">${emoji} ${title}</h3>
+      ${body}
+      ${note ? `<p class="text-xs text-slate-500 mt-4 pt-3 border-t border-slate-700/50">${note}</p>` : ''}
     </div>`;
 
   return `
     <div class="bg-indigo-500/10 border border-indigo-500/30 rounded-lg p-4 mb-4">
-      <h3 class="font-semibold text-indigo-400">📈 RRF Submitted — ${CUTOFF_LABEL} and later</h3>
-      <p class="text-sm text-slate-400 mt-1">${rows.length} projects with an RRF Submitted date on or after ${CUTOFF_LABEL}.</p>
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h3 class="font-semibold text-indigo-400">📈 RRF pipeline — ${mLabel(minK)} to ${mLabel(maxK)}</h3>
+          <p class="text-sm text-slate-400 mt-1">${SGIP_DATA.length.toLocaleString()} applications in the current export. ${mLong(maxK)} is a partial month.</p>
+        </div>
+        <div class="flex gap-2 flex-wrap">${windowPicker}</div>
+      </div>
     </div>
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
-      ${card('By month', '📅', 'blue', byMonth)}
-      ${card('By SGIP administrator', '🏢', 'emerald', byAdmin)}
-      ${card('By fully qualified state', '🔖', 'purple', byState)}
+
+    <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+      ${kpi('RRFs submitted', totalSub.toLocaleString(), totalCoh.toLocaleString() + ' confirmed to date, ' + (totalSub ? (100 * totalCoh / totalSub).toFixed(1) : '0.0') + '%', 'text-blue-400')}
+      ${kpi('Confirmations booked', totalThr.toLocaleString(), thr[maxK].toLocaleString() + ' in ' + mLong(maxK), 'text-emerald-400')}
+      ${kpi('At RRF stage', atRrf.length.toLocaleString(), (SGIP_DATA.length ? (100 * atRrf.length / SGIP_DATA.length).toFixed(0) : '0') + '% of all applications', 'text-indigo-400')}
+      ${kpi('Draft or suspended', draftSusp.toLocaleString(), 'Of ' + stalled.toLocaleString() + ' stalled at RRF stage', 'text-amber-400')}
+    </div>
+
+    <div class="grid grid-cols-1 xl:grid-cols-2 gap-4">
+      ${card('RRFs submitted by month, split by confirmation status', '📊', 'text-blue-400',
+        legend([{ name: 'Not yet confirmed', cls: 'bg-blue-500/70' }, { name: 'Confirmed to date', cls: 'bg-emerald-500' }]) +
+        colChart(win.map(mLabel), [
+          { name: 'Not yet confirmed', cls: 'bg-blue-500/70', data: win.map(k => sub[k] - coh[k]) },
+          { name: 'Confirmed to date', cls: 'bg-emerald-500', data: win.map(k => coh[k]) }
+        ], 'stack'),
+        'Cohort view. Each column totals the submissions made in that month. Confirmations can land in any later month, so recent months understate the eventual rate.')}
+
+      ${card('Total RRF confirmations received per month', '✅', 'text-emerald-400',
+        colChart(win.map(mLabel), [
+          { name: 'Confirmations', cls: 'bg-emerald-500', data: win.map(k => thr[k]) }
+        ], 'group'),
+        'Throughput view. Counts every confirmation dated in the month regardless of when the RRF was submitted, so it will not tie to the chart on the left.')}
+
+      ${card('Applications by month received, and their RRF progress', '📥', 'text-purple-400',
+        recKeys.length === 0
+          ? '<div class="text-center text-slate-500 text-sm py-16">No applications were received inside this window. Widen the range to see earlier cohorts.</div>'
+          : legend([{ name: 'Received', cls: 'bg-slate-500' }, { name: 'RRF submitted', cls: 'bg-emerald-500' }, { name: 'RRF confirmed', cls: 'bg-purple-500' }]) +
+            colChart(recKeys.map(mLabel), [
+              { name: 'Received', cls: 'bg-slate-500', data: recKeys.map(k => recC[k]) },
+              { name: 'RRF submitted', cls: 'bg-emerald-500', data: recKeys.map(k => recS[k]) },
+              { name: 'RRF confirmed', cls: 'bg-purple-500', data: recKeys.map(k => recF[k]) }
+            ], 'group'),
+        recKeys.length === 0 ? 'Only months with at least one application received are shown.'
+          : (hiddenMonths > 0 ? hiddenMonths + ' of the last ' + months + ' months had no applications received and are hidden.' : 'Every month in the window had at least one application received.'))}
+
+      ${card('Projects at the RRF stage by status', '🔖', 'text-amber-400',
+        legend([{ name: 'Confirmed', cls: 'bg-emerald-500' }, { name: 'In flight', cls: 'bg-blue-500' }, { name: 'Stalled', cls: 'bg-amber-500' }]) + hBars(statusRows),
+        'Snapshot of the ' + atRrf.length.toLocaleString() + ' applications currently at the RRF stage, not limited to the date window above. Draft applications that have no Application Code assigned yet are not stored in the database, so the Draft count here understates the export.')}
     </div>`;
 }
+
 
 function renderStatsTab() {
   return `
