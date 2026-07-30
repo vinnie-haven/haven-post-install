@@ -114,6 +114,7 @@
   <div id="app">Loading...</div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   
   <script>
@@ -131,6 +132,7 @@ let state = {
   tab: 'stats', 
   statsSubTab: 'icfMonthly',
   rrfMonths: 4,
+  rrfDrill: null,
   icfSubTab: 'summary',
   icfSortBy: 'daysSincePto',
   icfSortDir: 'desc',
@@ -1106,6 +1108,8 @@ function render() {
       ${state.tab === 'installed' ? renderInstalledTab(stats, filtered, activeStages, stageCounts, permitOpts, inspectOpts, ptoOpts, sgipStageOpts, sgipStatusOpts, icfOpts, installerOpts, utilityOpts, ccaOpts) : state.tab === 'ptoFunnel' ? renderPtoFunnelTab() : state.tab === 'icfDeepDive' ? renderIcfDeepDiveTab() : state.tab === 'rrfCharts' ? renderRrfChartsTab() : state.tab === 'actionItems' ? renderActionItemsTab() : renderStatsTab()}
     </div>
   `;
+
+  if (state.tab === 'rrfCharts') requestAnimationFrame(initRrfCharts);
 }
 
 function renderInstalledTab(stats, filtered, activeStages, stageCounts, permitOpts, inspectOpts, ptoOpts, sgipStageOpts, sgipStatusOpts, icfOpts, installerOpts, utilityOpts, ccaOpts) {
@@ -1171,36 +1175,37 @@ function renderNoSgipTab() {
   `;
 }
 
-function setRrfMonths(n) { state.rrfMonths = parseInt(n, 10) || 4; render(); }
+const RRF_MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const rrfMonthKey = s => { const d = parseDate(s); return d ? d.getFullYear() * 12 + d.getMonth() : null; };
+const rrfLabel = k => RRF_MON[k % 12] + " '" + String(Math.floor(k / 12)).slice(2);
+const rrfLong = k => RRF_MON[k % 12] + ' ' + Math.floor(k / 12);
+const RRF_STALLED = ['waitlist', 'draft', 'suspended'];
+let RRF_VIEW = null;
+let RRF_CHARTS = {};
 
-function renderRrfChartsTab() {
-  const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  const monthKey = s => { const d = parseDate(s); return d ? d.getFullYear() * 12 + d.getMonth() : null; };
-  const mLabel = k => MON[k % 12] + " '" + String(Math.floor(k / 12)).slice(2);
-  const mLong = k => MON[k % 12] + ' ' + Math.floor(k / 12);
-  const months = state.rrfMonths || 4;
+function setRrfMonths(n) { state.rrfMonths = parseInt(n, 10) || 4; state.rrfDrill = null; render(); }
+function clearRrfDrill() { state.rrfDrill = null; render(); }
+function setRrfDrill(kind, a, b) {
+  state.rrfDrill = { kind: kind, a: a, b: b };
+  render();
+  setTimeout(() => { const el = document.getElementById('rrfDrillPanel'); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' }); }, 60);
+}
 
-  const windowPicker = [4, 6, 12].map(n => `<button onclick="setRrfMonths(${n})" class="px-3 py-1.5 rounded-lg text-sm font-medium border ${months === n ? 'bg-indigo-500/20 text-indigo-400 border-indigo-500/40' : 'bg-slate-800/50 text-slate-400 border-slate-700/50'}">Last ${n} months</button>`).join('');
-
-  if (!state.sgipLoaded || SGIP_DATA.length === 0) {
-    return `<div class="bg-slate-800/50 rounded-lg p-8 border border-slate-700/50 text-center text-slate-400">Upload the SGIP export to populate these charts.</div>`;
-  }
-
+function buildRrfView() {
   const rows = SGIP_DATA.map(d => ({
-    sk: monthKey(d.rrfSubmitted),
-    ck: monthKey(d.rrfConfirmed),
-    rk: monthKey(d.dateReceived),
+    rec: d,
+    sk: rrfMonthKey(d.rrfSubmitted),
+    ck: rrfMonthKey(d.rrfConfirmed),
+    rk: rrfMonthKey(d.dateReceived),
     stage: (d.sgipStage || '').trim(),
     status: (d.sgipStatus || '').trim()
   }));
 
   let maxK = null;
   rows.forEach(r => [r.sk, r.ck, r.rk].forEach(k => { if (k !== null && (maxK === null || k > maxK)) maxK = k; }));
+  if (maxK === null) return null;
 
-  if (maxK === null) {
-    return `<div class="bg-slate-800/50 rounded-lg p-8 border border-slate-700/50 text-center text-slate-400">No RRF or received dates found. Re-upload the SGIP export so the RRF Submitted, RRF Confirmed and Date Received columns are captured.</div>`;
-  }
-
+  const months = state.rrfMonths || 4;
   const win = [];
   for (let i = months - 1; i >= 0; i--) win.push(maxK - i);
   const minK = win[0];
@@ -1219,100 +1224,125 @@ function renderRrfChartsTab() {
     }
   });
 
-  let totalSub = 0, totalCoh = 0, totalThr = 0;
-  win.forEach(k => { totalSub += sub[k]; totalCoh += coh[k]; totalThr += thr[k]; });
-
   const atRrf = rows.filter(r => r.stage.toLowerCase() === 'rrf');
   const statusCounts = {};
   atRrf.forEach(r => { const s = r.status || 'Unknown'; statusCounts[s] = (statusCounts[s] || 0) + 1; });
   const statusKeys = Object.keys(statusCounts).sort((a, b) => statusCounts[b] - statusCounts[a]);
-  const STALLED = ['waitlist', 'draft', 'suspended'];
+
   let stalled = 0, draftSusp = 0;
   statusKeys.forEach(s => {
     const l = s.toLowerCase();
-    if (STALLED.indexOf(l) > -1) stalled += statusCounts[s];
+    if (RRF_STALLED.indexOf(l) > -1) stalled += statusCounts[s];
     if (l === 'draft' || l === 'suspended') draftSusp += statusCounts[s];
   });
 
-  const H = 200;
-  const colChart = (labels, series, mode) => {
-    const peaks = labels.map((_, i) => mode === 'stack'
-      ? series.reduce((a, s) => a + (s.data[i] || 0), 0)
-      : Math.max(...series.map(s => s.data[i] || 0)));
-    const rawMax = Math.max(...peaks, 1);
-    const step = Math.max(1, Math.ceil(rawMax / 4 / 5) * 5);
-    const yMax = step * 4;
-    const slotW = Math.max(8, Math.floor(88 / Math.max(labels.length, 1)));
-    const px = v => Math.round((v / yMax) * H);
-    return `
-      <div class="flex">
-        <div class="flex flex-col justify-between text-right pr-3 text-xs text-slate-500" style="height:${H}px;width:38px">
-          ${[4,3,2,1,0].map(i => `<span>${i * step}</span>`).join('')}
-        </div>
-        <div class="flex-1 relative" style="height:${H}px">
-          <div class="absolute inset-0 flex flex-col justify-between pointer-events-none">
-            ${[0,1,2,3,4].map(() => `<div class="border-t border-slate-700/50 w-full"></div>`).join('')}
-          </div>
-          <div class="absolute inset-0 flex items-end justify-around px-2">
-            ${labels.map((lab, i) => {
-              if (mode === 'stack') {
-                const segs = series.map(s => ({ v: s.data[i] || 0, cls: s.cls })).filter(x => x.v > 0);
-                const tot = segs.reduce((a, x) => a + x.v, 0);
-                return `
-                  <div class="flex flex-col items-center" style="width:${slotW}%">
-                    <span class="text-xs text-slate-200 font-bold mb-1">${tot}</span>
-                    <div class="w-full flex flex-col justify-end">
-                      ${segs.map((x, j) => {
-                        const h = Math.max(px(x.v), 2);
-                        return `<div class="w-full ${x.cls} ${j === 0 ? 'rounded-t' : ''} flex items-center justify-center overflow-hidden" style="height:${h}px" title="${x.v}">${h >= 16 ? `<span class="text-[10px] font-bold text-slate-900">${x.v}</span>` : ''}</div>`;
-                      }).join('')}
-                    </div>
-                  </div>`;
-              }
-              return `
-                <div class="flex items-end justify-center gap-1" style="width:${slotW}%;height:${H}px">
-                  ${series.map(s => {
-                    const v = s.data[i] || 0;
-                    return `<div class="flex-1 flex flex-col items-center justify-end h-full" title="${s.name}: ${v}">
-                      <span class="text-[10px] text-slate-400 font-bold mb-0.5">${v}</span>
-                      <div class="w-full ${s.cls} rounded-t" style="height:${v ? Math.max(px(v), 2) : 0}px"></div>
-                    </div>`;
-                  }).join('')}
-                </div>`;
+  let totalSub = 0, totalCoh = 0, totalThr = 0;
+  win.forEach(k => { totalSub += sub[k]; totalCoh += coh[k]; totalThr += thr[k]; });
+
+  return {
+    rows: rows, win: win, minK: minK, maxK: maxK, months: months,
+    sub: sub, coh: coh, thr: thr,
+    recKeys: Object.keys(recC).map(Number).sort((a, b) => a - b),
+    recC: recC, recS: recS, recF: recF,
+    atRrf: atRrf, statusCounts: statusCounts, statusKeys: statusKeys,
+    stalled: stalled, draftSusp: draftSusp,
+    totalSub: totalSub, totalCoh: totalCoh, totalThr: totalThr
+  };
+}
+
+function getRrfDrill() {
+  const d = state.rrfDrill;
+  if (!d || !RRF_VIEW) return null;
+  const V = RRF_VIEW;
+  let rows = [], title = '';
+
+  if (d.kind === 'cohort') {
+    const base = V.rows.filter(r => r.sk === d.a);
+    if (d.b === 'confirmed') { rows = base.filter(r => r.ck !== null); title = 'RRFs submitted in ' + rrfLong(d.a) + ' that are now confirmed'; }
+    else { rows = base.filter(r => r.ck === null); title = 'RRFs submitted in ' + rrfLong(d.a) + ' still awaiting confirmation'; }
+  } else if (d.kind === 'throughput') {
+    rows = V.rows.filter(r => r.ck === d.a);
+    title = 'RRFs confirmed during ' + rrfLong(d.a);
+  } else if (d.kind === 'received') {
+    const base = V.rows.filter(r => r.rk === d.a);
+    if (d.b === 'submitted') { rows = base.filter(r => r.sk !== null); title = 'Received in ' + rrfLong(d.a) + ' with an RRF submitted'; }
+    else if (d.b === 'confirmed') { rows = base.filter(r => r.ck !== null); title = 'Received in ' + rrfLong(d.a) + ' with an RRF confirmed'; }
+    else { rows = base; title = 'Applications received in ' + rrfLong(d.a); }
+  } else if (d.kind === 'status') {
+    rows = V.atRrf.filter(r => (r.status || 'Unknown') === d.a);
+    title = 'At the RRF stage with status ' + d.a;
+  }
+  return { title: title, rows: rows };
+}
+
+function renderRrfDrillPanel() {
+  const drill = getRrfDrill();
+  if (!drill) return '';
+  const dash = '&mdash;';
+  const body = drill.rows.length === 0
+    ? `<div class="px-4 py-6 text-center text-slate-500 text-sm">No projects in this selection.</div>`
+    : `<div class="table-container overflow-x-auto" style="max-height:420px;overflow-y:auto">
+        <table class="w-full text-sm">
+          <thead class="sticky-header">
+            <tr class="border-b border-slate-700">
+              <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Application</th>
+              <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Email</th>
+              <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Administrator</th>
+              <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Status</th>
+              <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Received</th>
+              <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">RRF submitted</th>
+              <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">RRF confirmed</th>
+              <th class="px-3 py-2 text-right text-xs font-semibold text-slate-400 uppercase">Incentive</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-700/30">
+            ${drill.rows.map(r => {
+              const d = r.rec;
+              const recDate = (d.dateReceived || '').split(' ')[0];
+              return `<tr class="hover:bg-slate-800/50">
+                <td class="px-3 py-2">${applicationCodeLink(d) || `<span class="text-xs text-slate-600 mono">${dash}</span>`}</td>
+                <td class="px-3 py-2 text-xs mono text-slate-400">${d.email || dash}</td>
+                <td class="px-3 py-2 text-xs text-slate-400">${d.utility || dash}</td>
+                <td class="px-3 py-2 text-xs"><span class="px-1.5 py-0.5 rounded border border-slate-600/50 text-slate-300">${d.sgipStage || dash}: ${d.sgipStatus || dash}</span></td>
+                <td class="px-3 py-2 mono text-xs text-slate-400">${recDate || dash}</td>
+                <td class="px-3 py-2 mono text-xs text-blue-400">${d.rrfSubmitted || dash}</td>
+                <td class="px-3 py-2 mono text-xs text-emerald-400">${d.rrfConfirmed || dash}</td>
+                <td class="px-3 py-2 text-xs text-right text-slate-300">${d.currentIncentive ? fmtCurrency(parseNum(d.currentIncentive)) : dash}</td>
+              </tr>`;
             }).join('')}
-          </div>
-        </div>
-      </div>
-      <div class="flex" style="margin-top:6px">
-        <div style="width:38px"></div>
-        <div class="flex-1 flex justify-around px-2">
-          ${labels.map(l => `<span class="text-xs text-slate-500 text-center" style="width:${slotW}%">${l}</span>`).join('')}
-        </div>
+          </tbody>
+        </table>
       </div>`;
-  };
 
-  const legend = items => `<div class="flex flex-wrap gap-4 mb-3">${items.map(it => `<span class="flex items-center gap-1.5 text-xs text-slate-400"><span class="w-2.5 h-2.5 rounded-sm ${it.cls}"></span>${it.name}</span>`).join('')}</div>`;
-
-  const hBars = data => {
-    const max = Math.max(...data.map(d => d.count), 1);
-    return data.map(d => `
-      <div class="flex items-center gap-3 py-1.5">
-        <div class="w-40 shrink-0 text-sm text-slate-300 truncate" title="${d.label}">${d.label}</div>
-        <div class="flex-1 h-3 bg-slate-700/60 rounded-full overflow-hidden">
-          <div class="h-full ${d.cls} rounded-full" style="width:${Math.round(d.count / max * 100)}%"></div>
+  return `
+    <div id="rrfDrillPanel" class="bg-slate-800/50 rounded-lg border border-indigo-500/40 mt-4 overflow-hidden">
+      <div class="flex items-center justify-between gap-3 px-4 py-3 border-b border-slate-700/50 bg-indigo-500/10">
+        <div>
+          <h3 class="font-semibold text-indigo-400 text-sm">${drill.title}</h3>
+          <p class="text-xs text-slate-400 mt-0.5">${drill.rows.length.toLocaleString()} project${drill.rows.length === 1 ? '' : 's'}</p>
         </div>
-        <div class="w-12 shrink-0 text-right text-sm font-semibold text-slate-200">${d.count.toLocaleString()}</div>
-      </div>`).join('');
-  };
+        <button onclick="clearRrfDrill()" class="px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-700 hover:bg-slate-600">✕ Close</button>
+      </div>
+      ${body}
+    </div>`;
+}
 
-  const statusRows = statusKeys.map(s => {
-    const l = s.toLowerCase();
-    const cls = l === 'confirmed' ? 'bg-emerald-500' : (STALLED.indexOf(l) > -1 ? 'bg-amber-500' : 'bg-blue-500');
-    return { label: s, count: statusCounts[s], cls: cls };
-  });
+function renderRrfChartsTab() {
+  const months = state.rrfMonths || 4;
+  const windowPicker = [4, 6, 12].map(n => `<button onclick="setRrfMonths(${n})" class="px-3 py-1.5 rounded-lg text-sm font-medium border ${months === n ? 'bg-indigo-500/20 text-indigo-400 border-indigo-500/40' : 'bg-slate-800/50 text-slate-400 border-slate-700/50'}">Last ${n} months</button>`).join('');
 
-  const recKeys = Object.keys(recC).map(Number).sort((a, b) => a - b);
-  const hiddenMonths = months - recKeys.length;
+  if (!state.sgipLoaded || SGIP_DATA.length === 0) {
+    RRF_VIEW = null;
+    return `<div class="bg-slate-800/50 rounded-lg p-8 border border-slate-700/50 text-center text-slate-400">Upload the SGIP export to populate these charts.</div>`;
+  }
+
+  RRF_VIEW = buildRrfView();
+  if (!RRF_VIEW) {
+    return `<div class="bg-slate-800/50 rounded-lg p-8 border border-slate-700/50 text-center text-slate-400">No RRF or received dates found. Re-upload the SGIP export so the RRF Submitted, RRF Confirmed and Date Received columns are captured.</div>`;
+  }
+  const V = RRF_VIEW;
+
+  const legend = items => `<div class="flex flex-wrap gap-4 mb-3">${items.map(it => `<span class="flex items-center gap-1.5 text-xs text-slate-400"><span class="w-2.5 h-2.5 rounded-sm" style="background:${it.color}"></span>${it.name}</span>`).join('')}</div>`;
 
   const kpi = (label, value, sub2, color) => `
     <div class="bg-slate-800/50 rounded-lg p-4 border border-slate-700/50">
@@ -1321,62 +1351,241 @@ function renderRrfChartsTab() {
       <p class="text-xs text-slate-400 mt-1">${sub2}</p>
     </div>`;
 
-  const card = (title, emoji, color, body, note) => `
+  const card = (title, emoji, color, legendHtml, canvasId, height, note) => `
     <div class="bg-slate-800/50 rounded-lg p-5 border border-slate-700/50">
-      <h3 class="font-semibold ${color} mb-4">${emoji} ${title}</h3>
-      ${body}
+      <h3 class="font-semibold ${color} mb-1">${emoji} ${title}</h3>
+      <p class="text-[11px] text-slate-500 mb-3">Click a bar to list the projects behind it</p>
+      ${legendHtml}
+      <div style="position:relative;width:100%;height:${height}px"><canvas id="${canvasId}"></canvas></div>
       ${note ? `<p class="text-xs text-slate-500 mt-4 pt-3 border-t border-slate-700/50">${note}</p>` : ''}
     </div>`;
+
+  const hiddenMonths = V.months - V.recKeys.length;
 
   return `
     <div class="bg-indigo-500/10 border border-indigo-500/30 rounded-lg p-4 mb-4">
       <div class="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h3 class="font-semibold text-indigo-400">📈 RRF pipeline — ${mLabel(minK)} to ${mLabel(maxK)}</h3>
-          <p class="text-sm text-slate-400 mt-1">${SGIP_DATA.length.toLocaleString()} applications in the current export. ${mLong(maxK)} is a partial month.</p>
+          <h3 class="font-semibold text-indigo-400">📈 RRF pipeline — ${rrfLabel(V.minK)} to ${rrfLabel(V.maxK)}</h3>
+          <p class="text-sm text-slate-400 mt-1">${SGIP_DATA.length.toLocaleString()} applications in the current export. ${rrfLong(V.maxK)} is a partial month.</p>
         </div>
         <div class="flex gap-2 flex-wrap">${windowPicker}</div>
       </div>
     </div>
 
     <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
-      ${kpi('RRFs submitted', totalSub.toLocaleString(), totalCoh.toLocaleString() + ' confirmed to date, ' + (totalSub ? (100 * totalCoh / totalSub).toFixed(1) : '0.0') + '%', 'text-blue-400')}
-      ${kpi('Confirmations booked', totalThr.toLocaleString(), thr[maxK].toLocaleString() + ' in ' + mLong(maxK), 'text-emerald-400')}
-      ${kpi('At RRF stage', atRrf.length.toLocaleString(), (SGIP_DATA.length ? (100 * atRrf.length / SGIP_DATA.length).toFixed(0) : '0') + '% of all applications', 'text-indigo-400')}
-      ${kpi('Draft or suspended', draftSusp.toLocaleString(), 'Of ' + stalled.toLocaleString() + ' stalled at RRF stage', 'text-amber-400')}
+      ${kpi('RRFs submitted', V.totalSub.toLocaleString(), V.totalCoh.toLocaleString() + ' confirmed to date, ' + (V.totalSub ? (100 * V.totalCoh / V.totalSub).toFixed(1) : '0.0') + '%', 'text-blue-400')}
+      ${kpi('Confirmations booked', V.totalThr.toLocaleString(), V.thr[V.maxK].toLocaleString() + ' in ' + rrfLong(V.maxK), 'text-emerald-400')}
+      ${kpi('At RRF stage', V.atRrf.length.toLocaleString(), (SGIP_DATA.length ? (100 * V.atRrf.length / SGIP_DATA.length).toFixed(0) : '0') + '% of all applications', 'text-indigo-400')}
+      ${kpi('Draft or suspended', V.draftSusp.toLocaleString(), 'Of ' + V.stalled.toLocaleString() + ' stalled at RRF stage', 'text-amber-400')}
     </div>
 
     <div class="grid grid-cols-1 xl:grid-cols-2 gap-4">
       ${card('RRFs submitted by month, split by confirmation status', '📊', 'text-blue-400',
-        legend([{ name: 'Not yet confirmed', cls: 'bg-blue-500/70' }, { name: 'Confirmed to date', cls: 'bg-emerald-500' }]) +
-        colChart(win.map(mLabel), [
-          { name: 'Not yet confirmed', cls: 'bg-blue-500/70', data: win.map(k => sub[k] - coh[k]) },
-          { name: 'Confirmed to date', cls: 'bg-emerald-500', data: win.map(k => coh[k]) }
-        ], 'stack'),
+        legend([{ name: 'Confirmed to date', color: '#10b981' }, { name: 'Not yet confirmed', color: '#3b82f6' }]),
+        'rrfChartCohort', 280,
         'Cohort view. Each column totals the submissions made in that month. Confirmations can land in any later month, so recent months understate the eventual rate.')}
 
       ${card('Total RRF confirmations received per month', '✅', 'text-emerald-400',
-        colChart(win.map(mLabel), [
-          { name: 'Confirmations', cls: 'bg-emerald-500', data: win.map(k => thr[k]) }
-        ], 'group'),
+        legend([{ name: 'Confirmations, any submission cohort', color: '#10b981' }]),
+        'rrfChartThroughput', 280,
         'Throughput view. Counts every confirmation dated in the month regardless of when the RRF was submitted, so it will not tie to the chart on the left.')}
 
-      ${card('Applications by month received, and their RRF progress', '📥', 'text-purple-400',
-        recKeys.length === 0
-          ? '<div class="text-center text-slate-500 text-sm py-16">No applications were received inside this window. Widen the range to see earlier cohorts.</div>'
-          : legend([{ name: 'Received', cls: 'bg-slate-500' }, { name: 'RRF submitted', cls: 'bg-emerald-500' }, { name: 'RRF confirmed', cls: 'bg-purple-500' }]) +
-            colChart(recKeys.map(mLabel), [
-              { name: 'Received', cls: 'bg-slate-500', data: recKeys.map(k => recC[k]) },
-              { name: 'RRF submitted', cls: 'bg-emerald-500', data: recKeys.map(k => recS[k]) },
-              { name: 'RRF confirmed', cls: 'bg-purple-500', data: recKeys.map(k => recF[k]) }
-            ], 'group'),
-        recKeys.length === 0 ? 'Only months with at least one application received are shown.'
-          : (hiddenMonths > 0 ? hiddenMonths + ' of the last ' + months + ' months had no applications received and are hidden.' : 'Every month in the window had at least one application received.'))}
+      ${V.recKeys.length === 0
+        ? `<div class="bg-slate-800/50 rounded-lg p-5 border border-slate-700/50">
+             <h3 class="font-semibold text-purple-400 mb-4">📥 Applications by month received, and their RRF progress</h3>
+             <div class="text-center text-slate-500 text-sm py-20">No applications were received inside this window. Widen the range to see earlier cohorts.</div>
+           </div>`
+        : card('Applications by month received, and their RRF progress', '📥', 'text-purple-400',
+            legend([{ name: 'Received', color: '#64748b' }, { name: 'RRF submitted', color: '#10b981' }, { name: 'RRF confirmed', color: '#a855f7' }]),
+            'rrfChartReceived', 280,
+            hiddenMonths > 0 ? hiddenMonths + ' of the last ' + V.months + ' months had no applications received and are hidden.' : 'Every month in the window had at least one application received.')}
 
       ${card('Projects at the RRF stage by status', '🔖', 'text-amber-400',
-        legend([{ name: 'Confirmed', cls: 'bg-emerald-500' }, { name: 'In flight', cls: 'bg-blue-500' }, { name: 'Stalled', cls: 'bg-amber-500' }]) + hBars(statusRows),
-        'Snapshot of the ' + atRrf.length.toLocaleString() + ' applications currently at the RRF stage, not limited to the date window above. Draft applications that have no Application Code assigned yet are not stored in the database, so the Draft count here understates the export.')}
-    </div>`;
+        legend([{ name: 'Confirmed', color: '#10b981' }, { name: 'In flight', color: '#3b82f6' }, { name: 'Stalled', color: '#f59e0b' }]),
+        'rrfChartStatus', 300,
+        'Snapshot of the ' + V.atRrf.length.toLocaleString() + ' applications currently at the RRF stage, not limited to the date window above. Draft applications with no Application Code assigned yet are not stored in the database, so the Draft count understates the export.')}
+    </div>
+
+    ${renderRrfDrillPanel()}`;
+}
+
+function initRrfCharts() {
+  if (typeof Chart === 'undefined' || !RRF_VIEW) return;
+  const V = RRF_VIEW;
+  const TICK = '#94a3b8';
+  const GRIDC = 'rgba(148,163,184,0.14)';
+  const LABEL = '#cbd5e1';
+
+  Object.keys(RRF_CHARTS).forEach(k => { try { RRF_CHARTS[k].destroy(); } catch (e) {} });
+  RRF_CHARTS = {};
+
+  Chart.defaults.font.family = "ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif";
+  Chart.defaults.font.size = 11;
+  Chart.defaults.color = TICK;
+
+  const valueLabels = {
+    id: 'rrfValueLabels',
+    afterDatasetsDraw: function (chart) {
+      const ctx = chart.ctx;
+      ctx.save();
+      ctx.font = '600 11px ' + Chart.defaults.font.family;
+      ctx.textAlign = 'center';
+      chart.data.datasets.forEach((ds, di) => {
+        const meta = chart.getDatasetMeta(di);
+        if (meta.hidden) return;
+        meta.data.forEach((bar, i) => {
+          const v = ds.data[i];
+          if (!v) return;
+          if (ds.stack) {
+            const h = Math.abs(bar.base - bar.y);
+            if (h < 16) return;
+            ctx.fillStyle = '#0f172a';
+            ctx.fillText(v.toLocaleString(), bar.x, (bar.y + bar.base) / 2 + 4);
+          } else {
+            ctx.fillStyle = LABEL;
+            ctx.fillText(v.toLocaleString(), bar.x, bar.y - 6);
+          }
+        });
+      });
+      ctx.restore();
+    }
+  };
+
+  const axes = (stacked, rotate) => ({
+    x: {
+      stacked: !!stacked,
+      grid: { display: false },
+      border: { color: 'rgba(148,163,184,0.3)' },
+      ticks: { color: TICK, autoSkip: false, maxRotation: rotate ? 50 : 0, minRotation: rotate ? 50 : 0, font: { size: rotate ? 10 : 11 } }
+    },
+    y: {
+      stacked: !!stacked,
+      beginAtZero: true,
+      grace: '14%',
+      grid: { color: GRIDC, drawTicks: false },
+      border: { display: false },
+      ticks: { color: TICK, precision: 0 }
+    }
+  });
+
+  const base = onClick => ({
+    responsive: true,
+    maintainAspectRatio: false,
+    onHover: (e, els) => { e.native.target.style.cursor = els.length ? 'pointer' : 'default'; },
+    onClick: onClick,
+    plugins: {
+      legend: { display: false },
+      tooltip: {
+        backgroundColor: 'rgba(15,23,42,0.95)',
+        borderColor: 'rgba(148,163,184,0.3)',
+        borderWidth: 1,
+        titleColor: '#e2e8f0',
+        bodyColor: '#cbd5e1',
+        padding: 10,
+        displayColors: true
+      }
+    }
+  });
+
+  const hit = (chart, evt) => {
+    const els = chart.getElementsAtEventForMode(evt, 'nearest', { intersect: true }, true);
+    return els.length ? els[0] : null;
+  };
+
+  const c1 = document.getElementById('rrfChartCohort');
+  if (c1) {
+    RRF_CHARTS.cohort = new Chart(c1, {
+      type: 'bar',
+      data: {
+        labels: V.win.map(rrfLabel),
+        datasets: [
+          { label: 'Confirmed to date', data: V.win.map(k => V.coh[k]), backgroundColor: '#10b981', stack: 's', borderWidth: 2, borderColor: 'rgba(30,41,59,0.9)', maxBarThickness: 58 },
+          { label: 'Not yet confirmed', data: V.win.map(k => V.sub[k] - V.coh[k]), backgroundColor: '#3b82f6', stack: 's', borderRadius: { topLeft: 4, topRight: 4 }, maxBarThickness: 58 }
+        ]
+      },
+      options: Object.assign(base(function (evt) {
+        const el = hit(this, evt);
+        if (!el) return;
+        setRrfDrill('cohort', V.win[el.index], el.datasetIndex === 0 ? 'confirmed' : 'pending');
+      }), {
+        scales: axes(true, V.months > 6),
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            backgroundColor: 'rgba(15,23,42,0.95)', borderColor: 'rgba(148,163,184,0.3)', borderWidth: 1,
+            titleColor: '#e2e8f0', bodyColor: '#cbd5e1', padding: 10,
+            callbacks: { footer: items => 'Total submitted: ' + items.reduce((a, b) => a + b.parsed.y, 0) }
+          }
+        }
+      }),
+      plugins: [valueLabels]
+    });
+  }
+
+  const c2 = document.getElementById('rrfChartThroughput');
+  if (c2) {
+    RRF_CHARTS.throughput = new Chart(c2, {
+      type: 'bar',
+      data: { labels: V.win.map(rrfLabel), datasets: [{ label: 'Confirmations', data: V.win.map(k => V.thr[k]), backgroundColor: '#10b981', borderRadius: { topLeft: 4, topRight: 4 }, maxBarThickness: 58 }] },
+      options: Object.assign(base(function (evt) {
+        const el = hit(this, evt);
+        if (!el) return;
+        setRrfDrill('throughput', V.win[el.index]);
+      }), { scales: axes(false, V.months > 6) }),
+      plugins: [valueLabels]
+    });
+  }
+
+  const c3 = document.getElementById('rrfChartReceived');
+  if (c3 && V.recKeys.length) {
+    RRF_CHARTS.received = new Chart(c3, {
+      type: 'bar',
+      data: {
+        labels: V.recKeys.map(rrfLabel),
+        datasets: [
+          { label: 'Received', data: V.recKeys.map(k => V.recC[k]), backgroundColor: '#64748b', borderRadius: { topLeft: 4, topRight: 4 }, maxBarThickness: 38 },
+          { label: 'RRF submitted', data: V.recKeys.map(k => V.recS[k]), backgroundColor: '#10b981', borderRadius: { topLeft: 4, topRight: 4 }, maxBarThickness: 38 },
+          { label: 'RRF confirmed', data: V.recKeys.map(k => V.recF[k]), backgroundColor: '#a855f7', borderRadius: { topLeft: 4, topRight: 4 }, maxBarThickness: 38 }
+        ]
+      },
+      options: Object.assign(base(function (evt) {
+        const el = hit(this, evt);
+        if (!el) return;
+        const which = el.datasetIndex === 1 ? 'submitted' : (el.datasetIndex === 2 ? 'confirmed' : 'all');
+        setRrfDrill('received', V.recKeys[el.index], which);
+      }), { scales: axes(false, V.recKeys.length > 6) }),
+      plugins: [valueLabels]
+    });
+  }
+
+  const c4 = document.getElementById('rrfChartStatus');
+  if (c4) {
+    RRF_CHARTS.status = new Chart(c4, {
+      type: 'bar',
+      data: {
+        labels: V.statusKeys,
+        datasets: [{
+          label: 'Projects',
+          data: V.statusKeys.map(s => V.statusCounts[s]),
+          backgroundColor: V.statusKeys.map(s => {
+            const l = s.toLowerCase();
+            if (l === 'confirmed') return '#10b981';
+            if (RRF_STALLED.indexOf(l) > -1) return '#f59e0b';
+            return '#3b82f6';
+          }),
+          borderRadius: { topLeft: 4, topRight: 4 },
+          maxBarThickness: 40
+        }]
+      },
+      options: Object.assign(base(function (evt) {
+        const el = hit(this, evt);
+        if (!el) return;
+        setRrfDrill('status', V.statusKeys[el.index]);
+      }), { scales: axes(false, V.statusKeys.length > 5) }),
+      plugins: [valueLabels]
+    });
+  }
 }
 
 
