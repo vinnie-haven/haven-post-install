@@ -2367,13 +2367,79 @@ function renderIcfWeeklyStats() {
     icfResubmitted: acc.icfResubmitted + w.icfResubmitted,
     icfApproved: acc.icfApproved + w.icfApproved
   }), { installs: 0, inspections: 0, ptoSubmitted: 0, ptoApproved: 0, icfSubmitted: 0, icfResubmitted: 0, icfApproved: 0 });
-  
+
+  // Chart data runs oldest to newest, the reverse of the table order.
+  const chartData = [...weeklyData].reverse();
+  // Label with the week start only, since "6/1 - 6/7" is too wide for 10 bars.
+  const chartLabels = chartData.map(w => String(w.weekLabel).split(' - ')[0]);
+
+  // Same bar chart idiom as the Monthly Report, retuned for 10 narrower bars
+  // and a 10-unit Y-axis step since weekly counts are smaller than monthly.
+  const renderBarChart = (title, data, color, bgColor) => {
+    const max = Math.max(...data, 1);
+    const yMax = Math.max(Math.ceil(max / 10) * 10, 10);
+    const ySteps = 5;
+    const yIncrement = yMax / ySteps;
+    const chartHeight = 220;
+    const barWidth = (100 / Math.max(data.length, 1)) * 0.62;
+
+    return `
+      <div class="bg-slate-800/50 rounded-lg border border-slate-700/50 p-5">
+        <h4 class="text-base font-semibold ${color} mb-4">${title}</h4>
+        <div class="flex">
+          <div class="flex flex-col justify-between text-right pr-3 text-xs text-slate-500" style="height: ${chartHeight}px; width: 40px;">
+            ${Array.from({length: ySteps + 1}, (_, i) => `<span>${Math.round(yMax - (i * yIncrement))}</span>`).join('')}
+          </div>
+          <div class="flex-1 relative" style="height: ${chartHeight}px;">
+            <div class="absolute inset-0 flex flex-col justify-between pointer-events-none">
+              ${Array.from({length: ySteps + 1}, () => `<div class="border-t border-slate-700/50 w-full"></div>`).join('')}
+            </div>
+            <div class="absolute inset-0 flex items-end justify-around px-1">
+              ${data.map((val, i) => {
+                const heightPx = yMax > 0 ? Math.round((val / yMax) * chartHeight) : 0;
+                const isCurrent = i === data.length - 1;
+                return `
+                  <div class="flex flex-col items-center" style="width: ${barWidth}%;" title="${chartLabels[i]}: ${val}">
+                    <span class="text-xs ${color} font-bold mb-1">${val}</span>
+                    <div class="w-full ${bgColor} rounded-t ${isCurrent ? 'opacity-50' : ''}" style="height: ${heightPx}px; min-height: 2px;"></div>
+                  </div>
+                `;
+              }).join('')}
+            </div>
+          </div>
+        </div>
+        <div class="flex mt-2" style="margin-left: 43px;">
+          ${data.map((_, i) => `<div class="flex-1 text-center text-[11px] text-slate-400">${chartLabels[i]}</div>`).join('')}
+        </div>
+      </div>
+    `;
+  };
+
   return `
     <div class="bg-orange-500/10 border border-orange-500/30 rounded-lg p-4 mb-4">
       <h3 class="font-semibold text-orange-400">📆 Weekly Activity Summary</h3>
-      <p class="text-sm text-slate-400 mt-1">Installs, inspections, PTOs, and ICF activity for the last 10 weeks (weeks start on Monday)</p>
+      <p class="text-sm text-slate-400 mt-1">Installs, inspections, PTOs, and ICF activity for the last 10 weeks (weeks start on Monday). Bars are labelled by week start, and the current partial week is faded.</p>
     </div>
-    
+
+    <!-- Charts Grid - Row 1 -->
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+      ${renderBarChart('Installs', chartData.map(w => w.installs), 'text-emerald-400', 'bg-emerald-500/70')}
+      ${renderBarChart('Inspections', chartData.map(w => w.inspections), 'text-pink-400', 'bg-pink-500/70')}
+    </div>
+
+    <!-- Charts Grid - Row 2 -->
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+      ${renderBarChart('PTO Submitted', chartData.map(w => w.ptoSubmitted), 'text-orange-400', 'bg-orange-500/70')}
+      ${renderBarChart('PTO Approved', chartData.map(w => w.ptoApproved), 'text-cyan-400', 'bg-cyan-500/70')}
+    </div>
+
+    <!-- Charts Grid - Row 3: ICF Charts -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+      ${renderBarChart('ICF Submitted', chartData.map(w => w.icfSubmitted), 'text-blue-400', 'bg-blue-500/70')}
+      ${renderBarChart('ICF Resubmitted', chartData.map(w => w.icfResubmitted), 'text-amber-400', 'bg-amber-500/70')}
+      ${renderBarChart('ICF Approved', chartData.map(w => w.icfApproved), 'text-green-400', 'bg-green-500/70')}
+    </div>
+
     <!-- Weekly Table -->
     <div class="bg-slate-800/50 rounded-lg border border-slate-700/50 overflow-hidden overflow-x-auto">
       <table class="w-full text-sm">
@@ -2468,6 +2534,65 @@ function renderPipelineValue() {
   const paymentCompleteCount = icfBuckets.find(b => b.isPayment)?.count || 0;
   
   const filterLabel = state.pipelineBudgetFilter === 'all' ? 'All Projects' : state.pipelineBudgetFilter;
+
+  // Column chart of incentive value by stage. Bar height is dollars, the project
+  // count sits under each label so both measures read off one chart.
+  const abbrevUsd = v => {
+    if (!v) return '$0';
+    if (v >= 1000000) return '$' + (v / 1000000).toFixed(v >= 10000000 ? 0 : 1) + 'M';
+    if (v >= 1000) return '$' + Math.round(v / 1000) + 'K';
+    return '$' + Math.round(v);
+  };
+  const niceMax = v => {
+    if (!v || v <= 0) return 1;
+    const mag = Math.pow(10, Math.floor(Math.log10(v)));
+    const half = mag / 2;
+    return Math.ceil(v / half) * half;
+  };
+  const stageChart = (title, emoji, color, buckets) => {
+    const maxAmount = Math.max(...buckets.map(b => b.amount), 0);
+    const yMax = niceMax(maxAmount);
+    const ySteps = 4;
+    const chartHeight = 210;
+    const barWidth = (100 / Math.max(buckets.length, 1)) * 0.64;
+    const total = buckets.reduce((sum, b) => sum + b.amount, 0);
+
+    return `
+      <div class="bg-slate-800/50 rounded-lg border border-slate-700/50 p-5">
+        <h4 class="text-base font-semibold ${color} mb-4">${emoji} ${title}</h4>
+        <div class="flex">
+          <div class="flex flex-col justify-between text-right pr-3 text-xs text-slate-500" style="height: ${chartHeight}px; width: 52px;">
+            ${Array.from({length: ySteps + 1}, (_, i) => `<span>${abbrevUsd(yMax - (i * (yMax / ySteps)))}</span>`).join('')}
+          </div>
+          <div class="flex-1 relative" style="height: ${chartHeight}px;">
+            <div class="absolute inset-0 flex flex-col justify-between pointer-events-none">
+              ${Array.from({length: ySteps + 1}, () => `<div class="border-t border-slate-700/50 w-full"></div>`).join('')}
+            </div>
+            <div class="absolute inset-0 flex items-end justify-around px-1">
+              ${buckets.map(b => {
+                const heightPx = yMax > 0 ? Math.round((b.amount / yMax) * chartHeight) : 0;
+                const pct = total > 0 ? ((b.amount / total) * 100).toFixed(1) : '0.0';
+                return `
+                  <div class="flex flex-col items-center" style="width: ${barWidth}%;" title="${b.label}: ${fmtCurrency(b.amount)} across ${b.count} project${b.count === 1 ? '' : 's'} (${pct}% of section)">
+                    <span class="text-[11px] text-slate-300 font-bold mb-1">${abbrevUsd(b.amount)}</span>
+                    <div class="w-full bg-${b.color}-500/70 rounded-t" style="height: ${heightPx}px; min-height: 2px;"></div>
+                  </div>
+                `;
+              }).join('')}
+            </div>
+          </div>
+        </div>
+        <div class="flex mt-2" style="margin-left: 55px;">
+          ${buckets.map(b => `
+            <div class="flex-1 px-0.5 text-center">
+              <div class="text-[10px] leading-tight text-slate-400">${b.label}</div>
+              <div class="text-[10px] text-slate-600 mt-0.5">${b.count}</div>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    `;
+  };
   
   return `
     <div class="bg-purple-500/10 border border-purple-500/30 rounded-lg p-4 mb-4">
@@ -2509,7 +2634,13 @@ function renderPipelineValue() {
         <p class="text-xs text-slate-500 mt-1">${ptoCount + icfPipelineCount} projects</p>
       </div>
     </div>
-    
+
+    <!-- Stage Value Charts -->
+    <div class="grid grid-cols-1 xl:grid-cols-2 gap-4 mb-6">
+      ${stageChart('PTO Funnel Stages', '🎯', 'text-cyan-400', ptoBuckets)}
+      ${stageChart('ICF Pipeline Stages', '🔍', 'text-purple-400', icfBuckets.filter(b => !b.isPayment))}
+    </div>
+
     <!-- PTO Funnel Table -->
     <div class="bg-slate-800/50 rounded-lg border border-slate-700/50 overflow-hidden mb-6">
       <div class="px-4 py-3 border-b border-slate-700/50 bg-cyan-500/10">
